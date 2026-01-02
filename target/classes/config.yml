@@ -1,0 +1,14 @@
+ai:
+  provider: openai
+  openai:
+    api-key: ""
+    model: gpt-3.5-turbo
+  grok:
+    api-key: ""
+    model: grok-4
+build:
+  fallback-material: minecraft:dirt
+config-copies:
+  folder: config-copies
+databases:
+  file: databases.yml

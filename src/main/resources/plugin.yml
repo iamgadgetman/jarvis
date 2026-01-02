@@ -1,0 +1,21 @@
+name: Jarvis
+version: 0.0.1
+main: com.yourname.jarvis.Jarvis
+api-version: 1.21
+depend: [Citizens]
+softdepend: [WorldEdit, WorldGuard]
+commands:
+  jarvis:
+    description: Jarvis AI Companion commands
+    usage: /jarvis <subcommand>
+    permission: jarvis.use
+permissions:
+  jarvis.use:
+    description: Basic Jarvis usage
+    default: true
+  jarvis.admin:
+    description: Admin Jarvis features
+    default: op
+  jarvis.menu.use:
+    description: Use Jarvis control menu via bell or right-click
+    default: true

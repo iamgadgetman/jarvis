@@ -1,0 +1,9 @@
+com/yourname/jarvis/Jarvis.class
+com/yourname/jarvis/ai/AIConnector.class
+com/yourname/jarvis/npc/JarvisNPC$2.class
+com/yourname/jarvis/commands/JarvisCommands.class
+com/yourname/jarvis/ui/UIManager.class
+com/yourname/jarvis/DatabaseManager.class
+com/yourname/jarvis/ui/ControllerBell.class
+com/yourname/jarvis/npc/JarvisNPC.class
+com/yourname/jarvis/npc/JarvisNPC$1.class
