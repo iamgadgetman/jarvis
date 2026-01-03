@@ -123,7 +123,7 @@ public class JarvisNPC {
                     return;
                 }
 
-                Location npcLoc = npc.getStoredLocation();
+                Location npcLoc = getCurrentLocation(npc);
 
                 Monster mob = findNearestHostileMob(npcLoc);
                 if (mob != null && !mob.isDead()) {
@@ -165,7 +165,7 @@ public class JarvisNPC {
                     return;
                 }
 
-                Location npcLoc = npc.getStoredLocation();
+                Location npcLoc = getCurrentLocation(npc);
 
                 Block ore = findBestOre(npcLoc);
                 if (ore == null) {
@@ -177,7 +177,17 @@ public class JarvisNPC {
                 boolean silk = ore.getType() == Material.DEEPSLATE_EMERALD_ORE || ore.getType() == Material.EMERALD_ORE;
                 equipPickaxe(npc, silk);
 
-                npc.getNavigator().setTarget(ore.getLocation());
+                Location standSpot = findApproachLocation(ore);
+                if (standSpot == null) {
+                    // Carve a space above the ore so the NPC can stand and dig
+                    Block above = ore.getRelative(BlockFace.UP);
+                    if (!above.getType().isAir()) {
+                        above.breakNaturally();
+                    }
+                    standSpot = ore.getLocation().add(0.5, 1, 0.5);
+                }
+
+                npc.getNavigator().setTarget(standSpot);
 
                 if (npcLoc.distance(ore.getLocation()) < 4) {
                     ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
@@ -221,7 +231,7 @@ public class JarvisNPC {
     }
 
     private void pickupNearbyItems(NPC npc) {
-        Location loc = npc.getStoredLocation();
+        Location loc = getCurrentLocation(npc);
         Inventory invTrait = npc.getOrAddTrait(Inventory.class);
         ItemStack[] contents = invTrait.getContents();
 
@@ -250,6 +260,26 @@ public class JarvisNPC {
                 }
             }
         }
+    }
+
+    private Location getCurrentLocation(NPC npc) {
+        if (npc.getEntity() != null) {
+            return npc.getEntity().getLocation();
+        }
+        return npc.getStoredLocation();
+    }
+
+    private Location findApproachLocation(Block ore) {
+        // Try to find an adjacent air block with solid ground to stand on
+        for (BlockFace face : BlockFace.values()) {
+            if (face == BlockFace.SELF) continue;
+            Block adjacent = ore.getRelative(face);
+            Block ground = adjacent.getRelative(BlockFace.DOWN);
+            if (adjacent.getType().isAir() && ground.getType().isSolid()) {
+                return adjacent.getLocation().add(0.5, 0, 0.5);
+            }
+        }
+        return null;
     }
 
     public void openInventory(Player player) {
