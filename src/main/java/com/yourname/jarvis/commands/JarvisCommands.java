@@ -31,6 +31,16 @@ public class JarvisCommands implements CommandExecutor {
             }
         }
 
+        if (args.length >= 1 && args[0].equalsIgnoreCase("debug")) {
+            if (sender.hasPermission("jarvis.admin") || sender instanceof ConsoleCommandSender) {
+                plugin.printDebug(sender);
+                return true;
+            } else {
+                sender.sendMessage(ChatColor.RED + "You don't have permission.");
+                return true;
+            }
+        }
+
         // All other commands are player-only
         if (!(sender instanceof Player player)) {
             sender.sendMessage(ChatColor.RED + "Only players can use other Jarvis commands.");

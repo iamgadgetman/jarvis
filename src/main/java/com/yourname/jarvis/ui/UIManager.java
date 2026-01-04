@@ -9,6 +9,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -85,6 +86,18 @@ public class UIManager implements Listener {
     }
 
     @EventHandler
+    public void onBellPlace(BlockPlaceEvent e) {
+        ItemStack item = e.getItemInHand();
+        if (!isControllerBell(item)) return;
+
+        Block placed = e.getBlockPlaced();
+        if (placed.getState() instanceof TileState state) {
+            state.getPersistentDataContainer().set(plugin.getControllerKey(), PersistentDataType.BYTE, (byte) 1);
+            state.update();
+        }
+    }
+
+    @EventHandler
     public void onRightClickNPC(PlayerInteractEntityEvent e) {
         if (e.getRightClicked() instanceof org.bukkit.entity.Player clicked) {
             Player p = e.getPlayer();
@@ -104,13 +117,27 @@ public class UIManager implements Listener {
 
         var npc = plugin.getJarvisNPC();
         switch (slot) {
-            case 0 -> npc.summon(p);
-            case 1 -> npc.dismiss(p);
-            case 2 -> npc.returnToPlayer(p);
-            case 3 -> npc.attack(p);
-            case 4 -> npc.mine(p);
+            case 0 -> {
+                npc.summon(p);
+                p.closeInventory();
+            }
+            case 1 -> {
+                npc.dismiss(p);
+                p.closeInventory();
+            }
+            case 2 -> {
+                npc.returnToPlayer(p);
+                p.closeInventory();
+            }
+            case 3 -> {
+                npc.attack(p);
+                p.closeInventory();
+            }
+            case 4 -> {
+                npc.mine(p);
+                p.closeInventory();
+            }
             case 5 -> npc.openInventory(p);
         }
-        p.closeInventory();
     }
 }

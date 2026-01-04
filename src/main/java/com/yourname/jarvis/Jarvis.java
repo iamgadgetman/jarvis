@@ -12,6 +12,7 @@ import com.yourname.jarvis.npc.JarvisNPC;
 import com.yourname.jarvis.commands.JarvisCommands;
 import com.yourname.jarvis.ui.UIManager;
 import com.yourname.jarvis.DatabaseManager;
+import org.bukkit.command.CommandSender;
 
 public class Jarvis extends JavaPlugin {
 
@@ -71,6 +72,40 @@ public class Jarvis extends JavaPlugin {
 
     public JarvisNPC getJarvisNPC() {
         return jarvisNPC;
+    }
+
+    public void printDebug(CommandSender requester) {
+        getLogger().info("==== Jarvis Debug Info ====");
+        requester.sendMessage("==== Jarvis Debug Info ====");
+
+        if (aiConnector == null) {
+            getLogger().warning("AI connector not initialized");
+            requester.sendMessage("AI connector not initialized");
+        } else {
+            String provider = aiConnector.getProvider();
+            String modelName = aiConnector.getModel();
+            boolean hasKey = aiConnector.hasApiKey();
+            getLogger().info("AI Provider: " + provider + ", model: " + modelName + ", api key present: " + hasKey);
+            requester.sendMessage("AI Provider: " + provider + ", model: " + modelName + ", api key present: " + hasKey);
+        }
+
+        if (jarvisNPC == null) {
+            getLogger().warning("NPC system not initialized");
+            requester.sendMessage("NPC system not initialized");
+        } else {
+            getLogger().info("Active NPCs: " + jarvisNPC.getActiveNpcCount());
+            getLogger().info("Active tasks: " + jarvisNPC.getActiveTaskCount());
+            requester.sendMessage("Active NPCs: " + jarvisNPC.getActiveNpcCount());
+            requester.sendMessage("Active tasks: " + jarvisNPC.getActiveTaskCount());
+        }
+
+        if (databaseManager == null) {
+            getLogger().warning("Database manager not initialized");
+            requester.sendMessage("Database manager not initialized");
+        } else {
+            getLogger().info("Database connections initialized");
+            requester.sendMessage("Database connections initialized");
+        }
     }
 
     public NamespacedKey getControllerKey() {
