@@ -10,6 +10,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Locale;
 
 public class AIConnector {
@@ -51,7 +52,7 @@ public class AIConnector {
         if (!keyPresent) {
             plugin.getLogger().warning("AI API key not set for provider: " + provider + " (check config ai." + provider + ".api-key or environment variable)");
         } else if (debug != null) {
-            debug.debug("AI provider=" + provider + " model=" + model + " endpoint=" + endpoint);
+            debug.debug("AI provider=" + provider + " model=" + model + " endpoint=" + endpoint + " keyLen=" + apiKey.length());
         }
     }
 
@@ -167,10 +168,23 @@ public class AIConnector {
     }
 
     private String resolveKey(String configPath, String envVar) {
-        String key = plugin.getConfig().getString(configPath, "");
-        if (key != null && !key.isBlank()) {
-            return key.trim();
+        // Accept multiple spellings to avoid silently missing user-provided keys
+        List<String> aliases = List.of(
+                configPath,
+                configPath.replace("-", ""),
+                configPath.replace("-", "").replace(".", "-"),
+                configPath.replace("api-key", "apiKey"),
+                configPath.replace("api-key", "apikey")
+        );
+
+        for (String path : aliases) {
+            String key = plugin.getConfig().getString(path, "");
+            if (key != null && !key.isBlank()) {
+                plugin.getLogger().info("Loaded API key for " + provider + " from config path: " + path);
+                return key.trim();
+            }
         }
+
         String env = System.getenv(envVar);
         if (env != null && !env.isBlank()) {
             plugin.getLogger().info("Using " + envVar + " from environment for " + provider + " API key.");

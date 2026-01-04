@@ -3,6 +3,7 @@ package com.yourname.jarvis.ui;
 import com.yourname.jarvis.Jarvis;
 import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.block.Block;
 import org.bukkit.block.TileState;
 import org.bukkit.entity.Player;
@@ -56,7 +57,11 @@ public class UIManager implements Listener {
     private boolean isControllerBell(ItemStack item) {
         if (item == null || item.getType() != Material.BELL) return false;
         if (!item.hasItemMeta()) return false;
-        return item.getItemMeta().getPersistentDataContainer().has(plugin.getControllerKey(), PersistentDataType.BYTE);
+        var container = item.getItemMeta().getPersistentDataContainer();
+        // Accept both current and legacy keys so older controller bells still work
+        if (container.has(plugin.getControllerKey(), PersistentDataType.BYTE)) return true;
+        NamespacedKey legacy = new NamespacedKey(plugin, "jarvis_controller");
+        return container.has(legacy, PersistentDataType.BYTE);
     }
 
     @EventHandler

@@ -183,28 +183,21 @@ public class JarvisNPC {
                 Location npcLoc = getCurrentLocation(npc);
                 debug.debug("Current NPC location: " + npcLoc.toVector());
 
-                Block ore = findBestOre(npcLoc);
-                if (ore == null) {
+                OreTarget target = findBestOre(npcLoc);
+                if (target == null) {
                     player.sendMessage("Jarvis: No ores nearby.");
                     debug.debug("No ores found around " + npcLoc);
                     cancel();
                     return;
                 }
 
+                Block ore = target.ore();
+                Location standSpot = target.standSpot();
+
                 debug.debug("Target ore " + ore.getType() + " at " + ore.getLocation());
 
                 boolean silk = ore.getType() == Material.DEEPSLATE_EMERALD_ORE || ore.getType() == Material.EMERALD_ORE;
                 equipPickaxe(npc, silk);
-
-                Location standSpot = findApproachLocation(ore, npcLoc);
-                if (standSpot == null) {
-                    // Carve a space above the ore so the NPC can stand and dig
-                    Block above = ore.getRelative(BlockFace.UP);
-                    if (!above.getType().isAir()) {
-                        above.breakNaturally();
-                    }
-                    standSpot = ore.getLocation().add(0.5, 1, 0.5);
-                }
 
                 ensureClearance(standSpot);
                 var navigator = npc.getNavigator();
@@ -250,8 +243,8 @@ public class JarvisNPC {
         activeTasks.put(player.getUniqueId(), task);
     }
 
-    private Block findBestOre(Location center) {
-        Block best = null;
+    private OreTarget findBestOre(Location center) {
+        OreTarget best = null;
         int bestIndex = -1;
 
         for (int x = -SEARCH_RADIUS; x <= SEARCH_RADIUS; x++) {
@@ -260,8 +253,20 @@ public class JarvisNPC {
                     Block b = center.clone().add(x, y, z).getBlock();
                     Material m = b.getType();
                     int index = ORE_PRIORITY.indexOf(m);
-                    if (index > bestIndex) {
-                        best = b;
+                    if (index <= bestIndex) continue;
+
+                    Location standSpot = findApproachLocation(b, center);
+                    if (standSpot == null) {
+                        // Try to create space directly above the ore
+                        Block above = b.getRelative(BlockFace.UP);
+                        Block twoAbove = above.getRelative(BlockFace.UP);
+                        if (!above.getType().isAir()) above.breakNaturally();
+                        if (!twoAbove.getType().isAir()) twoAbove.breakNaturally();
+                        standSpot = b.getLocation().add(0.5, 1, 0.5);
+                    }
+
+                    if (standSpot != null) {
+                        best = new OreTarget(b, standSpot);
                         bestIndex = index;
                     }
                 }
@@ -427,4 +432,6 @@ public class JarvisNPC {
     public NPC getNPCForPlayer(UUID uuid) {
         return playerNPCs.get(uuid);
     }
+
+    private record OreTarget(Block ore, Location standSpot) {}
 }

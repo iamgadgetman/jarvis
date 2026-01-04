@@ -35,6 +35,7 @@ Jarvis can call multiple AI providers for building plans or general questions:
 - **Gemini**: set `ai.provider: gemini`, and configure `ai.gemini.api-key` and `ai.gemini.model`.
 
 The plugin also accepts `OPENAI_API_KEY`, `GROK_API_KEY`, or `GEMINI_API_KEY` environment variables if the config values are empty.
+If you previously used `apiKey`/`apikey` (without a dash) in your config, those spellings are now recognized so existing files continue to work.
 
 ### Commands that use AI
 - `/jarvis ask <question>`: send a free-form prompt to the configured provider and return the reply in chat.
@@ -56,3 +57,5 @@ The plugin also accepts `OPENAI_API_KEY`, `GROK_API_KEY`, or `GEMINI_API_KEY` en
 3. Choose a local folder and click **Clone**. The source appears on disk and in GitHub Desktop.
 4. After pulling future updates, build with `mvn -DskipTests package` and copy `target/jarvis-0.0.1.jar` into your server's `plugins/` folder.
 5. Commit/push your own changes from GitHub Desktop when you're ready.
+
+> Tip: Old controller bells that used a different internal key now work again—you can right-click them to open the Jarvis menu and access loot without reissuing `/jarvis bell`.
