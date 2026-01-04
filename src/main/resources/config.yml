@@ -6,6 +6,11 @@ ai:
   grok:
     api-key: ""
     model: grok-4
+  gemini:
+    api-key: ""
+    model: gemini-1.5-flash
+    # Leave blank to use the default public Gemini endpoint pattern
+    endpoint: ""
 build:
   fallback-material: minecraft:dirt
 config-copies:

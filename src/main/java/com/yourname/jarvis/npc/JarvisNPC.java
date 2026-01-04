@@ -316,4 +316,12 @@ public class JarvisNPC {
     public NPC getNPCForPlayer(UUID uuid) {
         return playerNPCs.get(uuid);
     }
+
+    public int getActiveNpcCount() {
+        return (int) playerNPCs.values().stream().filter(NPC::isSpawned).count();
+    }
+
+    public int getActiveTaskCount() {
+        return activeTasks.size();
+    }
 }
