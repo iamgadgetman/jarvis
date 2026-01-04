@@ -1,6 +1,7 @@
 package com.yourname.jarvis.npc;
 
 import com.yourname.jarvis.Jarvis;
+import com.yourname.jarvis.util.DebugLogger;
 import net.citizensnpcs.api.npc.NPC;
 import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.trait.trait.Equipment;
@@ -18,6 +19,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.BlockIterator;
 
 import java.util.*;
 
@@ -26,6 +28,7 @@ public class JarvisNPC {
     private final Jarvis plugin;
     private final Map<UUID, NPC> playerNPCs = new HashMap<>();
     private final Map<UUID, BukkitRunnable> activeTasks = new HashMap<>();
+    private final DebugLogger debug;
 
     private static final int SEARCH_RADIUS = 32;
     private static final int PICKUP_RADIUS = 8;
@@ -44,6 +47,7 @@ public class JarvisNPC {
 
     public JarvisNPC(Jarvis plugin) {
         this.plugin = plugin;
+        this.debug = plugin.getDebugLogger();
     }
 
     public void summon(Player player) {
@@ -54,6 +58,8 @@ public class JarvisNPC {
         }
 
         NPC npc = CitizensAPI.getNPCRegistry().createNPC(EntityType.PLAYER, "Jarvis");
+        npc.data().set(NPC.Metadata.PLAYER_LIST, false); // avoid join/quit spam in console
+        debug.debug("Summoning NPC for " + player.getName());
 
         Location playerLoc = player.getLocation();
         Location spawnLoc = playerLoc.clone().add(playerLoc.getDirection().setY(0).normalize().multiply(3));
@@ -73,6 +79,7 @@ public class JarvisNPC {
         npc.spawn(spawnLoc);
         npc.getOrAddTrait(Inventory.class);
         playerNPCs.put(player.getUniqueId(), npc);
+        debug.debug("NPC spawned at " + spawnLoc);
 
         player.getWorld().playSound(spawnLoc, Sound.BLOCK_BELL_USE, 1.0f, 1.0f);
         player.sendMessage("Jarvis: At your service—let's make some magic.");
@@ -83,6 +90,7 @@ public class JarvisNPC {
         if (npc != null) {
             npc.destroy();
             stopTask(player);
+            debug.debug("NPC dismissed for " + player.getName());
             player.sendMessage("Jarvis: Until next time—poof!");
         }
     }
@@ -102,6 +110,7 @@ public class JarvisNPC {
 
         npc.teleport(target, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
         player.sendMessage("Jarvis: Right behind you!");
+        debug.debug("NPC teleported behind " + player.getName() + " to " + target);
     }
 
     public void attack(Player player) {
@@ -119,11 +128,12 @@ public class JarvisNPC {
             @Override
             public void run() {
                 if (!npc.isSpawned()) {
+                    debug.debug("NPC despawned during attack for " + player.getName());
                     cancel();
                     return;
                 }
 
-                Location npcLoc = npc.getStoredLocation();
+                Location npcLoc = getCurrentLocation(npc);
 
                 Monster mob = findNearestHostileMob(npcLoc);
                 if (mob != null && !mob.isDead()) {
@@ -156,32 +166,82 @@ public class JarvisNPC {
         NPC npc = getNPC(player);
         if (npc == null) return;
         stopTask(player);
+        debug.debug("Mine command started for " + player.getName());
 
         BukkitRunnable task = new BukkitRunnable() {
+            private Location lastLoc;
+            private int stuckTicks = 0;
+
             @Override
             public void run() {
                 if (!npc.isSpawned()) {
+                    debug.debug("NPC despawned during mining for " + player.getName());
                     cancel();
                     return;
                 }
 
-                Location npcLoc = npc.getStoredLocation();
+                Location npcLoc = getCurrentLocation(npc);
+                debug.debug("Current NPC location: " + npcLoc.toVector());
 
                 Block ore = findBestOre(npcLoc);
                 if (ore == null) {
                     player.sendMessage("Jarvis: No ores nearby.");
+                    debug.debug("No ores found around " + npcLoc);
                     cancel();
                     return;
                 }
 
+                debug.debug("Target ore " + ore.getType() + " at " + ore.getLocation());
+
                 boolean silk = ore.getType() == Material.DEEPSLATE_EMERALD_ORE || ore.getType() == Material.EMERALD_ORE;
                 equipPickaxe(npc, silk);
 
-                npc.getNavigator().setTarget(ore.getLocation());
+                Location standSpot = findApproachLocation(ore, npcLoc);
+                if (standSpot == null) {
+                    // Carve a space above the ore so the NPC can stand and dig
+                    Block above = ore.getRelative(BlockFace.UP);
+                    if (!above.getType().isAir()) {
+                        above.breakNaturally();
+                    }
+                    standSpot = ore.getLocation().add(0.5, 1, 0.5);
+                }
 
-                if (npcLoc.distance(ore.getLocation()) < 4) {
+                ensureClearance(standSpot);
+                var navigator = npc.getNavigator();
+                navigator.getLocalParameters().range(SEARCH_RADIUS);
+                navigator.setTarget(standSpot);
+                debug.debug("Navigating to stand spot " + standSpot);
+
+                if (!navigator.isNavigating()) {
+                    navigator.setTarget(standSpot);
+                    debug.debug("Navigator was idle, reissued move command.");
+                }
+
+                if (!hasLineOfSight(npc, ore)) {
+                    carveLineOfSight(npc, ore);
+                    debug.debug("Carving line of sight to ore...");
+                }
+
+                if (lastLoc != null && npcLoc.distanceSquared(lastLoc) < 0.06) {
+                    stuckTicks++;
+                    if (stuckTicks == 3) {
+                        debug.debug("Navigator appears stuck. Clearing path toward stand spot...");
+                        clearObstaclesToward(npcLoc, standSpot);
+                        navigator.setTarget(standSpot);
+                    } else if (stuckTicks >= 6) {
+                        debug.debug("Still stuck. Teleporting near stand spot to resume mining.");
+                        npc.teleport(standSpot, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                        stuckTicks = 0;
+                    }
+                } else {
+                    stuckTicks = 0;
+                }
+                lastLoc = npcLoc.clone();
+
+                if (npcLoc.distanceSquared(standSpot) <= 4) {
                     ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
                     ore.breakNaturally(tool);
+                    debug.debug("Breaking ore at " + ore.getLocation());
                     pickupNearbyItems(npc);
                 }
             }
@@ -221,7 +281,7 @@ public class JarvisNPC {
     }
 
     private void pickupNearbyItems(NPC npc) {
-        Location loc = npc.getStoredLocation();
+        Location loc = getCurrentLocation(npc);
         Inventory invTrait = npc.getOrAddTrait(Inventory.class);
         ItemStack[] contents = invTrait.getContents();
 
@@ -248,6 +308,87 @@ public class JarvisNPC {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private Location getCurrentLocation(NPC npc) {
+        if (npc.getEntity() != null) {
+            return npc.getEntity().getLocation();
+        }
+        return npc.getStoredLocation();
+    }
+
+    private Location findApproachLocation(Block ore, Location npcLoc) {
+        // Try to find an adjacent air block with solid ground and headroom to stand on, favoring closest to NPC
+        Location best = null;
+        double bestDist = Double.MAX_VALUE;
+
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (dx == 0 && dz == 0) continue;
+                Block candidate = ore.getRelative(dx, 0, dz);
+                if (isStandable(candidate)) {
+                    Location loc = candidate.getLocation().add(0.5, 0, 0.5);
+                    double dist = loc.distanceSquared(npcLoc);
+                    if (dist < bestDist) {
+                        best = loc;
+                        bestDist = dist;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    private boolean isStandable(Block block) {
+        Block ground = block.getRelative(BlockFace.DOWN);
+        Block head = block.getRelative(BlockFace.UP);
+        return block.getType().isAir() && head.getType().isAir() && ground.getType().isSolid();
+    }
+
+    private void ensureClearance(Location standSpot) {
+        Block feet = standSpot.getBlock();
+        Block head = feet.getRelative(BlockFace.UP);
+        if (!feet.getType().isAir()) {
+            feet.breakNaturally();
+        }
+        if (!head.getType().isAir()) {
+            head.breakNaturally();
+        }
+    }
+
+    private void clearObstaclesToward(Location from, Location to) {
+        BlockIterator iter = new BlockIterator(from.getWorld(), from.toVector(), to.toVector().subtract(from.toVector()), 0, (int) Math.ceil(from.distance(to)));
+        while (iter.hasNext()) {
+            Block b = iter.next();
+            if (b.getLocation().distanceSquared(to) < 1) break;
+            if (!b.getType().isAir() && b.getType().isSolid()) {
+                b.breakNaturally();
+                debug.debug("Cleared obstructing block " + b.getType() + " at " + b.getLocation());
+                break;
+            }
+        }
+    }
+
+    private boolean hasLineOfSight(NPC npc, Block ore) {
+        if (npc.getEntity() instanceof org.bukkit.entity.LivingEntity living) {
+            return living.hasLineOfSight(ore);
+        }
+        return true;
+    }
+
+    private void carveLineOfSight(NPC npc, Block ore) {
+        if (!(npc.getEntity() instanceof org.bukkit.entity.LivingEntity living)) return;
+        Location eye = living.getEyeLocation();
+        Location target = ore.getLocation().add(0.5, 0.5, 0.5);
+        BlockIterator iter = new BlockIterator(eye.getWorld(), eye.toVector(), target.toVector().subtract(eye.toVector()), 0, (int) Math.ceil(eye.distance(target)));
+        while (iter.hasNext()) {
+            Block b = iter.next();
+            if (b.equals(ore)) break;
+            if (!b.getType().isAir()) {
+                b.breakNaturally();
+                break;
             }
         }
     }

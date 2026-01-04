@@ -7,11 +7,13 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import java.io.File;
 import com.yourname.jarvis.ai.AIConnector;
 import com.yourname.jarvis.npc.JarvisNPC;
 import com.yourname.jarvis.commands.JarvisCommands;
 import com.yourname.jarvis.ui.UIManager;
 import com.yourname.jarvis.DatabaseManager;
+import com.yourname.jarvis.util.DebugLogger;
 
 public class Jarvis extends JavaPlugin {
 
@@ -19,14 +21,21 @@ public class Jarvis extends JavaPlugin {
     private JarvisNPC jarvisNPC;
     private UIManager uiManager;
     private DatabaseManager databaseManager;
+    private DebugLogger debugLogger;
 
     @Override
     public void onEnable() {
         getLogger().info("Jarvis AI Companion enabling...");
 
         saveDefaultConfig();
+        reloadConfig();
+        getLogger().info("Config loaded from: " + getDataFolder().getAbsolutePath() + File.separator + "config.yml");
+
+        debugLogger = new DebugLogger(this);
+        getLogger().info("Debug logging is " + (debugLogger.isEnabled() ? "ENABLED" : "disabled") + " (toggle with /jarvis debug on|off)");
 
         aiConnector = new AIConnector(this);
+        getLogger().info("AI provider: " + aiConnector.getProviderName() + " (model=" + aiConnector.getModelName() + ", key set=" + aiConnector.isApiKeyPresent() + ")");
 
         databaseManager = new DatabaseManager(this);
         databaseManager.initializeDatabaseConnections();
@@ -59,6 +68,9 @@ public class Jarvis extends JavaPlugin {
 
     public void reload() {
         reloadConfig();
+        if (debugLogger != null) {
+            debugLogger.reload();
+        }
         if (aiConnector != null) {
             aiConnector.reloadConfig();
         }
@@ -71,6 +83,10 @@ public class Jarvis extends JavaPlugin {
 
     public JarvisNPC getJarvisNPC() {
         return jarvisNPC;
+    }
+
+    public DebugLogger getDebugLogger() {
+        return debugLogger;
     }
 
     public NamespacedKey getControllerKey() {
