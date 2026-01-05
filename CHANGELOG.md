@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Claude AI Support**: Full integration with Anthropic's Claude Sonnet 4
   - Latest model: `claude-sonnet-4-20250514`
   - Better context understanding and creative responses
+- **Greeting Animation**: Jarvis crouches twice after being summoned to say hello
+- **Ore Reachability Check**: Jarvis now verifies ores are reachable before targeting them
 
 ### Changed
 - **Quest System**: Complete overhaul of item tracking
@@ -27,22 +29,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Flexible material matching for all block/item types
   - Improved matching for flowers and material variants
   - Multiple event listeners for reliability
-- **Ore Mining Priority**: Reversed to mine valuable ores first
-  - Priority order (lowest to highest): Coal → Copper → Iron → Lapis → Redstone → Gold → Diamond → Emerald → Ancient Debris
-  - Jarvis now prioritizes diamonds and emeralds over coal
+- **Ore Mining Priority**: Distance-first strategy with value-based tiebreaker
+  - Prioritizes nearest ores first (within 10 block threshold)
+  - Then picks most valuable ore in that group
+  - Example: Nearby coal mined before distant diamonds
+  - More efficient mining patterns
 - **Deepslate Emerald Ore**: Now uses Silk Touch enchantment automatically
   - Keeps emerald ore blocks intact for collection
-- **Mining Navigation**: Removed buggy scaffolding system
-  - Now uses Citizens' built-in pathfinding
-  - No more trails of scaffolding blocks
-  - Smoother navigation and climbing
-  - More reliable pathfinding to ores
+- **Mining Navigation**: Smooth walking with jumping capability
+  - Removed buggy scaffolding system completely
+  - Smooth walking movement (no more hopping)
+  - Can jump up 1 block obstacles
+  - Better terrain climbing
+  - Update frequency: 10 ticks (0.5 seconds) for smoother movement
+  - Move speed adjusted to 0.5 for natural walking pace
 
 ### Fixed
 - **Java 17 Compatibility**: All compilation errors resolved
   - Fixed `instanceof` pattern matching for Java 17
   - Fixed `ChatColor` string concatenation
   - Fixed WorldEdit `getVolume()` method call
+  - Fixed Citizens Navigator API incompatibility
 - **Scaffolding Issues**: Completely removed problematic scaffolding logic
   - Fixed: NPC dropping scaffolding at every block
   - Fixed: NPC unable to climb scaffolding
@@ -51,6 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed: Flowers not being tracked when collected
   - Fixed: Items only counting when broken, not picked up
   - Fixed: Material name mismatches
+- **Mining Movement**: 
+  - Fixed: Hopping/jerky movement during mining
+  - Fixed: Targeting unreachable ores on cliffs
+  - Fixed: Getting stuck on terrain
+  - Fixed: Ignoring nearby ores for distant valuable ones
 
 ### Technical
 - Updated project version to 0.0.2
@@ -59,6 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved code organization and documentation
 - Database schema updates for schematics
 - Enhanced error handling throughout
+- Optimized NPC movement updates (10 ticks vs 5 ticks)
+- Added ore reachability validation
 
 ## [0.0.1] - 2025-01-XX
 

@@ -21,6 +21,7 @@ com/yourname/jarvis/quests/QuestSystem$Objective.class
 com/yourname/jarvis/commands/JarvisCommands$1.class
 com/yourname/jarvis/Jarvis.class
 com/yourname/jarvis/commands/JarvisCommands$1$2.class
+com/yourname/jarvis/npc/JarvisNPC$3.class
 com/yourname/jarvis/listeners/ChatListener$1.class
 com/yourname/jarvis/building/BuildingAssistant$1.class
 com/yourname/jarvis/building/BuildingAssistant.class

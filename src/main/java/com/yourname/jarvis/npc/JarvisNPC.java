@@ -32,7 +32,7 @@ public class JarvisNPC {
     private static final int SEARCH_RADIUS = 32;
     private static final int PICKUP_RADIUS = 8;
     private static final double REACH_DISTANCE = 4.5;
-    private static final double MOVE_SPEED = 0.3;
+    private static final double MOVE_SPEED = 0.5; // Increased for smoother, less frequent updates
 
     // Ore priority list - REVERSED: Lowest priority first (coal), highest last (ancient debris)
     // Lower index = mine last, Higher index = mine first
@@ -90,6 +90,33 @@ public class JarvisNPC {
 
         player.getWorld().playSound(spawnLoc, Sound.BLOCK_BELL_USE, 1.0f, 1.0f);
         player.sendMessage("Jarvis: At your service—let's make some magic.");
+        
+        // Greeting animation - crouch a couple times to say hello
+        new BukkitRunnable() {
+            int crouchCount = 0;
+            boolean isCrouching = false;
+            
+            @Override
+            public void run() {
+                if (!npc.isSpawned() || npc.getEntity() == null) {
+                    cancel();
+                    return;
+                }
+                
+                if (crouchCount >= 4) { // 2 full crouch cycles (down-up-down-up)
+                    cancel();
+                    return;
+                }
+                
+                // Toggle crouch/stand
+                if (npc.getEntity() instanceof Player) {
+                    Player npcPlayer = (Player) npc.getEntity();
+                    npcPlayer.setSneaking(!isCrouching);
+                    isCrouching = !isCrouching;
+                    crouchCount++;
+                }
+            }
+        }.runTaskTimer(plugin, 30L, 8L); // Start after 1.5 seconds, toggle every 0.4 seconds
     }
 
     public void dismiss(Player player) {
@@ -237,7 +264,7 @@ public class JarvisNPC {
                 processMining(npc, player, state);
             }
         };
-        task.runTaskTimer(plugin, 0L, 5L);
+        task.runTaskTimer(plugin, 0L, 10L); // Run every 10 ticks (0.5 seconds) for smooth walking
         activeTasks.put(player.getUniqueId(), task);
     }
 
@@ -291,13 +318,54 @@ public class JarvisNPC {
         } else {
             // No blocking blocks - move toward ore
             Vector moveDirection = toOre.clone().normalize().multiply(MOVE_SPEED);
-            Location newLoc = npcLoc.clone().add(moveDirection);
+            Location targetLoc = npcLoc.clone().add(moveDirection);
             
-            // Only move if target location is safe (air or can walk through)
-            if (newLoc.getBlock().getType().isAir() || !newLoc.getBlock().getType().isSolid()) {
-                // Face the direction we're moving
-                newLoc.setDirection(moveDirection);
-                npc.getEntity().teleport(newLoc);
+            // Check if we need to jump up a block
+            Block targetBlock = targetLoc.getBlock();
+            Block blockBelow = targetLoc.clone().subtract(0, 1, 0).getBlock();
+            
+            // If target is solid but we can jump onto it (1 block high)
+            if (targetBlock.getType().isSolid() && toOre.getY() > 0) {
+                // Jump up one block
+                targetLoc.add(0, 1, 0);
+                
+                // Make sure there's space above
+                if (targetLoc.getBlock().getType().isAir()) {
+                    // Face the direction and teleport
+                    targetLoc.setDirection(moveDirection);
+                    if (npc.getEntity() != null) {
+                        npc.getEntity().teleport(targetLoc);
+                    }
+                    return;
+                }
+            }
+            
+            // Normal walking - only move if target is air and there's ground below
+            if ((targetBlock.getType().isAir() || !targetBlock.getType().isSolid()) &&
+                blockBelow.getType().isSolid()) {
+                
+                // Smooth movement - preserve current direction, just update position
+                targetLoc.setYaw(npcLoc.getYaw());
+                targetLoc.setPitch(npcLoc.getPitch());
+                
+                // Look in the direction we're moving
+                Location lookDirection = npcLoc.clone();
+                lookDirection.setDirection(moveDirection);
+                targetLoc.setYaw(lookDirection.getYaw());
+                targetLoc.setPitch(0); // Keep level, don't look up/down
+                
+                if (npc.getEntity() != null) {
+                    npc.getEntity().teleport(targetLoc);
+                }
+            } else if (!blockBelow.getType().isSolid() && toOre.getY() < 0) {
+                // Need to go down - allow falling
+                targetLoc.subtract(0, 1, 0);
+                targetLoc.setYaw(npcLoc.getYaw());
+                targetLoc.setPitch(npcLoc.getPitch());
+                
+                if (npc.getEntity() != null) {
+                    npc.getEntity().teleport(targetLoc);
+                }
             }
         }
     }
@@ -323,6 +391,34 @@ public class JarvisNPC {
         int bestPriority = -1;
         double closestDist = Double.MAX_VALUE;
 
+        // First pass: find the closest ore within reasonable distance
+        double nearestOreDistance = Double.MAX_VALUE;
+        
+        for (int x = -SEARCH_RADIUS; x <= SEARCH_RADIUS; x++) {
+            for (int y = -SEARCH_RADIUS; y <= SEARCH_RADIUS; y++) {
+                for (int z = -SEARCH_RADIUS; z <= SEARCH_RADIUS; z++) {
+                    Block b = center.clone().add(x, y, z).getBlock();
+                    Material m = b.getType();
+                    
+                    if (ORE_PRIORITY.contains(m)) {
+                        double dist = center.distance(b.getLocation());
+                        if (dist < nearestOreDistance) {
+                            nearestOreDistance = dist;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // If no ores found
+        if (nearestOreDistance == Double.MAX_VALUE) {
+            return null;
+        }
+        
+        // Second pass: among ores within 10 blocks of the nearest ore, pick by priority
+        // This groups nearby ores together and picks the most valuable
+        double distanceThreshold = Math.min(nearestOreDistance + 10.0, SEARCH_RADIUS);
+        
         for (int x = -SEARCH_RADIUS; x <= SEARCH_RADIUS; x++) {
             for (int y = -SEARCH_RADIUS; y <= SEARCH_RADIUS; y++) {
                 for (int z = -SEARCH_RADIUS; z <= SEARCH_RADIUS; z++) {
@@ -333,18 +429,66 @@ public class JarvisNPC {
                     if (priority != -1) {
                         double dist = center.distance(b.getLocation());
                         
-                        // Prefer HIGHER priority ores (higher index = more valuable)
-                        // Changed from > to < for correct priority ordering
-                        if (priority > bestPriority || (priority == bestPriority && dist < closestDist)) {
-                            best = b;
-                            bestPriority = priority;
-                            closestDist = dist;
+                        // Only consider ores within distance threshold
+                        if (dist <= distanceThreshold) {
+                            // Check if ore is reachable (not too high, has path)
+                            if (isOreReachable(center, b)) {
+                                // Prefer HIGHER priority ores (higher index = more valuable)
+                                // But only among the nearest group
+                                if (priority > bestPriority || (priority == bestPriority && dist < closestDist)) {
+                                    best = b;
+                                    bestPriority = priority;
+                                    closestDist = dist;
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+        
+        // If no reachable ores in threshold, just get the absolute nearest
+        if (best == null) {
+            for (int x = -SEARCH_RADIUS; x <= SEARCH_RADIUS; x++) {
+                for (int y = -SEARCH_RADIUS; y <= SEARCH_RADIUS; y++) {
+                    for (int z = -SEARCH_RADIUS; z <= SEARCH_RADIUS; z++) {
+                        Block b = center.clone().add(x, y, z).getBlock();
+                        Material m = b.getType();
+                        
+                        if (ORE_PRIORITY.contains(m)) {
+                            double dist = center.distance(b.getLocation());
+                            if (dist < closestDist) {
+                                best = b;
+                                closestDist = dist;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
         return best;
+    }
+    
+    private boolean isOreReachable(Location from, Block ore) {
+        Location oreLoc = ore.getLocation();
+        double verticalDist = Math.abs(oreLoc.getY() - from.getY());
+        double horizontalDist = Math.sqrt(
+            Math.pow(oreLoc.getX() - from.getX(), 2) + 
+            Math.pow(oreLoc.getZ() - from.getZ(), 2)
+        );
+        
+        // Can't reach if too high up (more than 3 blocks)
+        if (verticalDist > 3) {
+            return false;
+        }
+        
+        // Can't reach if too steep (vertical is more than horizontal)
+        if (verticalDist > horizontalDist + 2) {
+            return false;
+        }
+        
+        return true;
     }
 
     private boolean isOre(Material mat) {
