@@ -7,6 +7,7 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.scheduler.BukkitRunnable;
 
 public class JarvisCommands implements CommandExecutor {
 
@@ -42,21 +43,15 @@ public class JarvisCommands implements CommandExecutor {
         }
 
         // All other commands are player-only
-        if (!(sender instanceof Player player)) {
+        if (!(sender instanceof Player)) {
             sender.sendMessage(ChatColor.RED + "Only players can use other Jarvis commands.");
             return true;
         }
+        
+        Player player = (Player) sender;
 
         if (args.length == 0) {
-            player.sendMessage(ChatColor.GOLD + "=== Jarvis Commands ===");
-            player.sendMessage(ChatColor.YELLOW + "/jarvis summon   - Bring Jarvis to you");
-            player.sendMessage(ChatColor.YELLOW + "/jarvis dismiss  - Send Jarvis away");
-            player.sendMessage(ChatColor.YELLOW + "/jarvis return   - Warp Jarvis back");
-            player.sendMessage(ChatColor.YELLOW + "/jarvis attack   - Fight mobs");
-            player.sendMessage(ChatColor.YELLOW + "/jarvis mine     - Mine ores");
-            player.sendMessage(ChatColor.YELLOW + "/jarvis loot     - Open inventory");
-            player.sendMessage(ChatColor.YELLOW + "/jarvis bell     - Get controller bell");
-            player.sendMessage(ChatColor.GREEN + "/jarvis reload   - Reload config (admin)");
+            showHelp(player);
             return true;
         }
 
@@ -73,8 +68,204 @@ public class JarvisCommands implements CommandExecutor {
                 player.getInventory().addItem(plugin.getControllerBell());
                 player.sendMessage(ChatColor.GREEN + "Here's your Jarvis Controller bell!");
             }
-            default -> player.sendMessage(ChatColor.RED + "Unknown command. Type /jarvis for help.");
+            
+            // Building commands
+            case "build" -> {
+                if (plugin.getSchematicManager() == null) {
+                    player.sendMessage(ChatColor.RED + "Building system not available (WorldEdit required)");
+                    return true;
+                }
+                
+                if (args.length < 2) {
+                    player.sendMessage(ChatColor.RED + "Usage: /jarvis build <description>");
+                    player.sendMessage(ChatColor.GRAY + "Example: /jarvis build small house");
+                    return true;
+                }
+                
+                // Join remaining args as description
+                StringBuilder description = new StringBuilder();
+                for (int i = 1; i < args.length; i++) {
+                    description.append(args[i]).append(" ");
+                }
+                
+                // Use AI to select and build schematic
+                plugin.getSchematicManager().buildWithAI(player, description.toString().trim());
+            }
+            
+            case "cancelbuild" -> {
+                if (plugin.getBuildingAssistant() == null) {
+                    player.sendMessage(ChatColor.RED + "Building assistant not available");
+                    return true;
+                }
+                plugin.getBuildingAssistant().cancelBuild(player);
+            }
+            
+            // Schematic management commands
+            case "schematics", "schematic" -> {
+                if (plugin.getSchematicManager() == null) {
+                    player.sendMessage(ChatColor.RED + "Schematic manager not available (WorldEdit required)");
+                    return true;
+                }
+                
+                if (args.length < 2) {
+                    plugin.getSchematicManager().listSchematics(player);
+                    return true;
+                }
+                
+                String schematicSub = args[1].toLowerCase();
+                switch (schematicSub) {
+                    case "list" -> plugin.getSchematicManager().listSchematics(player);
+                    
+                    case "scan", "reload" -> {
+                        player.sendMessage(ChatColor.GOLD + "Jarvis: Scanning for new schematics...");
+                        plugin.getSchematicManager().scanFolder();
+                        player.sendMessage(ChatColor.GREEN + "Jarvis: Scan complete! Found " + 
+                                plugin.getSchematicManager().getSchematics().size() + " schematics.");
+                    }
+                    
+                    case "download" -> {
+                        if (args.length < 4) {
+                            player.sendMessage(ChatColor.RED + "Usage: /jarvis schematics download <url> <name>");
+                            player.sendMessage(ChatColor.GRAY + "Example: /jarvis schematics download https://example.com/house.schem myhouse");
+                            return true;
+                        }
+                        String url = args[2];
+                        String name = args[3];
+                        plugin.getSchematicManager().downloadSchematic(player, url, name);
+                    }
+                    
+                    case "folder" -> {
+                        player.sendMessage(ChatColor.GOLD + "Schematics folder: " + 
+                                ChatColor.YELLOW + plugin.getSchematicManager().getSchematicFolder().toString());
+                        player.sendMessage(ChatColor.GRAY + "Place .schem or .schematic files here and use /jarvis schematics scan");
+                    }
+                    
+                    default -> player.sendMessage(ChatColor.RED + "Unknown schematic command. Use: list, scan, download, folder");
+                }
+            }
+            
+            // Ask command - simple Q&A with AI
+            case "ask" -> {
+                if (args.length < 2) {
+                    player.sendMessage(ChatColor.RED + "Usage: /jarvis ask <question>");
+                    player.sendMessage(ChatColor.GRAY + "Example: /jarvis ask what are the best mining levels?");
+                    return true;
+                }
+                
+                // Join remaining args as question
+                StringBuilder question = new StringBuilder();
+                for (int i = 1; i < args.length; i++) {
+                    question.append(args[i]).append(" ");
+                }
+                
+                player.sendMessage(ChatColor.GOLD + "Jarvis: Let me think...");
+                
+                // Query AI asynchronously
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            String answer = plugin.getAIConnector().sendSimpleRequest(question.toString().trim());
+                            
+                            // Send answer on main thread
+                            new BukkitRunnable() {
+                                @Override
+                                public void run() {
+                                    player.sendMessage(ChatColor.AQUA + "Jarvis: " + ChatColor.WHITE + answer);
+                                }
+                            }.runTask(plugin);
+                            
+                        } catch (Exception e) {
+                            plugin.getLogger().warning("Failed to get AI answer: " + e.getMessage());
+                            
+                            new BukkitRunnable() {
+                                @Override
+                                public void run() {
+                                    player.sendMessage(ChatColor.RED + "Jarvis: I couldn't find an answer. Try rephrasing your question.");
+                                }
+                            }.runTask(plugin);
+                        }
+                    }
+                }.runTaskAsynchronously(plugin);
+            }
+            
+            // Quest commands
+            case "quest" -> {
+                if (plugin.getQuestSystem() == null) {
+                    player.sendMessage(ChatColor.RED + "Quest system not available");
+                    return true;
+                }
+                
+                if (args.length < 2) {
+                    plugin.getQuestSystem().showQuestStatus(player);
+                    return true;
+                }
+                
+                String questSub = args[1].toLowerCase();
+                switch (questSub) {
+                    case "new", "accept", "get" -> plugin.getQuestSystem().generateAndAssignQuest(player);
+                    case "status", "list", "show" -> plugin.getQuestSystem().showQuestStatus(player);
+                    case "clear", "abandon" -> {
+                        if (player.hasPermission("jarvis.admin")) {
+                            plugin.getQuestSystem().clearQuests(player);
+                        } else {
+                            player.sendMessage(ChatColor.RED + "You don't have permission.");
+                        }
+                    }
+                    default -> player.sendMessage(ChatColor.RED + "Unknown quest command. Use: new, status, clear");
+                }
+            }
+            
+            case "help" -> showHelp(player);
+            
+            default -> player.sendMessage(ChatColor.RED + "Unknown command. Type /jarvis help for help.");
         }
         return true;
+    }
+
+    private void showHelp(Player player) {
+        player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
+        player.sendMessage(ChatColor.GOLD + "  Jarvis AI Companion v3.0");
+        player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
+        
+        player.sendMessage(ChatColor.YELLOW + "NPC Commands:");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis summon" + ChatColor.GRAY + " - Bring Jarvis to you");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis dismiss" + ChatColor.GRAY + " - Send Jarvis away");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis return" + ChatColor.GRAY + " - Warp Jarvis back");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis attack" + ChatColor.GRAY + " - Fight mobs");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis mine" + ChatColor.GRAY + " - Mine ores");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis loot" + ChatColor.GRAY + " - Open inventory");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis bell" + ChatColor.GRAY + " - Get controller bell");
+        
+        if (plugin.getBuildingAssistant() != null) {
+            player.sendMessage(ChatColor.YELLOW + "Building Commands:");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis build <desc>" + ChatColor.GRAY + " - AI builds from schematics");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis schematics" + ChatColor.GRAY + " - List available schematics");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis schematics scan" + ChatColor.GRAY + " - Reload schematic folder");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis schematics download <url> <name>" + ChatColor.GRAY + " - Download schematic");
+        }
+        
+        if (plugin.getQuestSystem() != null) {
+            player.sendMessage(ChatColor.YELLOW + "Quest Commands:");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis quest" + ChatColor.GRAY + " - Show active quests");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis quest new" + ChatColor.GRAY + " - Get a new quest");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis quest status" + ChatColor.GRAY + " - Quest progress");
+        }
+        
+        player.sendMessage(ChatColor.YELLOW + "Natural Language:");
+        player.sendMessage(ChatColor.GRAY + "  Just say 'jarvis <command>' in chat!");
+        player.sendMessage(ChatColor.GRAY + "  Example: 'jarvis come here and mine'");
+        
+        player.sendMessage(ChatColor.YELLOW + "AI Assistant:");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis ask <question>" + ChatColor.GRAY + " - Ask Jarvis anything");
+        player.sendMessage(ChatColor.GRAY + "  Example: /jarvis ask what are the best enchantments?");
+        
+        if (player.hasPermission("jarvis.admin")) {
+            player.sendMessage(ChatColor.YELLOW + "Admin Commands:");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis reload" + ChatColor.GRAY + " - Reload config");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis debug" + ChatColor.GRAY + " - Debug info");
+        }
+        
+        player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
     }
 }

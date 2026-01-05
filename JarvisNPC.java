@@ -266,8 +266,8 @@ public class JarvisNPC {
             return;
         }
 
-        // Calculate path to ore
-        Vector toOre = oreLoc.toVector().subtract(npcLoc.toVector());
+        // Use Citizens' pathfinding for navigation
+        npc.getNavigator().setTarget(oreLoc, false);
         
         // Find and break blocking blocks
         Block blockingBlock = findBlockingBlock(npcLoc, oreLoc);
@@ -288,17 +288,6 @@ public class JarvisNPC {
             ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
             blockingBlock.breakNaturally(tool);
             pickupNearbyItems(npc);
-        } else {
-            // No blocking blocks - move toward ore
-            Vector moveDirection = toOre.clone().normalize().multiply(MOVE_SPEED);
-            Location newLoc = npcLoc.clone().add(moveDirection);
-            
-            // Only move if target location is safe (air or can walk through)
-            if (newLoc.getBlock().getType().isAir() || !newLoc.getBlock().getType().isSolid()) {
-                // Face the direction we're moving
-                newLoc.setDirection(moveDirection);
-                npc.getEntity().teleport(newLoc);
-            }
         }
     }
 

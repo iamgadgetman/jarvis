@@ -1,5 +1,5 @@
 ai:
-  provider: openai
+  provider: openai  # Options: openai, grok, gemini, claude
   openai:
     api-key: ""
     model: gpt-3.5-turbo
@@ -11,9 +11,21 @@ ai:
     model: gemini-1.5-flash
     # Leave blank to use the default public Gemini endpoint pattern
     endpoint: ""
+  claude:
+    api-key: ""
+    model: claude-sonnet-4-20250514
+    endpoint: "https://api.anthropic.com/v1/messages"
 build:
   fallback-material: minecraft:dirt
 config-copies:
   folder: config-copies
 databases:
   file: databases.yml
+natural-language:
+  enabled: true
+  prefix: "jarvis"  # Optional: only process messages starting with this
+  require-prefix: false  # If true, only messages starting with prefix are processed
+quests:
+  enabled: true
+  max-active-per-player: 3
+  reward-multiplier: 1.0

@@ -33,6 +33,13 @@ public class AIConnector {
         this.provider = ai != null ? ai.getString("provider", "openai").toLowerCase() : "openai";
 
         switch (provider) {
+            case "claude" -> {
+                ConfigurationSection claude = ai != null ? ai.getConfigurationSection("claude") : null;
+                this.apiKey = claude != null ? claude.getString("api-key", "") : "";
+                this.model = claude != null ? claude.getString("model", "claude-sonnet-4-20250514") : "claude-sonnet-4-20250514";
+                String configuredEndpoint = claude != null ? claude.getString("endpoint") : null;
+                this.endpoint = fallbackIfBlank(configuredEndpoint, "https://api.anthropic.com/v1/messages");
+            }
             case "grok" -> {
                 ConfigurationSection grok = ai != null ? ai.getConfigurationSection("grok") : null;
                 this.apiKey = grok != null ? grok.getString("api-key", "") : "";
@@ -62,16 +69,129 @@ public class AIConnector {
         }
     }
 
+    /**
+     * Query AI for a Minecraft build plan
+     */
     public String queryBuildPlan(String description) throws Exception {
         String prompt = "Output ONLY valid JSON, no extra text. Generate a Minecraft structure as JSON: {\"dimensions\":{\"width\":int,\"height\":int,\"length\":int},\"blocks\":[{\"x\":int,\"y\":int,\"z\":int,\"material\":\"minecraft:stone\"},...]} for: " + description;
         return sendRequest(prompt, "You are a Minecraft build planner. Output ONLY valid JSON.");
     }
 
+    /**
+     * Parse natural language command into structured action
+     */
+    public String parseNaturalLanguage(String message, String playerName, String context) throws Exception {
+        String systemPrompt = "You are Jarvis, an AI assistant in Minecraft. Parse player commands into JSON actions. " +
+                "Available actions: summon, dismiss, return, attack, mine, follow, build, quest_accept, quest_status. " +
+                "Output format: {\"action\":\"...\",\"parameters\":{...}} " +
+                "Examples: " +
+                "'come here' -> {\"action\":\"summon\"} " +
+                "'start mining' -> {\"action\":\"mine\"} " +
+                "'build a house' -> {\"action\":\"build\",\"parameters\":{\"description\":\"house\"}} " +
+                "Output ONLY valid JSON.";
+        
+        String userPrompt = String.format("Player %s says: \"%s\". Context: %s", playerName, message, context);
+        return sendRequest(userPrompt, systemPrompt);
+    }
+
+    /**
+     * Generate a quest based on player level and context
+     */
+    public String generateQuest(int playerLevel, String biome, String recentActivity) throws Exception {
+        String systemPrompt = "You are a Minecraft quest generator. Create engaging quests appropriate for the player's level and location. " +
+                "Output format: {\"title\":\"...\",\"description\":\"...\",\"objectives\":[{\"type\":\"mine|kill|collect|build\",\"target\":\"...\",\"amount\":int}],\"rewards\":{\"xp\":int,\"items\":[{\"material\":\"minecraft:...\",\"amount\":int}]}} " +
+                "Output ONLY valid JSON.";
+        
+        String userPrompt = String.format("Generate a quest for player level %d in %s biome. Recent activity: %s", 
+                playerLevel, biome, recentActivity);
+        return sendRequest(userPrompt, systemPrompt);
+    }
+
+    /**
+     * Generate dialogue response
+     */
+    public String generateDialogue(String playerMessage, String npcContext) throws Exception {
+        String systemPrompt = "You are Jarvis, a witty and helpful AI companion in Minecraft. " +
+                "Respond naturally and helpfully. Keep responses concise (1-2 sentences). " +
+                "You can help with mining, building, fighting, and quests.";
+        
+        String userPrompt = String.format("Context: %s\nPlayer: %s\nRespond as Jarvis:", npcContext, playerMessage);
+        return sendRequest(userPrompt, systemPrompt);
+    }
+
+    /**
+     * Send a simple request to AI (for general questions)
+     */
+    public String sendSimpleRequest(String prompt) throws Exception {
+        String systemPrompt = "You are Jarvis, a helpful AI assistant in Minecraft. " +
+                "Provide clear, concise answers. Be friendly and knowledgeable.";
+        return sendRequest(prompt, systemPrompt);
+    }
+
     private String sendRequest(String userContent, String systemContent) throws Exception {
-        if ("gemini".equals(provider)) {
-            return sendGeminiRequest(userContent, systemContent);
+        switch (provider) {
+            case "claude" -> {
+                return sendClaudeRequest(userContent, systemContent);
+            }
+            case "gemini" -> {
+                return sendGeminiRequest(userContent, systemContent);
+            }
+            default -> {
+                return sendOpenAIStyleRequest(userContent, systemContent);
+            }
+        }
+    }
+
+    private String sendClaudeRequest(String userContent, String systemContent) throws Exception {
+        URL url = new URL(endpoint);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("x-api-key", apiKey);
+        conn.setRequestProperty("anthropic-version", "2023-06-01");
+        conn.setDoOutput(true);
+
+        JSONObject payload = new JSONObject();
+        payload.put("model", model);
+        payload.put("max_tokens", 2000);
+        payload.put("system", systemContent);
+
+        JSONArray messages = new JSONArray();
+        messages.put(new JSONObject()
+                .put("role", "user")
+                .put("content", userContent));
+        payload.put("messages", messages);
+
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
         }
 
+        int responseCode = conn.getResponseCode();
+        if (responseCode != 200) {
+            String error = readErrorStream(conn);
+            throw new RuntimeException("Claude API error: " + responseCode + " - " + error);
+        }
+
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            StringBuilder response = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) response.append(line);
+            
+            JSONObject json = new JSONObject(response.toString());
+            JSONArray content = json.getJSONArray("content");
+            
+            // Claude returns content as an array of content blocks
+            for (int i = 0; i < content.length(); i++) {
+                JSONObject block = content.getJSONObject(i);
+                if (block.getString("type").equals("text")) {
+                    return block.getString("text").trim();
+                }
+            }
+            throw new RuntimeException("No text content in Claude response");
+        }
+    }
+
+    private String sendOpenAIStyleRequest(String userContent, String systemContent) throws Exception {
         URL url = new URL(endpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -92,8 +212,10 @@ public class AIConnector {
             os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
         }
 
-        if (conn.getResponseCode() != 200) {
-            throw new RuntimeException("HTTP error: " + conn.getResponseCode());
+        int responseCode = conn.getResponseCode();
+        if (responseCode != 200) {
+            String error = readErrorStream(conn);
+            throw new RuntimeException("HTTP error: " + responseCode + " - " + error);
         }
 
         try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
@@ -117,12 +239,8 @@ public class AIConnector {
         JSONArray contents = new JSONArray();
 
         contents.put(new JSONObject()
-                .put("role", "system")
-                .put("parts", new JSONArray().put(new JSONObject().put("text", systemContent))));
-
-        contents.put(new JSONObject()
                 .put("role", "user")
-                .put("parts", new JSONArray().put(new JSONObject().put("text", userContent))));
+                .put("parts", new JSONArray().put(new JSONObject().put("text", systemContent + "\n\n" + userContent))));
 
         payload.put("contents", contents);
 
@@ -130,15 +248,10 @@ public class AIConnector {
             os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
         }
 
-        if (conn.getResponseCode() != 200) {
-            String error;
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
-                StringBuilder response = new StringBuilder();
-                String line;
-                while (br != null && (line = br.readLine()) != null) response.append(line);
-                error = response.toString();
-            }
-            throw new RuntimeException("HTTP error: " + conn.getResponseCode() + " - " + error);
+        int responseCode = conn.getResponseCode();
+        if (responseCode != 200) {
+            String error = readErrorStream(conn);
+            throw new RuntimeException("HTTP error: " + responseCode + " - " + error);
         }
 
         try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
@@ -156,6 +269,17 @@ public class AIConnector {
                 throw new RuntimeException("No content parts returned from Gemini API");
             }
             return parts.getJSONObject(0).getString("text").trim();
+        }
+    }
+
+    private String readErrorStream(HttpURLConnection conn) {
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
+            StringBuilder error = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) error.append(line);
+            return error.toString();
+        } catch (Exception e) {
+            return "Unable to read error stream";
         }
     }
 
