@@ -1,8 +1,8 @@
-# Jarvis Minecraft AI Companion v3.1
+# Jarvis Minecraft AI Companion v0.0.2
 
 Your intelligent AI assistant for Minecraft - now with professional schematic building, fixed quests, and AI Q&A!
 
-## ⚡ What's New in v3.1
+## ⚡ What's New in v0.0.2
 
 ### 🏗️ Schematic Building System
 - Use REAL Minecraft schematics instead of AI-generated blocks
@@ -156,7 +156,7 @@ See [INSTALLATION.md](INSTALLATION.md) for detailed setup instructions.
 
 ## 📚 Documentation
 
-- **[v3.1 Updates](v3.1_UPDATES.md)** - What's new and how to use it
+- **[v0.0.2 Updates](v0.0.2_UPDATES.md)** - What's new and how to use it
 - **[Schematic Quick Start](SCHEMATIC_QUICKSTART.md)** - Get building in 5 minutes
 - **[Installation Guide](INSTALLATION.md)** - Detailed setup instructions
 - **[Features Guide](FEATURES.md)** - Complete feature documentation
@@ -377,7 +377,7 @@ Jarvis: ✓ Quest Complete!
 ### Common Issues
 
 **Quests not tracking items?**
-- ✅ Fixed in v3.1! Make sure you're on the latest version
+- ✅ Fixed in v0.0.2! Make sure you're on the latest version
 - Pick up items from ground (not just breaking blocks)
 - Check `/jarvis quest status` for progress
 
@@ -493,7 +493,7 @@ Jarvis: ✓ Quest Complete!
 - **AI errors** → Check API key and credits
 - **NPC issues** → Verify Citizens is installed
 - **Building issues** → Verify WorldEdit is installed
-- **Quest issues** → Update to v3.1 for fixes
+- **Quest issues** → Update to v0.0.2 for fixes
 
 ---
 
@@ -514,23 +514,11 @@ Let us know what you'd like to see!
 
 ## 📜 Version History
 
-### v3.1 (Current)
+### v0.0.2 (Current)
 - ✅ Schematic building system
 - ✅ Quest tracking fixes (item collection)
 - ✅ Ask command for Q&A
 - ✅ Improved natural language
-
-### v3.0
-- Added Claude AI support
-- Natural language processing
-- AI building assistant (deprecated in v3.1)
-- Dynamic quest system
-
-### v2.7
-- Mining navigation improvements
-- Scaffolding support
-- Enhanced pathfinding
-
 ---
 
 ## 📄 License
