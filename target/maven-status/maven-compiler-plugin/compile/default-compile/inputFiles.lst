@@ -1,7 +1,7 @@
-/home/gadget/Documents/GitHub/jarvis/src/main/java/com/yourname/jarvis/ai/AIConnector.java
-/home/gadget/Documents/GitHub/jarvis/src/main/java/com/yourname/jarvis/Jarvis.java
-/home/gadget/Documents/GitHub/jarvis/src/main/java/com/yourname/jarvis/DatabaseManager.java
-/home/gadget/Documents/GitHub/jarvis/src/main/java/com/yourname/jarvis/commands/JarvisCommands.java
-/home/gadget/Documents/GitHub/jarvis/src/main/java/com/yourname/jarvis/npc/JarvisNPC.java
-/home/gadget/Documents/GitHub/jarvis/src/main/java/com/yourname/jarvis/ui/UIManager.java
-/home/gadget/Documents/GitHub/jarvis/src/main/java/com/yourname/jarvis/ui/ControllerBell.java
+/home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/ui/UIManager.java
+/home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/npc/JarvisNPC.java
+/home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/Jarvis.java
+/home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/ui/ControllerBell.java
+/home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/ai/AIConnector.java
+/home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/DatabaseManager.java
+/home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/commands/JarvisCommands.java
