@@ -1,5 +1,5 @@
 name: Jarvis
-version: 0.0.2
+version: 0.0.3
 main: com.yourname.jarvis.Jarvis
 api-version: 1.21
 depend: [Citizens]
