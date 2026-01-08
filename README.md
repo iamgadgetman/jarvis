@@ -1,541 +1,379 @@
-# Jarvis Minecraft AI Companion v0.0.2
+# Jarvis v0.0.3 Release Notes
 
-Your intelligent AI assistant for Minecraft - now with professional schematic building, fixed quests, and AI Q&A!
+## 🎯 Smart Mining Update
 
-## ⚡ What's New in v0.0.2
-
-### 🏗️ Schematic Building System
-- Use REAL Minecraft schematics instead of AI-generated blocks
-- Download from anywhere or use local files
-- AI automatically selects the best schematic for your description
-- Professional-looking builds in seconds
-
-### ✅ Quest System Fixed
-- Now properly tracks item collection (flowers, materials, etc.)
-- Flexible matching for all material types
-- Multiple event tracking for reliability
-
-### 🤔 Ask Command
-- Ask Jarvis anything about Minecraft
-- Get instant AI-powered answers
-- Examples: enchantments, crafting, strategies
+Version 0.0.3 focuses on making Jarvis mine intelligently - no more straight down to bedrock!
 
 ---
 
-## 🌟 Core Features
+## 🆕 What's New in 0.0.3
 
-### 1. Natural Language Commands
-Talk to Jarvis naturally - no complex commands needed!
+### 1. ✅ **No More Mining to Bedrock**
+
+**The Problem:** Jarvis would mine straight down until he hit bedrock and got stuck.
+
+**The Solution:**
+- Won't target ores more than 10 blocks below current position
+- Prefers ores at similar Y level (±3 blocks)
+- Horizontal exploration prioritized over vertical
+
+**Result:** Jarvis mines like a smart player, exploring horizontally! ⛏️
+
+---
+
+### 2. ✅ **Smart Tunnel Sizing**
+
+**The Problem:** Jarvis dug 2-block tall tunnels even when going straight down (inefficient).
+
+**The Solution:**
 ```
-"jarvis come here"
-"jarvis start mining diamonds"
-"jarvis build me a cottage"
-"jarvis give me a quest"
+Digging straight down: 1x1 tunnel (efficient)
+Digging horizontally:  2-block tall (player can walk through)
 ```
 
-### 2. Schematic Building
-Professional builds using actual schematics:
+**How it works:** Calculates if vertical distance > horizontal distance → 1x1, otherwise 2-block
+
+**Result:** Efficient mining adapted to direction! 📐
+
+---
+
+### 3. ✅ **New Ore Priority System**
+
+**4-Tier Priority:**
+
+**Priority 1** (Highest): Ores within 4 blocks at similar Y level (±3)
+- Example: Coal 3 blocks away, same level → Mine first!
+
+**Priority 2**: Ores within 4 blocks below
+- Example: Diamond 3 blocks away, 5 blocks down → Mine second
+
+**Priority 3**: Distant ores at similar Y level (boosted)
+- Example: Gold 15 blocks away, same level → Preferred over below
+
+**Priority 4** (Lowest): Ores beyond 4 blocks and more than 3 blocks up/down
+- Limited to max 10 blocks below to prevent bedrock mining
+
+**Result:** Smart, horizontal-first exploration! 🧠
+
+---
+
+### 4. ✅ **Return Command Stops Tasks**
+
+**The Problem:** `/jarvis return` brought Jarvis back, but he'd resume mining/attacking.
+
+**The Solution:** Return command now calls `stopTask()` automatically.
+
+**Usage:**
+```
+/jarvis mine
+[Jarvis is mining far away]
+/jarvis return
+→ Jarvis stops mining and teleports back ✓
+```
+
+**Result:** Better control over Jarvis! 🎮
+
+---
+
+### 5. ✅ **Faster Greeting**
+
+**The Problem:** Greeting took 1.5 seconds to start, felt slow.
+
+**The Solution:**
+```
+Old: Start after 1.5s, toggle every 0.4s
+New: Start after 0.5s, toggle every 0.25s
+```
+
+**Result:** Snappier, more responsive greeting! 👋
+
+---
+
+### 6. ✅ **Tools Don't Drop on Dismiss**
+
+**The Problem:** When dismissed, Jarvis dropped his pickaxe/sword with the loot.
+
+**The Solution:** Only drop inventory items, exclude equipped items.
+
+**Before:**
+```
+/jarvis dismiss
+→ Drops: Diamonds, coal, iron, PICKAXE, SWORD ❌
+```
+
+**After:**
+```
+/jarvis dismiss
+→ Drops: Diamonds, coal, iron ✓
+→ Keeps: Pickaxe, sword (equipment) ✓
+```
+
+**Result:** No more losing or duplicating tools! 🛠️
+
+---
+
+## 📊 Complete Changes
+
+### Added
+- Intelligent vertical mining prevention (max 10 blocks down)
+- Horizontal ore preference (±3 blocks Y level)
+- Smart tunnel sizing (1x1 vs 2-block)
+- Return stops all tasks
+
+### Changed
+- Ore finding algorithm (4-tier priority)
+- Greeting animation timing (faster)
+- Loot system (equipment protected)
+
+### Fixed
+- Mining straight down to bedrock
+- Inefficient tunnel sizing
+- Tool loss on dismiss
+- Tasks persisting after return
+
+---
+
+## 🧪 Testing Guide
+
+### Test 1: Horizontal Mining Preference
 ```bash
-/jarvis build cottage                    # AI selects best match
-/jarvis schematics list                  # Show available
-/jarvis schematics download <url> <n>   # Add new schematics
+# Create test: 
+- Coal 5 blocks away, same Y level
+- Diamond 5 blocks away, 8 blocks down
+
+/jarvis summon
+/jarvis mine
+
+Expected: Mines COAL first (same level) ✓
 ```
 
-### 3. Dynamic Quest System
-AI-generated quests that adapt to you:
-- Mine specific ores
-- Defeat monsters
-- Collect materials (NOW WORKS WITH FLOWERS!)
-- Build structures
-
-### 4. Autonomous NPC
-Your personal assistant that can:
-- Mine ores automatically
-- Fight hostile mobs
-- Follow you around
-- Store items in inventory
-
-### 5. AI Question & Answer
+### Test 2: Bedrock Prevention
 ```bash
-/jarvis ask what are the best enchantments for a sword?
-/jarvis ask how do I make a beacon?
-/jarvis ask what's the best level for diamonds?
+# Place ores:
+- Some at Y=60
+- Some at Y=5 (near bedrock)
+
+# Start Jarvis at Y=60
+/jarvis mine
+
+Expected: 
+- Mines ores at Y=60, Y=55, Y=50 ✓
+- Won't chase Y=5 ores (too far down) ✓
 ```
 
----
-
-## 📦 Installation
-
-### Prerequisites
-- Minecraft Server (Purpur/Spigot/Paper 1.21+)
-- Java 17+
-- Maven 3.9+
-- **Citizens plugin** (required)
-- **WorldEdit plugin** (required for building)
-
-### Quick Install
-
-1. **Build the plugin:**
-   ```bash
-   mvn clean package
-   ```
-
-2. **Install dependencies:**
-   - [Citizens](https://www.spigotmc.org/resources/citizens.13811/)
-   - [WorldEdit](https://dev.bukkit.org/projects/worldedit)
-
-3. **Deploy:**
-   ```bash
-   cp target/jarvis-0.0.1.jar server/plugins/
-   ```
-
-4. **Configure AI:**
-   Edit `plugins/Jarvis/config.yml`:
-   ```yaml
-   ai:
-     provider: claude  # or openai, grok, gemini
-     claude:
-       api-key: "your-api-key-here"
-       model: "claude-sonnet-4-20250514"
-   ```
-
-5. **Add schematics (optional):**
-   - Download .schem files from [Planet Minecraft](https://www.planetminecraft.com/)
-   - Place in `plugins/Jarvis/schematics/`
-   - Run `/jarvis schematics scan`
-
-6. **Start server and enjoy!**
-
-See [INSTALLATION.md](INSTALLATION.md) for detailed setup instructions.
-
----
-
-## 🎮 Quick Start Guide
-
-### First Steps
-
-1. **Get started:**
-   ```
-   /jarvis summon
-   ```
-
-2. **Get the controller bell:**
-   ```
-   /jarvis bell
-   ```
-   Right-click to open menu!
-
-3. **Try natural language:**
-   ```
-   Chat: jarvis give me a quest
-   ```
-
-4. **Add some schematics:**
-   ```
-   /jarvis schematics download <url> cottage
-   ```
-
-5. **Build something:**
-   ```
-   /jarvis build cottage
-   ```
-
-### Essential Commands
-
-| Command | What It Does |
-|---------|--------------|
-| `/jarvis summon` | Bring Jarvis to you |
-| `/jarvis mine` | Start automatic mining |
-| `/jarvis attack` | Fight hostile mobs |
-| `/jarvis build <desc>` | Build from schematics |
-| `/jarvis quest new` | Get a new quest |
-| `/jarvis ask <question>` | Ask anything |
-| `/jarvis schematics` | List schematics |
-
----
-
-## 📚 Documentation
-
-- **[v0.0.2 Updates](v0.0.2_UPDATES.md)** - What's new and how to use it
-- **[Schematic Quick Start](SCHEMATIC_QUICKSTART.md)** - Get building in 5 minutes
-- **[Installation Guide](INSTALLATION.md)** - Detailed setup instructions
-- **[Features Guide](FEATURES.md)** - Complete feature documentation
-- **[Compilation Fixes](COMPILATION_FIXES.md)** - Java 17 compatibility notes
-
----
-
-## 🏗️ Schematic Building
-
-### Getting Schematics
-
-**Recommended Sites:**
-1. [Planet Minecraft](https://www.planetminecraft.com/) - Largest collection
-2. [GrabCraft](https://grabcraft.com/) - Easy interface
-3. [Minecraft-Schematics.com](https://www.minecraft-schematics.com/) - Well-organized
-
-**Download and add:**
+### Test 3: Smart Tunnels
 ```bash
-# Method 1: Manual
-cd plugins/Jarvis/schematics/
-# Upload .schem files here
-/jarvis schematics scan
+# Horizontal tunnel
+/jarvis mine (with ore ahead, same level)
+Expected: 2-block tall tunnel ✓
 
-# Method 2: In-game download
-/jarvis schematics download https://example.com/cottage.schem cottage
+# Vertical shaft
+/jarvis mine (with ore directly below)
+Expected: 1x1 shaft ✓
 ```
 
-### Building Examples
-
+### Test 4: Return Stops Mining
 ```bash
-# Specific build
-/jarvis build cottage
+/jarvis summon
+/jarvis mine
+[Wait for Jarvis to start mining]
+/jarvis return
 
-# Natural language (AI selects best match)
-jarvis build me a medieval house
-jarvis build a guard tower
-jarvis build something modern
+Expected:
+- Jarvis stops breaking blocks ✓
+- Teleports back to player ✓
+- Doesn't resume mining ✓
 ```
 
-**What happens:**
-1. AI looks at all your schematics
-2. Matches your description to the best one
-3. Uses WorldEdit to paste it
-4. Done in seconds!
-
----
-
-## 🎯 Quest System
-
-### How It Works Now (v3.1)
-
-✅ **Fixed Issues:**
-- Item collection now works (flowers, materials, etc.)
-- Better matching for all block/item types
-- Multiple event tracking for reliability
-
-### Getting Quests
-
+### Test 5: Tool Protection
 ```bash
-# Command
-/jarvis quest new
+/jarvis summon
+/jarvis mine
+[Let Jarvis collect items]
+/jarvis dismiss
 
-# Natural language
-Chat: jarvis give me a quest
-
-# Check progress
-/jarvis quest status
+Expected:
+- Ores drop on ground ✓
+- Pickaxe does NOT drop ✓
 ```
 
-### Quest Types
-
-| Type | Description | Example |
-|------|-------------|---------|
-| Mine | Break specific blocks | Mine 10 Diamond Ore |
-| Kill | Defeat certain mobs | Kill 5 Zombies |
-| Collect | Gather items | Collect 20 Poppies ✅ |
-| Build | Construct structures | Build a house |
-
-**Rewards:** XP and items when complete!
-
----
-
-## 🤖 AI Features
-
-### Supported AI Providers
-
-| Provider | Model | Best For |
-|----------|-------|----------|
-| **Claude** ⭐ | Sonnet 4 | Overall best quality |
-| OpenAI | GPT-3.5/4 | Fast responses |
-| Grok | Grok-4 | Alternative option |
-| Gemini | 1.5 Flash | Google integration |
-
-### Natural Language Examples
-
-```
-# Building
-"jarvis build me a house"
-"jarvis build a medieval tower"
-
-# Mining
-"jarvis start mining"
-"jarvis find diamonds"
-
-# Combat
-"jarvis defend me"
-"jarvis attack those zombies"
-
-# Quests
-"jarvis give me a quest"
-"jarvis show my quests"
-
-# Questions
-"jarvis ask how do I make glass?"
-"jarvis ask what's the best armor?"
-```
-
-### Ask Command
-
-Get instant answers to any Minecraft question:
-
-```
-/jarvis ask what are the best enchantments?
-/jarvis ask how do I breed villagers?
-/jarvis ask what blocks can't be moved by pistons?
-```
-
----
-
-## ⚙️ Configuration
-
-### config.yml
-
-```yaml
-# AI Provider (choose one)
-ai:
-  provider: claude  # or: openai, grok, gemini
-  claude:
-    api-key: "sk-ant-xxxxx"
-    model: "claude-sonnet-4-20250514"
-
-# Features
-natural-language:
-  enabled: true
-  prefix: "jarvis"
-  require-prefix: false
-
-quests:
-  enabled: true
-  max-active-per-player: 3
-  reward-multiplier: 1.0
-
-# Building
-build:
-  fallback-material: minecraft:stone
-```
-
----
-
-## 🎯 Example Workflows
-
-### Building a Village
-
+### Test 6: Faster Greeting
 ```bash
-# 1. Get schematics
-/jarvis schematics download <url> cottage
-/jarvis schematics download <url> blacksmith
-/jarvis schematics download <url> well
-
-# 2. Build village
-/jarvis build cottage
-[move to new location]
-/jarvis build blacksmith
-[move to new location]
-/jarvis build well
-```
-
-### Completing Quests
-
-```bash
-# 1. Get quest
-/jarvis quest new
-# Quest: Collect 20 Poppies
-
-# 2. Collect flowers
-*pick up poppies from ground or break them*
-
-# 3. Track progress
-Jarvis: Quest progress: Collect 5/20 POPPY
-Jarvis: Quest progress: Collect 15/20 POPPY
-
-# 4. Complete!
-Jarvis: ✓ Quest Complete!
-        +50 XP, +1x DIAMOND
-```
-
-### Using Jarvis NPC
-
-```bash
-# Summon
 /jarvis summon
 
-# Mine for you
-/jarvis mine
-*Jarvis automatically finds and mines ores*
-
-# Check loot
-/jarvis loot
-
-# Return to you
-/jarvis return
+Expected:
+- Crouches after ~0.5 seconds ✓
+- Quick crouch animation ✓
+- More responsive feel ✓
 ```
 
 ---
 
-## 🔧 Troubleshooting
+## 🔧 Technical Details
 
-### Common Issues
+### Ore Finding Algorithm
 
-**Quests not tracking items?**
-- ✅ Fixed in v0.0.2! Make sure you're on the latest version
-- Pick up items from ground (not just breaking blocks)
-- Check `/jarvis quest status` for progress
+```java
+// Priority 1: Close + Same Level
+if (dist <= 4.0 && verticalDist <= 3.0) {
+    return ore; // Highest priority
+}
 
-**No schematics available?**
-1. Download .schem files
-2. Place in `plugins/Jarvis/schematics/`
-3. Run `/jarvis schematics scan`
+// Priority 2: Close but below
+if (dist <= 4.0) {
+    return ore;
+}
 
-**AI not responding?**
-- Check API key in config.yml
-- Verify you have credits/quota
-- Check server console for errors
-- Run `/jarvis debug`
+// Priority 3: Distant + Same level (boosted)
+if (verticalDist <= 5.0) {
+    priority += 5; // Boost for horizontal
+}
 
-**Building not working?**
-- Ensure WorldEdit is installed: `/we version`
-- Make sure you have schematics added
-- Try simpler description: `/jarvis build cottage`
-
----
-
-## 📊 Command Reference
-
-### Core Commands
-```
-/jarvis                     # Show help
-/jarvis summon              # Spawn Jarvis
-/jarvis dismiss             # Remove Jarvis
-/jarvis return              # Teleport to you
-/jarvis attack              # Combat mode
-/jarvis mine                # Mining mode
-/jarvis loot                # Open inventory
-/jarvis bell                # Get controller
+// Prevention: Skip ores too far below
+if (ore.getY() < center.getY() - 10) {
+    continue; // Avoid bedrock mining
+}
 ```
 
-### Building Commands
-```
-/jarvis build <desc>        # Build with AI selection
-/jarvis schematics          # List available
-/jarvis schematics scan     # Reload folder
-/jarvis schematics download <url> <n>
-/jarvis schematics folder   # Show path
+### Tunnel Size Detection
+
+```java
+double verticalDist = Math.abs(oreLoc.getY() - npcLoc.getY());
+double horizontalDist = Math.sqrt(dx² + dz²);
+
+boolean diggingDown = (oreBelow) && (verticalDist > horizontalDist);
+
+if (diggingDown) {
+    // Dig 1x1 (eye level only)
+} else {
+    // Dig 2-block (eye + feet level)
+}
 ```
 
-### Quest Commands
-```
-/jarvis quest               # Show quests
-/jarvis quest new           # Get new quest
-/jarvis quest status        # Progress details
-```
+### Equipment Protection
 
-### AI Commands
-```
-/jarvis ask <question>      # Q&A with AI
-```
+```java
+// Get all equipped items
+ItemStack handItem = equipment.get(HAND);
+ItemStack sword = equipment.get(HAND);
+// ... other equipment ...
 
-### Admin Commands
-```
-/jarvis reload              # Reload config
-/jarvis debug               # System info
+// Only drop non-equipped items
+for (ItemStack item : inventory) {
+    if (!item.isSimilar(handItem)) {
+        world.dropItem(item); // Only loot
+    }
+}
 ```
 
 ---
 
-## 🎓 Best Practices
+## 📝 Migration from 0.0.2
 
-### Schematic Management
-1. Name files descriptively: `small_oak_cottage.schem`
-2. Organize by theme if you have many
-3. Test new schematics in creative first
-4. Check size before building: `/jarvis schematics list`
+### Breaking Changes
+None! All changes are improvements.
 
-### Quest Efficiency
-1. Take multiple quests at once (up to 3)
-2. Look for complementary objectives
-3. Check progress frequently: `/jarvis quest`
-4. Collect items passively while doing other tasks
+### Behavioral Changes
+- **Mining patterns**: More horizontal, less vertical
+- **Return command**: Now stops tasks (new behavior)
+- **Dismiss**: Tools stay with Jarvis (loot protection)
 
-### Natural Language Usage
-1. Be specific but natural
-2. Use context clues ("build me a SMALL house")
-3. Mention style ("medieval tower", "modern house")
-4. Don't worry about exact syntax
+### Configuration
+No config changes required.
 
----
-
-## 📈 Performance
-
-### Optimized For
-- ✅ Large servers (50+ players)
-- ✅ Multiple concurrent quests
-- ✅ Frequent schematic building
-- ✅ Heavy AI usage
-
-### Resource Usage
-- **Memory:** ~50MB additional
-- **CPU:** Minimal (async operations)
-- **Network:** Only for AI requests
-- **Disk:** Varies (schematic files)
+### Upgrade Steps
+```bash
+# 1. Stop server
+# 2. Replace JAR
+cp jarvis-0.0.3.jar /server/plugins/
+# 3. Start server
+# 4. Test with /jarvis summon
+```
 
 ---
 
-## 🆘 Support
+## 🗒️ Notes on 0.0.2 Development
 
-### Getting Help
+Version 0.0.2 was a major development cycle with extensive iteration on the mining system. Key milestones:
 
-1. **Check documentation:** See guides above
-2. **Debug info:** `/jarvis debug`
-3. **Check logs:** `logs/latest.log | grep Jarvis`
-4. **Verify config:** Check `plugins/Jarvis/config.yml`
+1. **Initial Implementation**: Scaffolding system (removed - buggy)
+2. **Iteration 1**: Manual movement, value-first priority
+3. **Iteration 2**: Distance-first priority, ore reachability
+4. **Iteration 3**: Radius-first (4 blocks), smooth movement
+5. **Final 0.0.2**: Working but mines straight down
 
-### Common Solutions
-- **AI errors** → Check API key and credits
-- **NPC issues** → Verify Citizens is installed
-- **Building issues** → Verify WorldEdit is installed
-- **Quest issues** → Update to v0.0.2 for fixes
+**Key Learnings:**
+- Citizens Navigator API varies by version
+- Manual movement can be smoother than pathfinding
+- Ore selection needs multi-dimensional priority
+- Equipment vs inventory separation matters
 
----
-
-## 🚀 Roadmap
-
-### Planned Features
-- [ ] Schematic rotation and flipping
-- [ ] Build previews
-- [ ] Multi-schematic structures (villages)
-- [ ] Quest chains and storylines
-- [ ] Team/faction quests
-- [ ] Voice command integration
-
-### Want a Feature?
-Let us know what you'd like to see!
+**Issues Resolved in 0.0.3:**
+- ✅ Vertical mining behavior
+- ✅ Tunnel sizing intelligence
+- ✅ Tool protection
+- ✅ Task cancellation
 
 ---
 
-## 📜 Version History
+## 🚀 What's Next?
 
-### v0.0.2 (Current)
-- ✅ Schematic building system
-- ✅ Quest tracking fixes (item collection)
-- ✅ Ask command for Q&A
-- ✅ Improved natural language
----
-
-## 📄 License
-
-MIT License - See LICENSE file for details
+Potential future improvements:
+- Vein mining (detect and mine entire ore veins)
+- Branch mining patterns
+- Configurable mining strategies
+- Mining level preferences
+- Torch placing while mining
 
 ---
 
-## 🙏 Credits
+## 📦 Download & Deploy
 
-- **Citizens API** - NPC functionality
-- **WorldEdit** - Building operations
-- **Anthropic Claude** - AI capabilities
-- **OpenAI, xAI, Google** - Alternative AI providers
+### Build
+```bash
+mvn clean package
+```
+
+### Output
+```
+target/jarvis-0.0.3.jar
+```
+
+### Deploy
+```bash
+cp target/jarvis-0.0.3.jar /server/plugins/
+# Restart server
+```
+
+### Verify
+```
+/jarvis summon
+Jarvis: At your service—let's make some magic.
+[Quick crouch animation] ✓
+
+/version Jarvis
+Jarvis version 0.0.3 ✓
+```
 
 ---
 
-**Built with ❤️ for the Minecraft community**
+## 🎉 Summary
 
-Start building amazing things with Jarvis today! 🏰✨
+Version 0.0.3 makes Jarvis a truly smart miner:
+- ✅ No more bedrock diving
+- ✅ Intelligent horizontal exploration
+- ✅ Efficient tunnel sizing
+- ✅ Better command control
+- ✅ Tool protection
+
+**Jarvis now mines like a professional player, not a confused robot!** ⛏️✨
+
+---
+
+## 📞 Support
+
+- **GitHub Issues**: https://github.com/iamgadgetman/jarvis/issues
+- **Documentation**: See repository for full guides
+- **Changelog**: See CHANGELOG.md for complete history
+
+**Enjoy the update!** 🎮
