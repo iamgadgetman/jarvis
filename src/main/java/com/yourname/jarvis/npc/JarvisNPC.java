@@ -19,6 +19,8 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
+import org.bukkit.Particle;
+import org.bukkit.ChatColor;
 
 import java.util.*;
 
@@ -55,6 +57,9 @@ public class JarvisNPC {
         int ticksStuck = 0;
         Location lastLocation;
         boolean isClimbing = false;
+        double startingY;  // Track starting Y level to prevent descent
+        Set<Block> currentVein = new HashSet<>();  // Vein mining
+        Material targetOreType = null;  // For specific ore mode
     }
 
     public JarvisNPC(Jarvis plugin) {
@@ -241,13 +246,32 @@ public class JarvisNPC {
         return closest;
     }
 
-    public void mine(Player player) {
+    public void mine(Player player, String... args) {
         NPC npc = getNPC(player);
         if (npc == null) return;
         stopTask(player);
 
         MiningState state = new MiningState();
+        state.startingY = getCurrentLocation(npc).getY(); // Track starting Y!
         miningStates.put(player.getUniqueId(), state);
+
+        // Check for specific ore type
+        if (args.length > 0) {
+            String oreArg = args[0].toUpperCase();
+            
+            // Try to match to material
+            for (Material m : ORE_PRIORITY) {
+                if (m.name().contains(oreArg)) {
+                    state.targetOreType = m;
+                    player.sendMessage(ChatColor.GOLD + "Jarvis: Targeting " + m.name().replace("_", " "));
+                    break;
+                }
+            }
+            
+            if (state.targetOreType == null && !oreArg.equals("NEARBY")) {
+                player.sendMessage(ChatColor.RED + "Jarvis: Unknown ore type. Mining everything!");
+            }
+        }
 
         player.sendMessage("Jarvis: Switching to mining mode!");
 
@@ -267,9 +291,28 @@ public class JarvisNPC {
                 // Pickup items continuously
                 pickupNearbyItems(npc);
 
+                // SAFETY CHECK: Too deep?
+                if (npcLoc.getY() < state.startingY - 15) {
+                    player.sendMessage(ChatColor.RED + "Jarvis: Too deep! Returning to safer level");
+                    Location safeLoc = npcLoc.clone();
+                    safeLoc.setY(state.startingY - 5);
+                    if (npc.getEntity() != null) {
+                        npc.getEntity().teleport(safeLoc);
+                    }
+                    state.targetOre = null;
+                    state.currentVein.clear();
+                    return;
+                }
+
+                // AUTO-RETURN: Check if inventory full
+                if (shouldReturnForDropoff(npc, player)) {
+                    returnAndDropOff(npc, player, state);
+                    return;
+                }
+
                 // Find new target ore if needed
                 if (state.targetOre == null || !isOre(state.targetOre.getType())) {
-                    Block ore = findBestOre(npcLoc);
+                    Block ore = findBestOre(npcLoc, state);
                     if (ore == null) {
                         noOreCounter++;
                         if (noOreCounter > 3) {
@@ -281,6 +324,21 @@ public class JarvisNPC {
                     }
                     noOreCounter = 0;
                     state.targetOre = ore;
+                    
+                    // VEIN MINING: Detect entire vein
+                    if (plugin.getConfig().getBoolean("mining.enable-vein-mining", true)) {
+                        state.currentVein = detectVein(ore, ore.getType());
+                        if (state.currentVein.size() > 1) {
+                            player.sendMessage(ChatColor.GREEN + "Jarvis: Found " + 
+                                ore.getType().name().replace("_", " ").toLowerCase() + 
+                                " vein (" + state.currentVein.size() + " blocks)!");
+                        }
+                    }
+                    
+                    // VISUAL: Ore discovery alert
+                    if (plugin.getConfig().getBoolean("mining.visual-feedback.ore-discovery-alert", true)) {
+                        spawnOreDiscoveryParticles(npcLoc, ore.getLocation());
+                    }
                     
                     // Use silk touch ONLY for deepslate emerald ore
                     boolean needsSilk = ore.getType() == Material.DEEPSLATE_EMERALD_ORE;
@@ -297,8 +355,43 @@ public class JarvisNPC {
 
     private void processMiningWithPathfinding(NPC npc, Player player, MiningState state) {
         Location npcLoc = getCurrentLocation(npc);
+        
+        // Get next ore from vein if available
+        if (!state.currentVein.isEmpty()) {
+            // Find closest ore in vein
+            Block closest = null;
+            double closestDist = Double.MAX_VALUE;
+            for (Block b : state.currentVein) {
+                if (isOre(b.getType())) {
+                    double dist = npcLoc.distance(b.getLocation());
+                    if (dist < closestDist) {
+                        closest = b;
+                        closestDist = dist;
+                    }
+                }
+            }
+            if (closest != null) {
+                state.targetOre = closest;
+            }
+        }
+        
+        if (state.targetOre == null || !isOre(state.targetOre.getType())) {
+            state.currentVein.clear();
+            return;
+        }
+        
         Location oreLoc = state.targetOre.getLocation().add(0.5, 0.5, 0.5);
         double distance = npcLoc.distance(oreLoc);
+
+        // DANGER CHECK: Lava nearby?
+        if (plugin.getConfig().getBoolean("mining.danger-detection.enabled", true)) {
+            if (isLavaNearby(npcLoc, 3)) {
+                player.sendMessage(ChatColor.RED + "Jarvis: Lava detected! Finding safer ore");
+                state.targetOre = null;
+                state.currentVein.clear();
+                return;
+            }
+        }
 
         // If within reach, mine the ore
         if (distance <= REACH_DISTANCE) {
@@ -315,8 +408,22 @@ public class JarvisNPC {
                 npc.getEntity().teleport(lookAt);
             }
             
+            // VISUAL: Mining particles
+            if (plugin.getConfig().getBoolean("mining.visual-feedback.particles", true)) {
+                player.getWorld().spawnParticle(Particle.BLOCK, oreLoc, 10, 0.3, 0.3, 0.3, state.targetOre.getBlockData());
+            }
+            
             // Break the ore
             state.targetOre.breakNaturally(tool);
+            
+            // Remove from vein
+            state.currentVein.remove(state.targetOre);
+            
+            // Check if vein complete
+            if (state.currentVein.isEmpty() && plugin.getConfig().getBoolean("mining.visual-feedback.vein-size-report", true)) {
+                player.sendMessage(ChatColor.GREEN + "Jarvis: Vein complete!");
+            }
+            
             state.targetOre = null;
             
             pickupNearbyItems(npc);
@@ -429,12 +536,12 @@ public class JarvisNPC {
         return null;
     }
 
-    private Block findBestOre(Location center) {
+    private Block findBestOre(Location center, MiningState state) {
         // PRIORITY SYSTEM:
         // 1. ANY ore within 4 blocks at similar Y level (±3 blocks vertically)
         // 2. Valuable ores within 4 blocks even if below
         // 3. Beyond 4 blocks, prefer ores at similar Y level
-        // 4. Avoid mining straight down more than 10 blocks
+        // 4. Avoid mining straight down more than 10 blocks FROM STARTING Y
         
         Block nearestSameLevel = null;
         double nearestSameLevelDist = Double.MAX_VALUE;
@@ -445,6 +552,9 @@ public class JarvisNPC {
         Block bestBeyondRadius = null;
         int bestPriority = -1;
         double bestPriorityDist = Double.MAX_VALUE;
+        
+        int maxDepth = plugin.getConfig().getInt("mining.max-depth-below-start", 10);
+        int hardLimit = plugin.getConfig().getInt("mining.hard-bedrock-limit", 10);
 
         for (int x = -SEARCH_RADIUS; x <= SEARCH_RADIUS; x++) {
             for (int y = -SEARCH_RADIUS; y <= SEARCH_RADIUS; y++) {
@@ -454,11 +564,21 @@ public class JarvisNPC {
                     
                     if (!isOre(m)) continue;
                     
+                    // Filter by target ore type if set
+                    if (state.targetOreType != null && m != state.targetOreType) {
+                        continue;
+                    }
+                    
                     double dist = center.distance(b.getLocation());
                     double verticalDist = Math.abs(b.getY() - center.getY());
                     
-                    // Skip ores too far below (avoid mining to bedrock)
-                    if (b.getY() < center.getY() - 10) {
+                    // CRITICAL: Skip ores too far below STARTING Y (not current Y!)
+                    if (b.getY() < state.startingY - maxDepth) {
+                        continue;
+                    }
+                    
+                    // HARD LIMIT: Never go below bedrock level
+                    if (b.getY() < hardLimit) {
                         continue;
                     }
                     
@@ -602,5 +722,229 @@ public class JarvisNPC {
 
     public int getActiveTaskCount() {
         return activeTasks.size();
+    }
+    
+    // ==================== v0.0.4 NEW METHODS ====================
+    
+    /**
+     * STOP COMMAND - Emergency stop for all tasks
+     */
+    public void stop(Player player) {
+        stopTask(player);
+        NPC npc = getNPC(player);
+        if (npc != null) {
+            npc.getNavigator().cancelNavigation();
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: Stopping current task");
+        }
+    }
+    
+    /**
+     * BATTLE MODE - Make Jarvis instances fight each other
+     */
+    public void battle(Player player, Player target) {
+        NPC myNpc = getNPC(player);
+        NPC targetNpc = getNPC(target);
+        
+        if (myNpc == null || targetNpc == null) {
+            player.sendMessage(ChatColor.RED + "Both players must have Jarvis summoned!");
+            return;
+        }
+        
+        // Stop current tasks
+        stopTask(player);
+        stopTask(target);
+        
+        // Equip sword
+        ItemStack sword = new ItemStack(Material.NETHERITE_SWORD);
+        ItemMeta meta = sword.getItemMeta();
+        meta.addEnchant(Enchantment.SHARPNESS, 5, true);
+        sword.setItemMeta(meta);
+        myNpc.getOrAddTrait(Equipment.class).set(Equipment.EquipmentSlot.HAND, sword);
+        
+        player.sendMessage(ChatColor.RED + "Jarvis: Engaging " + target.getName() + "'s Jarvis in battle!");
+        target.sendMessage(ChatColor.RED + "Jarvis: Under attack from " + player.getName() + "'s Jarvis!");
+        
+        BukkitRunnable battleTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!myNpc.isSpawned() || !targetNpc.isSpawned()) {
+                    player.sendMessage(ChatColor.YELLOW + "Jarvis: Battle ended");
+                    target.sendMessage(ChatColor.YELLOW + "Jarvis: Battle ended");
+                    cancel();
+                    return;
+                }
+                
+                Entity myEntity = myNpc.getEntity();
+                Entity targetEntity = targetNpc.getEntity();
+                
+                if (myEntity == null || targetEntity == null) {
+                    cancel();
+                    return;
+                }
+                
+                double distance = myEntity.getLocation().distance(targetEntity.getLocation());
+                
+                if (distance > 50) {
+                    player.sendMessage(ChatColor.YELLOW + "Jarvis: Target too far, disengaging");
+                    cancel();
+                    return;
+                }
+                
+                // Attack the target
+                if (myEntity instanceof Player && targetEntity instanceof Player) {
+                    Player myPlayer = (Player) myEntity;
+                    Player targetPlayer = (Player) targetEntity;
+                    
+                    if (distance < 3) {
+                        targetPlayer.damage(2.0, myPlayer);
+                        myPlayer.getWorld().spawnParticle(Particle.DAMAGE_INDICATOR, 
+                            targetPlayer.getLocation().add(0, 1, 0), 5, 0.3, 0.3, 0.3);
+                    }
+                }
+            }
+        };
+        
+        battleTask.runTaskTimer(plugin, 0L, 10L);
+        activeTasks.put(player.getUniqueId(), battleTask);
+    }
+    
+    /**
+     * VEIN MINING - Detect all connected ore blocks
+     */
+    private Set<Block> detectVein(Block startOre, Material oreType) {
+        Set<Block> vein = new HashSet<>();
+        Queue<Block> toCheck = new LinkedList<>();
+        toCheck.add(startOre);
+        
+        while (!toCheck.isEmpty() && vein.size() < 64) {
+            Block current = toCheck.poll();
+            
+            if (vein.contains(current)) continue;
+            if (current.getType() != oreType) continue;
+            
+            vein.add(current);
+            
+            // Check all 6 adjacent blocks (including diagonals for better vein detection)
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx == 0 && dy == 0 && dz == 0) continue;
+                        Block adjacent = current.getRelative(dx, dy, dz);
+                        if (!vein.contains(adjacent)) {
+                            toCheck.add(adjacent);
+                        }
+                    }
+                }
+            }
+        }
+        
+        return vein;
+    }
+    
+    /**
+     * AUTO-RETURN - Check if inventory is full enough to return
+     */
+    private boolean shouldReturnForDropoff(NPC npc, Player player) {
+        Inventory inv = npc.getOrAddTrait(Inventory.class);
+        ItemStack[] contents = inv.getContents();
+        
+        int filledSlots = 0;
+        int totalSlots = contents.length;
+        
+        for (ItemStack item : contents) {
+            if (item != null && item.getType() != Material.AIR) {
+                filledSlots++;
+            }
+        }
+        
+        double fillPercent = (filledSlots / (double) totalSlots) * 100;
+        int threshold = plugin.getConfig().getInt("mining.auto-return-threshold", 90);
+        
+        if (fillPercent >= threshold && plugin.getConfig().getBoolean("mining.visual-feedback.inventory-warnings", true)) {
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: Inventory " + (int)fillPercent + "% full");
+        }
+        
+        return fillPercent >= threshold;
+    }
+    
+    /**
+     * AUTO-RETURN - Return to player, drop items, resume mining
+     */
+    private void returnAndDropOff(NPC npc, Player player, MiningState state) {
+        player.sendMessage(ChatColor.AQUA + "Jarvis: Inventory full! Returning to drop off loot");
+        
+        // Save current target for resume
+        Block savedOre = state.targetOre;
+        Set<Block> savedVein = new HashSet<>(state.currentVein);
+        
+        // Teleport to player
+        Location playerLoc = player.getLocation();
+        Location dropLoc = playerLoc.clone().add(playerLoc.getDirection().setY(0).normalize().multiply(-2));
+        if (npc.getEntity() != null) {
+            npc.getEntity().teleport(dropLoc);
+        }
+        
+        // Drop items
+        Inventory invTrait = npc.getOrAddTrait(Inventory.class);
+        ItemStack[] contents = invTrait.getContents();
+        Equipment equipTrait = npc.getOrAddTrait(Equipment.class);
+        ItemStack handItem = equipTrait.get(Equipment.EquipmentSlot.HAND);
+        
+        int itemCount = 0;
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack item = contents[i];
+            if (item != null && item.getType() != Material.AIR) {
+                // Don't drop equipped items
+                if (handItem != null && item.isSimilar(handItem)) {
+                    continue;
+                }
+                
+                dropLoc.getWorld().dropItemNaturally(dropLoc, item);
+                contents[i] = null;
+                itemCount++;
+            }
+        }
+        invTrait.setContents(contents);
+        
+        if (itemCount > 0) {
+            player.sendMessage(ChatColor.GREEN + "Jarvis: Dropped " + itemCount + " item stacks! Resuming mining");
+        }
+        
+        // Restore state
+        state.targetOre = savedOre;
+        state.currentVein = savedVein;
+    }
+    
+    /**
+     * DANGER DETECTION - Check for lava nearby
+     */
+    private boolean isLavaNearby(Location loc, int radius) {
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -2; y <= 2; y++) {
+                for (int z = -radius; z <= radius; z++) {
+                    Block b = loc.clone().add(x, y, z).getBlock();
+                    if (b.getType() == Material.LAVA) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * VISUAL FEEDBACK - Particle beam from Jarvis to ore
+     */
+    private void spawnOreDiscoveryParticles(Location npcLoc, Location oreLoc) {
+        // Happy particles at Jarvis
+        npcLoc.getWorld().spawnParticle(Particle.HAPPY_VILLAGER, npcLoc.clone().add(0, 2, 0), 5, 0.3, 0.3, 0.3);
+        
+        // Beam from Jarvis to ore
+        Vector direction = oreLoc.toVector().subtract(npcLoc.toVector()).normalize();
+        double distance = npcLoc.distance(oreLoc);
+        for (double d = 0; d < Math.min(distance, 20); d += 0.5) {
+            Location point = npcLoc.clone().add(direction.clone().multiply(d));
+            npcLoc.getWorld().spawnParticle(Particle.END_ROD, point, 1, 0, 0, 0, 0);
+        }
     }
 }

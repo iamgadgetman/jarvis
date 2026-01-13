@@ -62,7 +62,33 @@ public class JarvisCommands implements CommandExecutor {
             case "dismiss" -> plugin.getJarvisNPC().dismiss(player);
             case "return" -> plugin.getJarvisNPC().returnToPlayer(player);
             case "attack" -> plugin.getJarvisNPC().attack(player);
-            case "mine" -> plugin.getJarvisNPC().mine(player);
+            case "mine" -> {
+                // Pass additional args for ore type
+                if (args.length > 1) {
+                    String[] mineArgs = new String[args.length - 1];
+                    System.arraycopy(args, 1, mineArgs, 0, args.length - 1);
+                    plugin.getJarvisNPC().mine(player, mineArgs);
+                } else {
+                    plugin.getJarvisNPC().mine(player);
+                }
+            }
+            case "stop" -> plugin.getJarvisNPC().stop(player);
+            case "battle" -> {
+                if (args.length < 2) {
+                    player.sendMessage(ChatColor.RED + "Usage: /jarvis battle <player>");
+                    return true;
+                }
+                Player target = plugin.getServer().getPlayer(args[1]);
+                if (target == null) {
+                    player.sendMessage(ChatColor.RED + "Player not found!");
+                    return true;
+                }
+                if (target.equals(player)) {
+                    player.sendMessage(ChatColor.RED + "You can't battle yourself!");
+                    return true;
+                }
+                plugin.getJarvisNPC().battle(player, target);
+            }
             case "loot" -> plugin.getJarvisNPC().openInventory(player);
             case "bell" -> {
                 player.getInventory().addItem(plugin.getControllerBell());
@@ -225,15 +251,17 @@ public class JarvisCommands implements CommandExecutor {
 
     private void showHelp(Player player) {
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
-        player.sendMessage(ChatColor.GOLD + "  Jarvis AI Companion v3.0");
+        player.sendMessage(ChatColor.GOLD + "  Jarvis AI Companion v0.0.4");
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
         
         player.sendMessage(ChatColor.YELLOW + "NPC Commands:");
         player.sendMessage(ChatColor.WHITE + "  /jarvis summon" + ChatColor.GRAY + " - Bring Jarvis to you");
         player.sendMessage(ChatColor.WHITE + "  /jarvis dismiss" + ChatColor.GRAY + " - Send Jarvis away");
         player.sendMessage(ChatColor.WHITE + "  /jarvis return" + ChatColor.GRAY + " - Warp Jarvis back");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis stop" + ChatColor.GRAY + " - Stop current task");
         player.sendMessage(ChatColor.WHITE + "  /jarvis attack" + ChatColor.GRAY + " - Fight mobs");
-        player.sendMessage(ChatColor.WHITE + "  /jarvis mine" + ChatColor.GRAY + " - Mine ores");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis mine [ore]" + ChatColor.GRAY + " - Mine ores (e.g. diamond)");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis battle <player>" + ChatColor.GRAY + " - Battle another Jarvis");
         player.sendMessage(ChatColor.WHITE + "  /jarvis loot" + ChatColor.GRAY + " - Open inventory");
         player.sendMessage(ChatColor.WHITE + "  /jarvis bell" + ChatColor.GRAY + " - Get controller bell");
         

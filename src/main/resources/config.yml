@@ -1,5 +1,5 @@
 ai:
-  provider: openai  # Options: openai, grok, gemini, claude
+  provider: openai
   openai:
     api-key: ""
     model: gpt-3.5-turbo
@@ -11,21 +11,48 @@ ai:
     model: gemini-1.5-flash
     # Leave blank to use the default public Gemini endpoint pattern
     endpoint: ""
-  claude:
-    api-key: ""
-    model: claude-sonnet-4-20250514
-    endpoint: "https://api.anthropic.com/v1/messages"
+
+# Mining configuration
+mining:
+  # How far below starting Y level Jarvis can mine (prevents mining to bedrock)
+  max-depth-below-start: 10
+  
+  # Hard limit - never mine below this Y level (bedrock protection)
+  hard-bedrock-limit: 10
+  
+  # Auto-return when inventory reaches this % full
+  auto-return-threshold: 90
+  
+  # Enable vein mining (detects and mines entire ore veins)
+  enable-vein-mining: true
+  
+  # Ore search radius in blocks
+  search-radius: 32
+  
+  # Danger detection settings
+  danger-detection:
+    enabled: true
+    lava-radius: 3
+    check-fall-risk: true
+  
+  # Visual feedback settings
+  visual-feedback:
+    particles: true
+    chat-messages: true
+    ore-discovery-alert: true
+    vein-size-report: true
+    inventory-warnings: true
+
+# Combat configuration
+combat:
+  auto-return-low-health: false
+  health-threshold: 30
+
 build:
   fallback-material: minecraft:dirt
+
 config-copies:
   folder: config-copies
+
 databases:
   file: databases.yml
-natural-language:
-  enabled: true
-  prefix: "jarvis"  # Optional: only process messages starting with this
-  require-prefix: false  # If true, only messages starting with prefix are processed
-quests:
-  enabled: true
-  max-active-per-player: 3
-  reward-multiplier: 1.0

@@ -5,6 +5,7 @@ com/yourname/jarvis/npc/JarvisNPC$2.class
 com/yourname/jarvis/building/BuildingAssistant$2.class
 com/yourname/jarvis/ui/UIManager.class
 com/yourname/jarvis/building/SchematicManager.class
+com/yourname/jarvis/npc/JarvisNPC$4.class
 com/yourname/jarvis/ui/ControllerBell.class
 com/yourname/jarvis/building/SchematicManager$2$2.class
 com/yourname/jarvis/building/BuildingAssistant$BuildTask.class
