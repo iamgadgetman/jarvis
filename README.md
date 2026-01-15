@@ -1,379 +1,225 @@
-# Jarvis v0.0.3 Release Notes
+# Jarvis v0.0.6 - Implementation Package
 
-## 🎯 Smart Mining Update
+## 📦 What's Included
 
-Version 0.0.3 focuses on making Jarvis mine intelligently - no more straight down to bedrock!
+This package contains everything you need to upgrade from v0.0.2 to v0.0.6.
 
----
+### ✅ New Files (Copy to your project):
+1. **StatisticsManager.java** → `src/main/java/com/yourname/jarvis/statistics/`
+2. **UndoManager.java** → `src/main/java/com/yourname/jarvis/building/`
+3. **QuestTemplate.java** → `src/main/java/com/yourname/jarvis/quests/`
+4. **QuestLibrary.java** → `src/main/java/com/yourname/jarvis/quests/`
+5. **SchematicPreview.java** → `src/main/java/com/yourname/jarvis/building/`
 
-## 🆕 What's New in 0.0.3
+### ✅ Updated Files (Replace existing):
+1. **config.yml** → `src/main/resources/`
+2. **plugin.yml** → `src/main/resources/`
+3. **pom.xml** → root directory
 
-### 1. ✅ **No More Mining to Bedrock**
+### ✅ Files to Update Manually:
+Use the UPDATE_GUIDE files to modify these:
+1. **Jarvis.java** (see UPDATE_GUIDE_Jarvis.md)
+2. **JarvisCommands.java** (see UPDATE_GUIDE_JarvisCommands.md)
+3. **JarvisNPC.java** (complex - full file needed)
+4. **BuildingAssistant.java** (minor changes)
+5. **QuestSystem.java** (minor changes)
 
-**The Problem:** Jarvis would mine straight down until he hit bedrock and got stuck.
-
-**The Solution:**
-- Won't target ores more than 10 blocks below current position
-- Prefers ores at similar Y level (±3 blocks)
-- Horizontal exploration prioritized over vertical
-
-**Result:** Jarvis mines like a smart player, exploring horizontally! ⛏️
-
----
-
-### 2. ✅ **Smart Tunnel Sizing**
-
-**The Problem:** Jarvis dug 2-block tall tunnels even when going straight down (inefficient).
-
-**The Solution:**
-```
-Digging straight down: 1x1 tunnel (efficient)
-Digging horizontally:  2-block tall (player can walk through)
-```
-
-**How it works:** Calculates if vertical distance > horizontal distance → 1x1, otherwise 2-block
-
-**Result:** Efficient mining adapted to direction! 📐
+### ✅ Documentation:
+1. **CHANGELOG.md** - Version history
+2. **IMPLEMENTATION_GUIDE_v0.0.6.md** - Step-by-step deployment
+3. **DEPLOYMENT_PACKAGE_v0.0.6.md** - Feature overview
 
 ---
 
-### 3. ✅ **New Ore Priority System**
+## 🚀 Quick Start (5 Minutes)
 
-**4-Tier Priority:**
-
-**Priority 1** (Highest): Ores within 4 blocks at similar Y level (±3)
-- Example: Coal 3 blocks away, same level → Mine first!
-
-**Priority 2**: Ores within 4 blocks below
-- Example: Diamond 3 blocks away, 5 blocks down → Mine second
-
-**Priority 3**: Distant ores at similar Y level (boosted)
-- Example: Gold 15 blocks away, same level → Preferred over below
-
-**Priority 4** (Lowest): Ores beyond 4 blocks and more than 3 blocks up/down
-- Limited to max 10 blocks below to prevent bedrock mining
-
-**Result:** Smart, horizontal-first exploration! 🧠
-
----
-
-### 4. ✅ **Return Command Stops Tasks**
-
-**The Problem:** `/jarvis return` brought Jarvis back, but he'd resume mining/attacking.
-
-**The Solution:** Return command now calls `stopTask()` automatically.
-
-**Usage:**
-```
-/jarvis mine
-[Jarvis is mining far away]
-/jarvis return
-→ Jarvis stops mining and teleports back ✓
-```
-
-**Result:** Better control over Jarvis! 🎮
-
----
-
-### 5. ✅ **Faster Greeting**
-
-**The Problem:** Greeting took 1.5 seconds to start, felt slow.
-
-**The Solution:**
-```
-Old: Start after 1.5s, toggle every 0.4s
-New: Start after 0.5s, toggle every 0.25s
-```
-
-**Result:** Snappier, more responsive greeting! 👋
-
----
-
-### 6. ✅ **Tools Don't Drop on Dismiss**
-
-**The Problem:** When dismissed, Jarvis dropped his pickaxe/sword with the loot.
-
-**The Solution:** Only drop inventory items, exclude equipped items.
-
-**Before:**
-```
-/jarvis dismiss
-→ Drops: Diamonds, coal, iron, PICKAXE, SWORD ❌
-```
-
-**After:**
-```
-/jarvis dismiss
-→ Drops: Diamonds, coal, iron ✓
-→ Keeps: Pickaxe, sword (equipment) ✓
-```
-
-**Result:** No more losing or duplicating tools! 🛠️
-
----
-
-## 📊 Complete Changes
-
-### Added
-- Intelligent vertical mining prevention (max 10 blocks down)
-- Horizontal ore preference (±3 blocks Y level)
-- Smart tunnel sizing (1x1 vs 2-block)
-- Return stops all tasks
-
-### Changed
-- Ore finding algorithm (4-tier priority)
-- Greeting animation timing (faster)
-- Loot system (equipment protected)
-
-### Fixed
-- Mining straight down to bedrock
-- Inefficient tunnel sizing
-- Tool loss on dismiss
-- Tasks persisting after return
-
----
-
-## 🧪 Testing Guide
-
-### Test 1: Horizontal Mining Preference
+### Step 1: Backup
 ```bash
-# Create test: 
-- Coal 5 blocks away, same Y level
-- Diamond 5 blocks away, 8 blocks down
-
-/jarvis summon
-/jarvis mine
-
-Expected: Mines COAL first (same level) ✓
+cd ~/apps/jarvis/jarvis
+git add . && git commit -m "Pre-v0.0.6 backup" && git tag v0.0.2
 ```
 
-### Test 2: Bedrock Prevention
+### Step 2: Copy New Files
 ```bash
-# Place ores:
-- Some at Y=60
-- Some at Y=5 (near bedrock)
+# Create directories
+mkdir -p src/main/java/com/yourname/jarvis/statistics
 
-# Start Jarvis at Y=60
-/jarvis mine
+# Copy new files
+cp StatisticsManager.java src/main/java/com/yourname/jarvis/statistics/
+cp UndoManager.java src/main/java/com/yourname/jarvis/building/
+cp QuestTemplate.java src/main/java/com/yourname/jarvis/quests/
+cp QuestLibrary.java src/main/java/com/yourname/jarvis/quests/
+cp SchematicPreview.java src/main/java/com/yourname/jarvis/building/
 
-Expected: 
-- Mines ores at Y=60, Y=55, Y=50 ✓
-- Won't chase Y=5 ores (too far down) ✓
+# Replace config files
+cp config.yml src/main/resources/
+cp plugin.yml src/main/resources/
+cp pom.xml ./
+
+# Copy documentation
+cp CHANGELOG.md ./
 ```
 
-### Test 3: Smart Tunnels
-```bash
-# Horizontal tunnel
-/jarvis mine (with ore ahead, same level)
-Expected: 2-block tall tunnel ✓
+### Step 3: Update Existing Files
+Follow the UPDATE_GUIDE files:
+1. Open `UPDATE_GUIDE_Jarvis.md` - update Jarvis.java
+2. Open `UPDATE_GUIDE_JarvisCommands.md` - update JarvisCommands.java
+3. JarvisNPC.java, BuildingAssistant.java, QuestSystem.java need significant updates
 
-# Vertical shaft
-/jarvis mine (with ore directly below)
-Expected: 1x1 shaft ✓
-```
+**Note**: Due to complexity, I recommend requesting complete updated versions of:
+- JarvisNPC.java (most complex)
+- BuildingAssistant.java
+- QuestSystem.java
 
-### Test 4: Return Stops Mining
-```bash
-/jarvis summon
-/jarvis mine
-[Wait for Jarvis to start mining]
-/jarvis return
-
-Expected:
-- Jarvis stops breaking blocks ✓
-- Teleports back to player ✓
-- Doesn't resume mining ✓
-```
-
-### Test 5: Tool Protection
-```bash
-/jarvis summon
-/jarvis mine
-[Let Jarvis collect items]
-/jarvis dismiss
-
-Expected:
-- Ores drop on ground ✓
-- Pickaxe does NOT drop ✓
-```
-
-### Test 6: Faster Greeting
-```bash
-/jarvis summon
-
-Expected:
-- Crouches after ~0.5 seconds ✓
-- Quick crouch animation ✓
-- More responsive feel ✓
-```
-
----
-
-## 🔧 Technical Details
-
-### Ore Finding Algorithm
-
-```java
-// Priority 1: Close + Same Level
-if (dist <= 4.0 && verticalDist <= 3.0) {
-    return ore; // Highest priority
-}
-
-// Priority 2: Close but below
-if (dist <= 4.0) {
-    return ore;
-}
-
-// Priority 3: Distant + Same level (boosted)
-if (verticalDist <= 5.0) {
-    priority += 5; // Boost for horizontal
-}
-
-// Prevention: Skip ores too far below
-if (ore.getY() < center.getY() - 10) {
-    continue; // Avoid bedrock mining
-}
-```
-
-### Tunnel Size Detection
-
-```java
-double verticalDist = Math.abs(oreLoc.getY() - npcLoc.getY());
-double horizontalDist = Math.sqrt(dx² + dz²);
-
-boolean diggingDown = (oreBelow) && (verticalDist > horizontalDist);
-
-if (diggingDown) {
-    // Dig 1x1 (eye level only)
-} else {
-    // Dig 2-block (eye + feet level)
-}
-```
-
-### Equipment Protection
-
-```java
-// Get all equipped items
-ItemStack handItem = equipment.get(HAND);
-ItemStack sword = equipment.get(HAND);
-// ... other equipment ...
-
-// Only drop non-equipped items
-for (ItemStack item : inventory) {
-    if (!item.isSimilar(handItem)) {
-        world.dropItem(item); // Only loot
-    }
-}
-```
-
----
-
-## 📝 Migration from 0.0.2
-
-### Breaking Changes
-None! All changes are improvements.
-
-### Behavioral Changes
-- **Mining patterns**: More horizontal, less vertical
-- **Return command**: Now stops tasks (new behavior)
-- **Dismiss**: Tools stay with Jarvis (loot protection)
-
-### Configuration
-No config changes required.
-
-### Upgrade Steps
-```bash
-# 1. Stop server
-# 2. Replace JAR
-cp jarvis-0.0.3.jar /server/plugins/
-# 3. Start server
-# 4. Test with /jarvis summon
-```
-
----
-
-## 🗒️ Notes on 0.0.2 Development
-
-Version 0.0.2 was a major development cycle with extensive iteration on the mining system. Key milestones:
-
-1. **Initial Implementation**: Scaffolding system (removed - buggy)
-2. **Iteration 1**: Manual movement, value-first priority
-3. **Iteration 2**: Distance-first priority, ore reachability
-4. **Iteration 3**: Radius-first (4 blocks), smooth movement
-5. **Final 0.0.2**: Working but mines straight down
-
-**Key Learnings:**
-- Citizens Navigator API varies by version
-- Manual movement can be smoother than pathfinding
-- Ore selection needs multi-dimensional priority
-- Equipment vs inventory separation matters
-
-**Issues Resolved in 0.0.3:**
-- ✅ Vertical mining behavior
-- ✅ Tunnel sizing intelligence
-- ✅ Tool protection
-- ✅ Task cancellation
-
----
-
-## 🚀 What's Next?
-
-Potential future improvements:
-- Vein mining (detect and mine entire ore veins)
-- Branch mining patterns
-- Configurable mining strategies
-- Mining level preferences
-- Torch placing while mining
-
----
-
-## 📦 Download & Deploy
-
-### Build
+### Step 4: Build
 ```bash
 mvn clean package
 ```
 
-### Output
-```
-target/jarvis-0.0.3.jar
-```
-
-### Deploy
+### Step 5: Deploy
 ```bash
-cp target/jarvis-0.0.3.jar /server/plugins/
-# Restart server
+./stop.sh
+cp target/jarvis-0.0.6.jar /server/plugins/
+./start.sh
 ```
 
-### Verify
+### Step 6: Configure
+Edit `config.yml` and add your AI API key:
+```yaml
+ai:
+  provider: openai  # or claude, grok, gemini
+  openai:
+    api-key: "YOUR_KEY_HERE"
+```
+
+### Step 7: Test
 ```
 /jarvis summon
-Jarvis: At your service—let's make some magic.
-[Quick crouch animation] ✓
-
-/version Jarvis
-Jarvis version 0.0.3 ✓
+/jarvis mine        # Test torch placement
+/jarvis stats       # Test statistics
+/jarvis quest templates  # Test quest templates
 ```
 
 ---
 
-## 🎉 Summary
+## 🆕 New Features
 
-Version 0.0.3 makes Jarvis a truly smart miner:
-- ✅ No more bedrock diving
-- ✅ Intelligent horizontal exploration
-- ✅ Efficient tunnel sizing
-- ✅ Better command control
-- ✅ Tool protection
+### 1. Enhanced Vein Mining
+Automatically detects and mines entire ore veins (up to 64 blocks)
 
-**Jarvis now mines like a professional player, not a confused robot!** ⛏️✨
+### 2. Branch Mining
+`/jarvis branch` - Creates systematic mining tunnels
+
+### 3. Torch Placement
+Auto-places torches every 8 blocks while mining
+
+### 4. Build Undo
+`/jarvis undo` - Undo builds within 5 minutes
+
+### 5. Quest Templates
+20+ pre-made quests mixed with AI-generated ones
+
+### 6. Schematic Previews
+`/jarvis preview <schematic>` - Preview before building
+
+### 7. Statistics & Leaderboards
+`/jarvis stats` and `/jarvis leaderboard` - Track and compete
+
+### 8. Performance
+Better caching, async operations, reduced lag
 
 ---
 
-## 📞 Support
+## 📝 New Commands
 
-- **GitHub Issues**: https://github.com/iamgadgetman/jarvis/issues
-- **Documentation**: See repository for full guides
-- **Changelog**: See CHANGELOG.md for complete history
+- `/jarvis branch` - Start branch mining
+- `/jarvis branch stop` - Stop branch mining
+- `/jarvis undo` - Undo last build
+- `/jarvis preview <schematic>` - Preview schematic
+- `/jarvis stats [player]` - View statistics
+- `/jarvis leaderboard [category]` - View rankings
+- `/jarvis quest templates` - List quest templates
 
-**Enjoy the update!** 🎮
+---
+
+## ⚙️ Important Config
+
+```yaml
+mining:
+  place-torches: true
+  torch-spacing: 8
+  enable-vein-mining: true
+  enable-branch-mining: false  # Enable when ready
+
+build:
+  enable-undo: true
+  undo-timeout: 300  # 5 minutes
+
+quests:
+  use-templates: true
+  template-weight: 0.5  # 50% templates, 50% AI
+
+statistics:
+  enabled: true
+  enable-leaderboards: true
+```
+
+---
+
+## 🆘 Need Complete Updated Files?
+
+The following files are complex and may be easier to replace completely:
+
+1. **JarvisNPC.java** - Torch placement, branch mining, statistics
+2. **BuildingAssistant.java** - Undo integration
+3. **QuestSystem.java** - Template integration
+
+**Request these if needed!**
+
+---
+
+## 🐛 Troubleshooting
+
+### Build Errors
+- Check all files are in correct directories
+- Verify package names match
+- Run `mvn clean package`
+
+### Features Not Working
+- Check config.yml settings
+- Verify API key is set
+- Check server logs for errors
+
+### Statistics Not Saving
+- Check databases.yml connection
+- Verify `statistics.enabled: true`
+
+---
+
+## ✅ Checklist
+
+- [ ] Backed up to git (v0.0.2 tag)
+- [ ] Copied all new files
+- [ ] Updated config files
+- [ ] Updated Jarvis.java
+- [ ] Updated JarvisCommands.java
+- [ ] Updated complex files (or requested full versions)
+- [ ] Built with `mvn clean package`
+- [ ] Deployed JAR to server
+- [ ] Added API key to config
+- [ ] Tested new features
+- [ ] Committed: `git add . && git commit -m "v0.0.6"`
+- [ ] Tagged: `git tag v0.0.6 && git push --tags`
+
+---
+
+## 📚 Documentation
+
+- **IMPLEMENTATION_GUIDE_v0.0.6.md** - Detailed deployment steps
+- **DEPLOYMENT_PACKAGE_v0.0.6.md** - Feature details
+- **CHANGELOG.md** - What changed
+- **UPDATE_GUIDE_*.md** - How to update specific files
+
+---
+
+**Jarvis v0.0.6** - Smarter mining, better building, more fun! 🎮
