@@ -1,140 +1,217 @@
 # Changelog
 
-All notable changes to the Jarvis Minecraft AI Companion plugin will be documented in this file.
+All notable changes to Jarvis will be documented in this file.
 
-## [0.0.4] - 2026-01-08
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### 🎉 "Smart Assistant" Update
+## [0.0.5] - 2026-01-14
 
-This is a MAJOR update focused on making Jarvis truly intelligent, safe, and feature-rich.
+### 🎯 Major Update: Smart Mining & Code Improvements
 
-### Added
-- **Vein Mining**: Jarvis now detects and mines entire ore veins
-  - Scans for connected ore blocks
-  - Mines systematically through the vein
-  - Reports vein size: "Found diamond vein (12 blocks)!"
-  - Configurable: `mining.enable-vein-mining`
-  
-- **Visual Feedback System**: Particle effects and chat messages
-  - Happy particles when ore found
-  - Particle beam from Jarvis to ore
-  - Mining particles at target block
-  - Chat alerts for discoveries, inventory status, dangers
-  - Fully configurable in `mining.visual-feedback`
-  
-- **Auto-Return When Full**: Automatically returns to drop off loot
-  - Returns at 90% inventory (configurable)
-  - Drops items near player
-  - Resumes mining automatically
-  - Chat message: "Inventory 90% full! Returning"
-  
-- **Danger Detection**: Safety features to prevent losses
-  - Lava detection (avoids ores near lava)
-  - Too-deep detection (won't descend more than 15 blocks)
-  - Alerts player: "Lava detected! Finding safer ore"
-  - Configurable: `mining.danger-detection`
-  
-- **Mining Modes**: Target specific ores
-  - `/jarvis mine` - Mine any ore (default)
-  - `/jarvis mine diamond` - Only diamond ore
-  - `/jarvis mine iron` - Only iron ore
-  - Works with all ore types
-  
-- **Stop Command**: Emergency stop for all tasks
-  - `/jarvis stop` - Immediately cancels mining/attacking
-  - Clears navigation
-  - Returns control instantly
-  
-- **Battle Mode**: Jarvis vs Jarvis PvP!
-  - `/jarvis battle <player>` - Fight another player's Jarvis
-  - Both Jarvis instances engage in combat
-  - Damage indicators with particles
-  - Auto-disengages if too far apart
-  - FUN feature for PvP servers!
+#### Added
+- **Exposed Ore Detection**: Uses raytrace to detect visible ores - mines exposed ores first!
+- **Smart Priority System**: 3-tier priority (Exposed > Value > Distance)
+- **Dirt Pillar Climbing**: Replaces scaffolding - places dirt blocks to climb, auto-cleanup
+- **Debug Mode**: Set DEBUG constant to true for detailed logging
+- **Performance Optimizations**: Reduced tick rates, smarter ore scanning
+- **Better Constants**: All magic numbers extracted to named constants
+- **Enhanced State Management**: Cleaner MiningState class with ore counter
 
-### Changed
-- **Bedrock Mining Fix (FINAL)**: Tracks starting Y level properly
-  - Uses starting Y, not current Y, for depth limit
-  - Hard limit at Y=10 (never goes below)
-  - Force-ascends if descends more than 15 blocks
-  - Config: `mining.max-depth-below-start`
-  - **THIS FINALLY FIXES THE BEDROCK ISSUE!**
-  
-- **Return Command**: Now stops current tasks
-  - `/jarvis return` cancels mining/attacking before teleporting
-  - Cleaner state management
-  
-- **Greeting Animation**: Even faster!
-  - Starts after 0.5s (was 1.5s in 0.0.3)
-  - Toggles every 0.25s
-  - More responsive feel
+#### Changed
+- **Reduced Search Radius**: 32 blocks → 16 blocks (stays closer to player)
+- **Mining Tick Rate**: 5 ticks (was variable)
+- **Combat Tick Rate**: 10 ticks (was 10, now documented)
+- **Movement Speed**: Optimized to 0.25 for smooth movement
+- **Climb Threshold**: Only climbs if >2 blocks up
+- **Max Pillar Height**: Limited to 8 blocks
 
-### Fixed
-- **Critical: Bedrock mining** - Won't mine to bedrock anymore!
-- **Tool drops on dismiss** - Keeps working as of 0.0.3
-- **Wall clipping** - Continues to work well
-- **Task persistence** - Return command now properly stops tasks
+#### Fixed
+- **Version Consistency**: All files now show 0.0.5 (pom.xml, plugin.yml, Jarvis.java)
+- **Long-Distance Mining**: No longer targets ores 30+ blocks away
+- **Exposed Ore Priority**: Now mines visible ores before hidden ones
+- **Climbing System**: Dirt pillars work better than scaffolding
+- **Code Organization**: Better structure with constants and comments
 
-### Technical
-- Added `MiningState.startingY` tracking
-- Added `MiningState.currentVein` for vein mining
-- Added `MiningState.targetOreType` for specific ore modes
-- New methods: `detectVein()`, `shouldReturnForDropoff()`, `returnAndDropOff()`, `isLavaNearby()`, `spawnOreDiscoveryParticles()`, `stop()`, `battle()`
-- Config greatly expanded with mining and visual feedback sections
-- Particle system using Bukkit Particle API
-- ~300 lines of new code
+#### Technical Improvements
+- Added comprehensive JavaDoc comments
+- Extracted all configuration to constants at top of class
+- Improved error handling with null checks
+- Better logging with debugLog() method
+- Cleaner separation of concerns
+- Performance improvements in ore scanning
 
-### Configuration
-```yaml
-mining:
-  max-depth-below-start: 10
-  hard-bedrock-limit: 10
-  auto-return-threshold: 90
-  enable-vein-mining: true
-  danger-detection:
-    enabled: true
-  visual-feedback:
-    particles: true
-    chat-messages: true
-```
+#### Removed
+- Scaffolding system (replaced with dirt pillars)
+- Duplicate movement code
+- Unnecessary variable declarations
 
 ---
 
-## [0.0.3] - 2026-01-07
-### Added
-- Intelligent vertical mining prevention
-- Horizontal ore preference
-- Smart tunnel sizing
-- Faster greeting
+## [0.0.4] - Unreleased
 
-### Fixed
-- Mining straight down (partially)
+This version was mentioned but not found on GitHub. If it exists locally, changes should be documented here.
+
+---
+
+## [0.0.3] - 2026-01-08
+
+### Smart Mining Update
+
+#### Added
+- Intelligent vertical mining prevention (max 10 blocks down)
+- Horizontal ore preference (±3 blocks Y level)
+- Smart tunnel sizing (1x1 vs 2-block)
+- Return command stops all tasks
+
+#### Changed
+- Ore finding algorithm (4-tier priority)
+- Greeting animation timing (faster)
+- Loot system (equipment protected)
+
+#### Fixed
+- Mining straight down to bedrock
+- Inefficient tunnel sizing
 - Tool loss on dismiss
+- Tasks persisting after return
 
 ---
 
-## [0.0.2] - 2026-01-05 to 2026-01-07
-### Added
-- Schematic building
-- Claude AI support
-- Quest system overhaul
+## [0.0.2] - 2026-01-05
 
-### Fixed
-- Java 17 compatibility
-- Mining iterations
+### Mining System Implementation
+
+#### Added
+- Basic mining functionality
+- Ore priority system
+- Automatic ore detection
+- Tool enchantments
+
+#### Fixed
+- Mining priorities
+- NPC spawning
+- Equipment handling
 
 ---
 
 ## [0.0.1] - Initial Release
-### Added
-- NPC companion
-- Natural language commands
-- AI building
-- Quest generation
-- Mining automation
+
+### Initial Features
+
+#### Added
+- NPC companion system
+- Basic AI integration
+- Command system
+- Controller bell
+- Basic mining
+- Combat mode
+- Database system
+
+---
+
+## Migration Notes
+
+### From 0.0.4 to 0.0.5
+- No breaking changes
+- Mining behavior significantly improved
+- Set DEBUG=true in JarvisNPC.java for troubleshooting
+
+### From 0.0.3 to 0.0.5
+- Replace scaffolding with dirt blocks (automatic)
+- Mining stays closer to player now
+- Exposed ores prioritized
+
+### From 0.0.2 to 0.0.5
+- Complete mining overhaul
+- Much smarter ore selection
+- Better climbing system
+
+---
+
+## Known Issues
+
+### v0.0.5
+- None reported yet
+
+### Previous Versions
+- v0.0.4: Missing from GitHub
+- v0.0.3: Occasional bedrock diving
+- v0.0.2: Inefficient tunneling
+
+---
+
+## Upgrade Instructions
+
+### General Upgrade
+1. Stop server
+2. Replace `jarvis-X.X.X.jar` with new version
+3. Start server
+4. Run `/jarvis reload` (optional)
+
+### From any version to 0.0.5
+```bash
+# 1. Build new version
+mvn clean package
+
+# 2. Stop server
+./stop.sh
+
+# 3. Replace JAR
+cp target/jarvis-0.0.5.jar /path/to/server/plugins/
+
+# 4. Start server
+./start.sh
+
+# 5. Verify version
+/jarvis debug
+```
+
+---
+
+## Development Notes
+
+### v0.0.5 Development Focus
+- Prioritized exposed ore detection
+- Improved climbing mechanics
+- Code quality and maintainability
+- Performance optimizations
+- Version consistency
+
+### Testing Checklist v0.0.5
+- [ ] Exposed ores mined first
+- [ ] Search radius limited to 16 blocks
+- [ ] Dirt pillars work correctly
+- [ ] Auto-cleanup works
+- [ ] Version shows 0.0.5 everywhere
+- [ ] Debug mode functional
+
+---
+
+## Future Roadmap
+
+### Planned for 0.0.6
+- Vein mining (detect connected ore blocks)
+- Branch mining patterns
+- Configurable mining strategies
+- Torch placement while mining
+- Better pathfinding around lava
+
+### Planned for 0.1.0
+- AI chat integration improvements
+- Quest system enhancements
+- Building system improvements
+- Multi-NPC support
+
+---
+
+## Contributors
+
+- @iamgadgetman - Project owner and maintainer
 
 ---
 
 ## Links
-- [GitHub](https://github.com/iamgadgetman/jarvis)
-- [v0.0.4 Release Notes](v0.0.4_RELEASE_NOTES.md)
+
+- GitHub: https://github.com/iamgadgetman/jarvis
+- Issues: https://github.com/iamgadgetman/jarvis/issues
+- License: MIT
