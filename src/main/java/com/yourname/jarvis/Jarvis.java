@@ -15,6 +15,7 @@ import com.yourname.jarvis.DatabaseManager;
 import com.yourname.jarvis.building.BuildingAssistant;
 import com.yourname.jarvis.quests.QuestSystem;
 import com.yourname.jarvis.schematics.SchematicManager;
+import com.yourname.jarvis.listeners.ChatListener;
 import org.bukkit.command.CommandSender;
 
 /**
@@ -25,7 +26,7 @@ import org.bukkit.command.CommandSender;
  */
 public class Jarvis extends JavaPlugin {
 
-    private static final String VERSION = "0.0.5";
+    private static final String VERSION = "0.0.6";
     
     private AIConnector aiConnector;
     private JarvisNPC jarvisNPC;
@@ -57,15 +58,17 @@ public class Jarvis extends JavaPlugin {
         getCommand("jarvis").setExecutor(new JarvisCommands(this));
 
         uiManager = new UIManager(this);
-        
-        // Initialize stub systems (they show "not implemented" messages)
+
+        // Initialize systems
         buildingAssistant = new BuildingAssistant(this);
         questSystem = new QuestSystem(this);
         schematicManager = new SchematicManager(this);
-        
+
+        // Register chat listener for natural language commands
+        getServer().getPluginManager().registerEvents(new ChatListener(this), this);
+
         getLogger().info("Jarvis AI Companion v" + VERSION + " enabled successfully!");
-        getLogger().info("Note: Building, Quest, and Schematic systems are stubs in v0.0.5");
-        getLogger().info("Core NPC and Mining features are fully functional!");
+        getLogger().info("NPC, Mining, Quest, and Building systems are functional!");
     }
 
     @Override
@@ -155,12 +158,12 @@ public class Jarvis extends JavaPlugin {
             requester.sendMessage("§aDatabase connections initialized");
         }
         
-        // Show stub systems status
+        // Show systems status
         requester.sendMessage("§7--- Systems Status ---");
         requester.sendMessage("§aCore NPC & Mining: §2Fully Functional");
-        requester.sendMessage("§7Building System: §eStub (not implemented)");
-        requester.sendMessage("§7Quest System: §eStub (not implemented)");
-        requester.sendMessage("§7Schematic System: §eStub (not implemented)");
+        requester.sendMessage("§aBuilding System: §2Functional");
+        requester.sendMessage("§aQuest System: §2Functional (" + (questSystem != null ? questSystem.getQuestLibrary().getTemplateCount() + " templates" : "N/A") + ")");
+        requester.sendMessage("§aSchematic System: §2Functional");
         
         requester.sendMessage("§7==========================");
     }

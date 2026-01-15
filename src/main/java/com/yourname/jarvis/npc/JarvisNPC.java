@@ -23,6 +23,7 @@ import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 /**
@@ -42,7 +43,7 @@ import java.util.logging.Level;
 public class JarvisNPC {
 
     private final Jarvis plugin;
-    private final Map<UUID, NPC> playerNPCs = new HashMap<>();
+    private final Map<UUID, NPC> playerNPCs = new ConcurrentHashMap<>();
     private final Map<UUID, BukkitRunnable> activeTasks = new HashMap<>();
     private final Map<UUID, MiningState> miningStates = new HashMap<>();
     private final Map<UUID, BranchMiningState> branchMiningStates = new HashMap<>();

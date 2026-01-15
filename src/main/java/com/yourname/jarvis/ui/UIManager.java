@@ -48,9 +48,11 @@ public class UIManager implements Listener {
     private ItemStack item(Material mat, String name, String lore) {
         ItemStack i = new ItemStack(mat);
         ItemMeta m = i.getItemMeta();
-        m.setDisplayName(name);
-        m.setLore(List.of(lore));
-        i.setItemMeta(m);
+        if (m != null) {
+            m.setDisplayName(name);
+            m.setLore(List.of(lore));
+            i.setItemMeta(m);
+        }
         return i;
     }
 
