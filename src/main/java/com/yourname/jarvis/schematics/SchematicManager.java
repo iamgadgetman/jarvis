@@ -26,6 +26,9 @@ public class SchematicManager {
     private boolean worldEditEnabled = false;
     private Plugin worldEditPlugin = null;
 
+    // Litematic converter
+    private LitematicConverter litematicConverter;
+
     // Configuration
     private boolean allowDownloads = true;
     private int maxDownloadSize = 10; // MB
@@ -37,9 +40,14 @@ public class SchematicManager {
         loadConfig();
         initializeFolder();
         initializeWorldEdit();
+        this.litematicConverter = new LitematicConverter(plugin, schematicFolder);
         scanFolder();
+
+        // Check for unconverted litematic files
+        int litematicCount = litematicConverter.listLitematicFiles().size();
         plugin.getLogger().info("Schematic manager initialized with " + availableSchematics.size() + " schematics" +
-            (worldEditEnabled ? " (WorldEdit enabled)" : " (WorldEdit not found)"));
+            (worldEditEnabled ? " (WorldEdit enabled)" : " (WorldEdit not found)") +
+            (litematicCount > 0 ? " [" + litematicCount + " .litematic files available for conversion]" : ""));
     }
 
     private void loadConfig() {
@@ -544,5 +552,51 @@ public class SchematicManager {
 
     public boolean isWorldEditEnabled() {
         return worldEditEnabled;
+    }
+
+    // ==================== LITEMATIC CONVERSION ====================
+
+    /**
+     * Convert a .litematic file to .schem format
+     */
+    public void convertLitematic(Player player, String name) {
+        litematicConverter.convert(player, name);
+    }
+
+    /**
+     * Convert all .litematic files in the folder
+     */
+    public void convertAllLitematics(Player player) {
+        litematicConverter.convertAll(player);
+    }
+
+    /**
+     * List available .litematic files
+     */
+    public List<String> listLitematicFiles() {
+        return litematicConverter.listLitematicFiles();
+    }
+
+    /**
+     * Show litematic files to player
+     */
+    public void showLitematicFiles(Player player) {
+        List<String> files = litematicConverter.listLitematicFiles();
+
+        if (files.isEmpty()) {
+            player.sendMessage(ChatColor.YELLOW + "No .litematic files found.");
+            player.sendMessage(ChatColor.GRAY + "Place .litematic files in: " + schematicFolder.getPath());
+            return;
+        }
+
+        player.sendMessage("");
+        player.sendMessage(ChatColor.GOLD + "======== Litematic Files ========");
+        for (String file : files) {
+            player.sendMessage(ChatColor.YELLOW + "  [LITEMATIC] " + ChatColor.WHITE + file);
+        }
+        player.sendMessage("");
+        player.sendMessage(ChatColor.GRAY + "Convert one: /jarvis schematic convert <name>");
+        player.sendMessage(ChatColor.GRAY + "Convert all: /jarvis schematic convertall");
+        player.sendMessage(ChatColor.GOLD + "================================");
     }
 }

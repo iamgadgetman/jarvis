@@ -6,6 +6,7 @@
 /home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/schematics/SchematicManager.java
 /home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/quests/QuestLibrary.java
 /home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/ui/ControllerBell.java
+/home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/schematics/LitematicConverter.java
 /home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/DatabaseManager.java
 /home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/building/BuildingAssistant.java
 /home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/schematics/SchematicPreview.java

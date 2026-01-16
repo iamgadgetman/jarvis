@@ -189,13 +189,31 @@ public class JarvisCommands implements CommandExecutor {
                     case "folder" -> {
                         player.sendMessage(ChatColor.GOLD + "Schematics folder: " +
                                 ChatColor.YELLOW + plugin.getSchematicManager().getSchematicFolder().toString());
-                        player.sendMessage(ChatColor.GRAY + "Place .schem or .schematic files here");
+                        player.sendMessage(ChatColor.GRAY + "Place .schem, .schematic, or .litematic files here");
                         player.sendMessage(ChatColor.GRAY + "Then use /jarvis schematic scan");
+                    }
+
+                    case "litematic", "litematics" -> {
+                        plugin.getSchematicManager().showLitematicFiles(player);
+                    }
+
+                    case "convert" -> {
+                        if (args.length < 3) {
+                            player.sendMessage(ChatColor.RED + "Usage: /jarvis schematic convert <name>");
+                            player.sendMessage(ChatColor.GRAY + "Converts .litematic to .schem format");
+                            return true;
+                        }
+                        plugin.getSchematicManager().convertLitematic(player, args[2]);
+                    }
+
+                    case "convertall" -> {
+                        player.sendMessage(ChatColor.GOLD + "Converting all .litematic files...");
+                        plugin.getSchematicManager().convertAllLitematics(player);
                     }
 
                     default -> {
                         player.sendMessage(ChatColor.RED + "Unknown schematic command.");
-                        player.sendMessage(ChatColor.GRAY + "Use: list, paste, save, rotate, scan, folder");
+                        player.sendMessage(ChatColor.GRAY + "Use: list, paste, save, rotate, scan, convert, convertall");
                     }
                 }
             }
@@ -303,6 +321,10 @@ public class JarvisCommands implements CommandExecutor {
             player.sendMessage(ChatColor.WHITE + "  /jarvis schematic rotate <name> <deg>" + ChatColor.GRAY + " - Paste rotated");
             player.sendMessage(ChatColor.WHITE + "  /jarvis schematic scan" + ChatColor.GRAY + " - Rescan schematic folder");
             player.sendMessage(ChatColor.WHITE + "  /jarvis build <name>" + ChatColor.GRAY + " - Quick paste (alias)");
+            player.sendMessage(ChatColor.YELLOW + "Litematic Conversion:");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis schematic litematic" + ChatColor.GRAY + " - List .litematic files");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis schematic convert <name>" + ChatColor.GRAY + " - Convert to .schem");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis schematic convertall" + ChatColor.GRAY + " - Convert all litematics");
         }
         
         if (plugin.getQuestSystem() != null) {
