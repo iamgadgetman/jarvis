@@ -29,6 +29,9 @@ public class SchematicManager {
     // Litematic converter
     private LitematicConverter litematicConverter;
 
+    // Native .schem reader (no WorldEdit required)
+    private SchemReader schemReader;
+
     // Configuration
     private boolean allowDownloads = true;
     private int maxDownloadSize = 10; // MB
@@ -41,6 +44,7 @@ public class SchematicManager {
         initializeFolder();
         initializeWorldEdit();
         this.litematicConverter = new LitematicConverter(plugin, schematicFolder);
+        this.schemReader = new SchemReader(plugin);
         scanFolder();
 
         // Check for unconverted litematic files
@@ -170,7 +174,8 @@ public class SchematicManager {
     }
 
     /**
-     * Paste a schematic at player's location using WorldEdit
+     * Paste a schematic at player's location
+     * Uses native reader for .schem files, WorldEdit as fallback
      */
     public void pasteSchematic(Player player, String name) {
         SchematicInfo info = availableSchematics.get(name.toLowerCase());
@@ -193,17 +198,28 @@ public class SchematicManager {
             return;
         }
 
-        if (!worldEditEnabled) {
-            player.sendMessage(ChatColor.RED + "WorldEdit is required for schematic pasting.");
-            player.sendMessage(ChatColor.GRAY + "Please install WorldEdit on your server.");
+        // Use native reader for .schem and .schematic files
+        if (info.format == SchematicInfo.SchematicFormat.WORLDEDIT_SCHEM ||
+            info.format == SchematicInfo.SchematicFormat.WORLDEDIT_SCHEMATIC) {
+
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: Pasting schematic: " + ChatColor.WHITE + info.name);
+            schemReader.pasteSchematic(player, info.file);
             return;
         }
 
-        // Use WorldEdit to paste
-        player.sendMessage(ChatColor.YELLOW + "Jarvis: Pasting schematic: " + ChatColor.WHITE + info.name);
+        // For JSON format, use the old method or WorldEdit
+        if (info.format == SchematicInfo.SchematicFormat.JSON) {
+            if (worldEditEnabled) {
+                player.sendMessage(ChatColor.YELLOW + "Jarvis: Pasting JSON schematic via WorldEdit...");
+                pasteWithWorldEdit(player, info);
+            } else {
+                player.sendMessage(ChatColor.RED + "JSON schematics require WorldEdit.");
+                player.sendMessage(ChatColor.GRAY + "Convert to .schem format or install WorldEdit.");
+            }
+            return;
+        }
 
-        final SchematicInfo finalInfo = info;
-        pasteWithWorldEdit(player, finalInfo);
+        player.sendMessage(ChatColor.RED + "Unsupported schematic format.");
     }
 
     /**
@@ -424,10 +440,12 @@ public class SchematicManager {
 
     /**
      * Rotate clipboard before pasting
+     * Note: Rotation requires WorldEdit
      */
     public void rotateAndPaste(Player player, String name, int degrees) {
         if (!worldEditEnabled) {
-            player.sendMessage(ChatColor.RED + "WorldEdit is required for rotation.");
+            player.sendMessage(ChatColor.RED + "Rotation requires WorldEdit.");
+            player.sendMessage(ChatColor.GRAY + "Use /jarvis schematic paste " + name + " for normal paste.");
             return;
         }
 
