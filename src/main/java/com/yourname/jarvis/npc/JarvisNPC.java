@@ -3,6 +3,8 @@ package com.yourname.jarvis.npc;
 import com.yourname.jarvis.Jarvis;
 import net.citizensnpcs.api.npc.NPC;
 import net.citizensnpcs.api.CitizensAPI;
+import net.citizensnpcs.api.ai.Navigator;
+import net.citizensnpcs.api.ai.NavigatorParameters;
 import net.citizensnpcs.api.trait.trait.Equipment;
 import net.citizensnpcs.api.trait.trait.Inventory;
 import org.bukkit.ChatColor;
@@ -25,6 +27,9 @@ import org.bukkit.util.Vector;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
+
+// Phase 3: Denizen and WorldGuard integration
+import org.bukkit.plugin.Plugin;
 
 /**
  * JarvisNPC - Manages NPC spawning, combat, and intelligent mining
@@ -66,6 +71,21 @@ public class JarvisNPC {
     private final boolean placeTorches;
     private final boolean torchOnFloor;
     private final boolean enableVeinMining;
+
+    // Phase 1: Safety and stuck recovery configuration
+    private final boolean avoidLava;
+    private final boolean avoidWater;
+    private final boolean avoidFire;
+    private final int minYLevel;
+    private final int stuckTeleportThreshold;
+    private final boolean stuckMineAround;
+    private final boolean useNavigator;
+
+    // Phase 3: Denizen and WorldGuard integration
+    private boolean denizenEnabled = false;
+    private boolean worldGuardEnabled = false;
+    private Plugin denizenPlugin = null;
+    private Plugin worldGuardPlugin = null;
     
     // Debug mode - set true for detailed logging
     private static final boolean DEBUG = false;
@@ -84,25 +104,149 @@ public class JarvisNPC {
             Material.NETHER_QUARTZ_ORE
     );
 
+    // ========== PHASE 2: STATE MACHINE ENUMS ==========
+
     /**
-     * Mining state tracker with cleanup capability and vein tracking
+     * Mining phases for state machine (Phase 2)
+     */
+    private enum MiningPhase {
+        IDLE,           // Not doing anything
+        SEARCHING,      // Looking for ore clusters
+        PLANNING,       // Calculating path to cluster
+        MOVING,         // Following path segment
+        MINING,         // Breaking ore block
+        COLLECTING,     // Picking up drops
+        STUCK,          // Recovery mode
+        RETREATING,     // Moving away from danger
+        COMPLETE        // Finished mining session
+    }
+
+    /**
+     * Ore cluster - groups nearby ores for efficient mining (Phase 2)
+     */
+    private static class OreCluster {
+        List<Block> ores = new ArrayList<>();
+        Location center;
+        int totalValue = 0;
+        double distanceFromNpc;
+
+        void calculateCenter() {
+            if (ores.isEmpty()) return;
+            double x = 0, y = 0, z = 0;
+            for (Block ore : ores) {
+                x += ore.getX();
+                y += ore.getY();
+                z += ore.getZ();
+            }
+            int size = ores.size();
+            center = new Location(ores.get(0).getWorld(), x / size, y / size, z / size);
+        }
+
+        void addOre(Block ore, int priority) {
+            ores.add(ore);
+            totalValue += (20 - priority); // Higher priority = higher value
+            calculateCenter();
+        }
+
+        Block getNextOre(Location from) {
+            if (ores.isEmpty()) return null;
+            // Return closest ore in cluster
+            return ores.stream()
+                .min((a, b) -> Double.compare(
+                    a.getLocation().distance(from),
+                    b.getLocation().distance(from)))
+                .orElse(null);
+        }
+
+        void removeOre(Block ore) {
+            ores.remove(ore);
+            calculateCenter();
+        }
+
+        boolean isEmpty() {
+            return ores.isEmpty();
+        }
+
+        int size() {
+            return ores.size();
+        }
+    }
+
+    /**
+     * Path segment for navigation (Phase 2)
+     */
+    private static class PathSegment {
+        Location target;
+        boolean requiresMining;
+        Block blockToBreak;
+        int attempts = 0;
+        static final int MAX_ATTEMPTS = 10;
+
+        PathSegment(Location target) {
+            this.target = target;
+            this.requiresMining = false;
+        }
+
+        PathSegment(Location target, Block blockToBreak) {
+            this.target = target;
+            this.blockToBreak = blockToBreak;
+            this.requiresMining = true;
+        }
+
+        boolean hasExceededAttempts() {
+            return attempts >= MAX_ATTEMPTS;
+        }
+    }
+
+    /**
+     * Enhanced mining state with state machine (Phase 2)
      */
     private static class MiningState {
+        // Current state
+        MiningPhase phase = MiningPhase.IDLE;
+        MiningPhase previousPhase = MiningPhase.IDLE;
+
+        // Target tracking
         Block targetOre;
+        OreCluster currentCluster;
+        Queue<PathSegment> pathSegments = new LinkedList<>();
+
+        // Progress tracking
+        int oresMined = 0;
+        int blocksCleared = 0;
+        long sessionStartTime;
+
+        // Stuck detection
+        int ticksStuck = 0;
+        int ticksInPhase = 0;
+        Location lastLocation;
+
+        // Legacy support
         List<Block> pillarBlocks = new ArrayList<>();
         Block currentBlockToBreak;
-        int ticksStuck = 0;
-        Location lastLocation;
-        int oresMined = 0;
         Set<Block> currentVein = new HashSet<>();
         boolean miningVein = false;
-        
+
+        void transitionTo(MiningPhase newPhase) {
+            previousPhase = phase;
+            phase = newPhase;
+            ticksInPhase = 0;
+        }
+
         void reset() {
             targetOre = null;
             currentBlockToBreak = null;
             ticksStuck = 0;
             currentVein.clear();
             miningVein = false;
+            pathSegments.clear();
+            transitionTo(MiningPhase.SEARCHING);
+        }
+
+        void fullReset() {
+            reset();
+            currentCluster = null;
+            transitionTo(MiningPhase.IDLE);
         }
     }
 
@@ -133,9 +277,289 @@ public class JarvisNPC {
         
         // Load configuration
         this.torchSpacing = plugin.getConfig().getInt("mining.torch-spacing", 8);
-        this.placeTorches = plugin.getConfig().getBoolean("mining.place-torches", true);
+        this.placeTorches = plugin.getConfig().getBoolean("mining.place-torches", false);
         this.torchOnFloor = plugin.getConfig().getBoolean("mining.torch-on-floor", true);
         this.enableVeinMining = plugin.getConfig().getBoolean("mining.enable-vein-mining", true);
+
+        // Phase 1: Safety and stuck recovery
+        this.avoidLava = plugin.getConfig().getBoolean("mining.safety.avoid-lava", true);
+        this.avoidWater = plugin.getConfig().getBoolean("mining.safety.avoid-water", true);
+        this.avoidFire = plugin.getConfig().getBoolean("mining.safety.avoid-fire", true);
+        this.minYLevel = plugin.getConfig().getInt("mining.safety.min-y-level", -60);
+        this.stuckTeleportThreshold = plugin.getConfig().getInt("mining.stuck-recovery.teleport-threshold", 60);
+        this.stuckMineAround = plugin.getConfig().getBoolean("mining.stuck-recovery.mine-around", true);
+        this.useNavigator = plugin.getConfig().getBoolean("mining.use-navigator", true);
+
+        // Phase 3: Initialize Denizen and WorldGuard hooks
+        initializeDenizenHook();
+        initializeWorldGuardHook();
+    }
+
+    // ========== PHASE 3: DENIZEN INTEGRATION ==========
+
+    /**
+     * Initialize Denizen plugin hook for scripted behaviors
+     */
+    private void initializeDenizenHook() {
+        denizenPlugin = plugin.getServer().getPluginManager().getPlugin("Denizen");
+        if (denizenPlugin != null && denizenPlugin.isEnabled()) {
+            denizenEnabled = true;
+            plugin.getLogger().info("Denizen integration enabled - scripted behaviors available");
+        } else {
+            denizenEnabled = false;
+            debugLog("Denizen not found - scripted behaviors disabled");
+        }
+    }
+
+    /**
+     * Run a Denizen script for the NPC
+     * Scripts should be placed in plugins/Denizen/scripts/jarvis/
+     * Example: jarvis_mining_start.dsc, jarvis_ore_found.dsc
+     */
+    public void runDenizenScript(Player player, String scriptName, Map<String, Object> context) {
+        if (!denizenEnabled || denizenPlugin == null) {
+            debugLog("Denizen not enabled, skipping script: " + scriptName);
+            return;
+        }
+
+        try {
+            // Use Denizen's command system to run scripts
+            // Format: /ex run <script> def:<definitions>
+            StringBuilder command = new StringBuilder("ex run jarvis_" + scriptName);
+
+            // Add context as definitions
+            if (context != null && !context.isEmpty()) {
+                command.append(" def:");
+                boolean first = true;
+                for (Map.Entry<String, Object> entry : context.entrySet()) {
+                    if (!first) command.append("|");
+                    command.append(entry.getKey()).append("=").append(entry.getValue());
+                    first = false;
+                }
+            }
+
+            // Dispatch command from console
+            plugin.getServer().dispatchCommand(
+                plugin.getServer().getConsoleSender(),
+                command.toString()
+            );
+
+            debugLog("Ran Denizen script: " + scriptName);
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to run Denizen script " + scriptName + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Trigger Denizen event for custom handling
+     */
+    public void triggerDenizenEvent(String eventName, Player player, NPC npc, Map<String, Object> data) {
+        if (!denizenEnabled) return;
+
+        // Build context for Denizen
+        Map<String, Object> context = new HashMap<>();
+        context.put("player", player.getName());
+        context.put("npc_id", npc.getId());
+        if (data != null) {
+            context.putAll(data);
+        }
+
+        // Events Jarvis can trigger:
+        // - jarvis_mining_start, jarvis_mining_complete
+        // - jarvis_ore_found, jarvis_vein_found
+        // - jarvis_stuck, jarvis_danger_detected
+        // - jarvis_inventory_full, jarvis_returned
+        runDenizenScript(player, eventName, context);
+    }
+
+    // ========== PHASE 3: WORLDGUARD INTEGRATION ==========
+
+    /**
+     * Initialize WorldGuard plugin hook for region checking
+     */
+    private void initializeWorldGuardHook() {
+        worldGuardPlugin = plugin.getServer().getPluginManager().getPlugin("WorldGuard");
+        if (worldGuardPlugin != null && worldGuardPlugin.isEnabled()) {
+            worldGuardEnabled = true;
+            plugin.getLogger().info("WorldGuard integration enabled - region protection active");
+        } else {
+            worldGuardEnabled = false;
+            debugLog("WorldGuard not found - region protection disabled");
+        }
+    }
+
+    /**
+     * Check if mining is allowed at a location using WorldGuard
+     */
+    public boolean canMineAt(Player player, Location location) {
+        if (!worldGuardEnabled || worldGuardPlugin == null) {
+            return true; // No WorldGuard, allow all
+        }
+
+        try {
+            // Use WorldGuard API to check block-break flag
+            // This uses reflection to avoid hard dependency
+            Class<?> worldGuardClass = Class.forName("com.sk89q.worldguard.WorldGuard");
+            Object instance = worldGuardClass.getMethod("getInstance").invoke(null);
+            Object platform = instance.getClass().getMethod("getPlatform").invoke(instance);
+            Object regionContainer = platform.getClass().getMethod("getRegionContainer").invoke(platform);
+
+            // Get the query object
+            Class<?> bukkitAdapterClass = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
+            Object weWorld = bukkitAdapterClass.getMethod("adapt", org.bukkit.World.class)
+                .invoke(null, location.getWorld());
+            Object query = regionContainer.getClass().getMethod("createQuery").invoke(regionContainer);
+
+            // Create location for WorldGuard
+            Object weLocation = Class.forName("com.sk89q.worldedit.math.BlockVector3")
+                .getMethod("at", int.class, int.class, int.class)
+                .invoke(null, location.getBlockX(), location.getBlockY(), location.getBlockZ());
+
+            // Get wrapped player
+            Object wePlayer = bukkitAdapterClass.getMethod("adapt", Player.class).invoke(null, player);
+
+            // Check BLOCK_BREAK flag
+            Class<?> flagsClass = Class.forName("com.sk89q.worldguard.protection.flags.Flags");
+            Object blockBreakFlag = flagsClass.getField("BLOCK_BREAK").get(null);
+
+            // testState(location, player, flag)
+            Object result = query.getClass().getMethod("testState",
+                Class.forName("com.sk89q.worldedit.util.Location"),
+                Class.forName("com.sk89q.worldguard.LocalPlayer"),
+                Class.forName("com.sk89q.worldguard.protection.flags.StateFlag"))
+                .invoke(query,
+                    createWorldEditLocation(weWorld, weLocation),
+                    wePlayer,
+                    blockBreakFlag);
+
+            return (Boolean) result;
+
+        } catch (ClassNotFoundException e) {
+            // WorldGuard classes not found, allow mining
+            debugLog("WorldGuard API classes not found");
+            return true;
+        } catch (Exception e) {
+            // Error checking, log and allow (fail open)
+            debugLog("WorldGuard check error: " + e.getMessage());
+            return true;
+        }
+    }
+
+    /**
+     * Helper to create WorldEdit location
+     */
+    private Object createWorldEditLocation(Object world, Object blockVector) {
+        try {
+            Class<?> locationClass = Class.forName("com.sk89q.worldedit.util.Location");
+            return locationClass.getConstructor(
+                Class.forName("com.sk89q.worldedit.world.World"),
+                Class.forName("com.sk89q.worldedit.math.Vector3")
+            ).newInstance(world, blockVector);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Check if NPC can enter a region
+     */
+    public boolean canEnterRegion(Player player, Location location) {
+        if (!worldGuardEnabled) return true;
+
+        try {
+            // Check ENTRY flag for the location
+            Class<?> worldGuardClass = Class.forName("com.sk89q.worldguard.WorldGuard");
+            Object instance = worldGuardClass.getMethod("getInstance").invoke(null);
+            Object platform = instance.getClass().getMethod("getPlatform").invoke(instance);
+            Object regionContainer = platform.getClass().getMethod("getRegionContainer").invoke(platform);
+
+            Class<?> bukkitAdapterClass = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
+            Object weWorld = bukkitAdapterClass.getMethod("adapt", org.bukkit.World.class)
+                .invoke(null, location.getWorld());
+
+            Object regionManager = regionContainer.getClass()
+                .getMethod("get", Class.forName("com.sk89q.worldedit.world.World"))
+                .invoke(regionContainer, weWorld);
+
+            if (regionManager == null) return true;
+
+            // Get applicable regions at location
+            Object blockVector = Class.forName("com.sk89q.worldedit.math.BlockVector3")
+                .getMethod("at", int.class, int.class, int.class)
+                .invoke(null, location.getBlockX(), location.getBlockY(), location.getBlockZ());
+
+            Object regions = regionManager.getClass()
+                .getMethod("getApplicableRegions", Class.forName("com.sk89q.worldedit.math.BlockVector3"))
+                .invoke(regionManager, blockVector);
+
+            // Check if any region denies entry
+            // For simplicity, we check if there are protected regions
+            int size = (int) regions.getClass().getMethod("size").invoke(regions);
+            if (size == 0) return true;
+
+            // If there are regions, check membership
+            Object wePlayer = bukkitAdapterClass.getMethod("adapt", Player.class).invoke(null, player);
+            Object result = regions.getClass().getMethod("isMemberOfAll",
+                Class.forName("com.sk89q.worldguard.LocalPlayer"))
+                .invoke(regions, wePlayer);
+
+            return (Boolean) result;
+
+        } catch (Exception e) {
+            debugLog("WorldGuard entry check error: " + e.getMessage());
+            return true;
+        }
+    }
+
+    /**
+     * Get the name of the region at a location (for display purposes)
+     */
+    public String getRegionNameAt(Location location) {
+        if (!worldGuardEnabled) return null;
+
+        try {
+            Class<?> worldGuardClass = Class.forName("com.sk89q.worldguard.WorldGuard");
+            Object instance = worldGuardClass.getMethod("getInstance").invoke(null);
+            Object platform = instance.getClass().getMethod("getPlatform").invoke(instance);
+            Object regionContainer = platform.getClass().getMethod("getRegionContainer").invoke(platform);
+
+            Class<?> bukkitAdapterClass = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
+            Object weWorld = bukkitAdapterClass.getMethod("adapt", org.bukkit.World.class)
+                .invoke(null, location.getWorld());
+
+            Object regionManager = regionContainer.getClass()
+                .getMethod("get", Class.forName("com.sk89q.worldedit.world.World"))
+                .invoke(regionContainer, weWorld);
+
+            if (regionManager == null) return null;
+
+            Object blockVector = Class.forName("com.sk89q.worldedit.math.BlockVector3")
+                .getMethod("at", int.class, int.class, int.class)
+                .invoke(null, location.getBlockX(), location.getBlockY(), location.getBlockZ());
+
+            Object regions = regionManager.getClass()
+                .getMethod("getApplicableRegions", Class.forName("com.sk89q.worldedit.math.BlockVector3"))
+                .invoke(regionManager, blockVector);
+
+            // Get first region name
+            Object iterator = regions.getClass().getMethod("iterator").invoke(regions);
+            if ((Boolean) iterator.getClass().getMethod("hasNext").invoke(iterator)) {
+                Object region = iterator.getClass().getMethod("next").invoke(iterator);
+                return (String) region.getClass().getMethod("getId").invoke(region);
+            }
+
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public boolean isDenizenEnabled() {
+        return denizenEnabled;
+    }
+
+    public boolean isWorldGuardEnabled() {
+        return worldGuardEnabled;
     }
 
     // ========== NPC LIFECYCLE ==========
@@ -252,7 +676,7 @@ public class JarvisNPC {
         debugLog("Jarvis in battle mode: " + owner.getName() + " vs " + target.getName());
     }
 
-    // ========== SMART MINING MODE ==========
+    // ========== PHASE 2: STATE MACHINE MINING ==========
 
     public void mine(Player player, String[] args) {
         mine(player);
@@ -264,16 +688,29 @@ public class JarvisNPC {
         stopTask(player);
 
         MiningState state = new MiningState();
+        state.sessionStartTime = System.currentTimeMillis();
+        state.transitionTo(MiningPhase.SEARCHING);
         miningStates.put(player.getUniqueId(), state);
 
         player.sendMessage("§6Jarvis: Switching to mining mode!");
-        if (enableVeinMining) {
-            player.sendMessage("§7Vein mining enabled");
+        player.sendMessage("§7Using smart ore clustering and pathfinding");
+        if (worldGuardEnabled) {
+            player.sendMessage("§7WorldGuard protection active");
+        }
+        if (denizenEnabled) {
+            player.sendMessage("§7Denizen scripting available");
+        }
+
+        // Phase 3: Trigger Denizen mining_start event
+        if (denizenEnabled) {
+            Map<String, Object> eventData = new HashMap<>();
+            eventData.put("location_x", npc.getStoredLocation().getBlockX());
+            eventData.put("location_y", npc.getStoredLocation().getBlockY());
+            eventData.put("location_z", npc.getStoredLocation().getBlockZ());
+            triggerDenizenEvent("mining_start", player, npc, eventData);
         }
 
         BukkitRunnable task = new BukkitRunnable() {
-            private int noOreCounter = 0;
-
             @Override
             public void run() {
                 if (!npc.isSpawned()) {
@@ -283,67 +720,496 @@ public class JarvisNPC {
                 }
 
                 Location npcLoc = getCurrentLocation(npc);
+                state.ticksInPhase++;
 
                 // Always pickup items
                 pickupNearbyItems(npc);
-                
-                // Try to place torch
+
+                // Torch placement (if enabled)
                 tryPlaceTorch(npc, player, npcLoc);
 
-                // Check if stuck
-                if (state.lastLocation != null && state.lastLocation.distance(npcLoc) < 0.1) {
-                    state.ticksStuck++;
-                    if (state.ticksStuck > 20) {
-                        debugLog("Jarvis stuck, resetting target");
-                        state.reset();
+                // Stuck detection (applies to all phases except IDLE/COMPLETE)
+                if (state.phase != MiningPhase.IDLE && state.phase != MiningPhase.COMPLETE) {
+                    if (state.lastLocation != null && state.lastLocation.distance(npcLoc) < 0.1) {
+                        state.ticksStuck++;
+                    } else {
+                        state.ticksStuck = 0;
                     }
-                } else {
-                    state.ticksStuck = 0;
-                }
-                state.lastLocation = npcLoc.clone();
-
-                // Handle vein mining
-                if (state.miningVein && !state.currentVein.isEmpty()) {
-                    processVeinMining(npc, player, state);
-                    return;
+                    state.lastLocation = npcLoc.clone();
                 }
 
-                // Find new target ore if needed
-                if (state.targetOre == null || !isOre(state.targetOre.getType())) {
-                    OreInfo oreInfo = findBestOre(npcLoc);
-                    if (oreInfo == null) {
-                        noOreCounter++;
-                        if (noOreCounter > 5) {
-                            player.sendMessage("§eJarvis: No more ores nearby. Mined " + state.oresMined + " ores!");
+                // State machine - process current phase
+                switch (state.phase) {
+                    case SEARCHING:
+                        processSearching(npc, player, state, npcLoc);
+                        break;
 
-                            cancel();
-                            miningStates.remove(player.getUniqueId());
-                            cleanupPillarBlocks(state);
+                    case PLANNING:
+                        processPlanning(npc, player, state, npcLoc);
+                        break;
+
+                    case MOVING:
+                        processMoving(npc, player, state, npcLoc);
+                        break;
+
+                    case MINING:
+                        processMiningPhase(npc, player, state, npcLoc);
+                        break;
+
+                    case COLLECTING:
+                        processCollecting(npc, player, state, npcLoc);
+                        break;
+
+                    case STUCK:
+                        processStuck(npc, player, state, npcLoc);
+                        break;
+
+                    case RETREATING:
+                        processRetreating(npc, player, state, npcLoc);
+                        break;
+
+                    case COMPLETE:
+                        player.sendMessage("§eJarvis: Mining complete! Mined " + state.oresMined + " ores.");
+
+                        // Phase 3: Trigger Denizen mining_complete event
+                        if (denizenEnabled) {
+                            Map<String, Object> completeData = new HashMap<>();
+                            completeData.put("ores_mined", state.oresMined);
+                            completeData.put("blocks_cleared", state.blocksCleared);
+                            long duration = (System.currentTimeMillis() - state.sessionStartTime) / 1000;
+                            completeData.put("duration_seconds", duration);
+                            triggerDenizenEvent("mining_complete", player, npc, completeData);
                         }
-                        return;
-                    }
-                    noOreCounter = 0;
-                    state.targetOre = oreInfo.block;
-                    state.currentBlockToBreak = null;
-                    
-                    boolean needsSilk = oreInfo.block.getType() == Material.DEEPSLATE_EMERALD_ORE || 
-                                       oreInfo.block.getType() == Material.EMERALD_ORE;
-                    equipPickaxe(npc, needsSilk);
-                    
-                    debugLog("New target: " + oreInfo.block.getType() + 
-                            " at " + oreInfo.block.getLocation() + 
-                            " (exposed: " + oreInfo.isExposed + 
-                            ", distance: " + String.format("%.1f", oreInfo.distance) + ")");
+
+                        cancel();
+                        miningStates.remove(player.getUniqueId());
+                        cleanupPillarBlocks(state);
+                        break;
+
+                    default:
+                        state.transitionTo(MiningPhase.SEARCHING);
                 }
 
-                // Process mining
-                processMining(npc, player, state);
+                // Global stuck check - transition to STUCK phase
+                if (state.ticksStuck >= 30 && state.phase != MiningPhase.STUCK && state.phase != MiningPhase.RETREATING) {
+                    debugLog("Transitioning to STUCK phase after " + state.ticksStuck + " ticks");
+                    state.transitionTo(MiningPhase.STUCK);
+                }
+
+                // Danger check - transition to RETREATING
+                if (isDangerNearby(npcLoc) && state.phase != MiningPhase.RETREATING) {
+                    player.sendMessage(ChatColor.RED + "Jarvis: Danger detected!");
+                    state.transitionTo(MiningPhase.RETREATING);
+                }
             }
         };
         task.runTaskTimer(plugin, 0L, MINING_TICK_RATE);
         activeTasks.put(player.getUniqueId(), task);
-        
-        debugLog("Jarvis entered mining mode for " + player.getName());
+
+        debugLog("Jarvis entered state machine mining mode for " + player.getName());
+    }
+
+    // ========== PHASE 2: STATE HANDLERS ==========
+
+    /**
+     * SEARCHING phase - Find ore clusters
+     */
+    private void processSearching(NPC npc, Player player, MiningState state, Location npcLoc) {
+        debugLog("Phase: SEARCHING");
+
+        // Find ore clusters instead of single ores
+        OreCluster cluster = findBestOreCluster(npcLoc);
+
+        if (cluster == null || cluster.isEmpty()) {
+            state.ticksInPhase++;
+            if (state.ticksInPhase > 10) {
+                // No ores found after searching
+                state.transitionTo(MiningPhase.COMPLETE);
+            }
+            return;
+        }
+
+        state.currentCluster = cluster;
+        player.sendMessage(ChatColor.AQUA + "Jarvis: Found ore cluster with " + cluster.size() + " ores!");
+        debugLog("Found cluster with " + cluster.size() + " ores, center at " + cluster.center);
+
+        // Phase 3: Trigger Denizen event for cluster found
+        if (denizenEnabled) {
+            Map<String, Object> eventData = new HashMap<>();
+            eventData.put("cluster_size", cluster.size());
+            eventData.put("cluster_value", cluster.totalValue);
+            eventData.put("distance", cluster.distanceFromNpc);
+            triggerDenizenEvent("cluster_found", player, npc, eventData);
+        }
+
+        state.transitionTo(MiningPhase.PLANNING);
+    }
+
+    /**
+     * PLANNING phase - Calculate path to cluster
+     */
+    private void processPlanning(NPC npc, Player player, MiningState state, Location npcLoc) {
+        debugLog("Phase: PLANNING");
+
+        if (state.currentCluster == null || state.currentCluster.isEmpty()) {
+            state.transitionTo(MiningPhase.SEARCHING);
+            return;
+        }
+
+        // Get next ore from cluster
+        Block nextOre = state.currentCluster.getNextOre(npcLoc);
+        if (nextOre == null) {
+            state.transitionTo(MiningPhase.SEARCHING);
+            return;
+        }
+
+        state.targetOre = nextOre;
+
+        // Calculate path segments to ore
+        state.pathSegments.clear();
+        calculatePathSegments(npcLoc, nextOre.getLocation().add(0.5, 0.5, 0.5), state);
+
+        // Equip appropriate pickaxe
+        boolean needsSilk = nextOre.getType() == Material.DEEPSLATE_EMERALD_ORE ||
+                           nextOre.getType() == Material.EMERALD_ORE;
+        equipPickaxe(npc, needsSilk);
+
+        debugLog("Planned path with " + state.pathSegments.size() + " segments to " + nextOre.getType());
+
+        if (state.pathSegments.isEmpty()) {
+            // Already at ore, go straight to mining
+            state.transitionTo(MiningPhase.MINING);
+        } else {
+            state.transitionTo(MiningPhase.MOVING);
+        }
+    }
+
+    /**
+     * MOVING phase - Follow path segments
+     */
+    private void processMoving(NPC npc, Player player, MiningState state, Location npcLoc) {
+        debugLog("Phase: MOVING, segments remaining: " + state.pathSegments.size());
+
+        if (state.pathSegments.isEmpty()) {
+            // Reached destination, start mining
+            state.transitionTo(MiningPhase.MINING);
+            return;
+        }
+
+        PathSegment segment = state.pathSegments.peek();
+        if (segment == null) {
+            state.transitionTo(MiningPhase.MINING);
+            return;
+        }
+
+        double distance = npcLoc.distance(segment.target);
+
+        // Check if we've reached this segment
+        if (distance < 1.5) {
+            state.pathSegments.poll(); // Remove completed segment
+            state.ticksStuck = 0; // Reset stuck counter on progress
+            return;
+        }
+
+        // Handle blocking blocks
+        if (segment.requiresMining && segment.blockToBreak != null) {
+            Block block = segment.blockToBreak;
+            if (block.getType().isSolid() && !block.getType().isAir()) {
+                faceLocation(npc, block.getLocation().add(0.5, 0.5, 0.5));
+                ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
+                block.breakNaturally(tool);
+                state.blocksCleared++;
+                segment.attempts++;
+
+                if (segment.hasExceededAttempts()) {
+                    state.pathSegments.poll(); // Skip this segment
+                }
+                return;
+            }
+        }
+
+        // Navigate to segment target
+        if (isSafeLocation(segment.target)) {
+            // Phase 3: Check WorldGuard before entering region
+            if (!canEnterRegion(player, segment.target)) {
+                String regionName = getRegionNameAt(segment.target);
+                player.sendMessage(ChatColor.YELLOW + "Jarvis: Can't enter protected region" +
+                    (regionName != null ? ": " + regionName : ""));
+                state.pathSegments.poll(); // Skip this segment
+                return;
+            }
+            navigateToLocation(npc, segment.target);
+        } else {
+            // Unsafe location, skip segment
+            state.pathSegments.poll();
+        }
+
+        segment.attempts++;
+        if (segment.hasExceededAttempts()) {
+            debugLog("Segment exceeded max attempts, skipping");
+            state.pathSegments.poll();
+        }
+    }
+
+    /**
+     * MINING phase - Break the target ore
+     */
+    private void processMiningPhase(NPC npc, Player player, MiningState state, Location npcLoc) {
+        debugLog("Phase: MINING");
+
+        if (state.targetOre == null || !isOre(state.targetOre.getType())) {
+            // Ore already mined or invalid
+            if (state.currentCluster != null) {
+                state.currentCluster.removeOre(state.targetOre);
+            }
+            state.transitionTo(MiningPhase.COLLECTING);
+            return;
+        }
+
+        Location oreLoc = state.targetOre.getLocation().add(0.5, 0.5, 0.5);
+        double distance = npcLoc.distance(oreLoc);
+
+        if (distance > REACH_DISTANCE) {
+            // Too far, need to move closer
+            state.transitionTo(MiningPhase.PLANNING);
+            return;
+        }
+
+        // Phase 3: Check WorldGuard permissions before mining
+        if (!canMineAt(player, state.targetOre.getLocation())) {
+            String regionName = getRegionNameAt(state.targetOre.getLocation());
+            if (regionName != null) {
+                player.sendMessage(ChatColor.RED + "Jarvis: Can't mine here - protected region: " + regionName);
+            } else {
+                player.sendMessage(ChatColor.RED + "Jarvis: Can't mine here - protected area!");
+            }
+            // Skip this ore
+            if (state.currentCluster != null) {
+                state.currentCluster.removeOre(state.targetOre);
+            }
+            state.targetOre = null;
+            state.transitionTo(MiningPhase.SEARCHING);
+            return;
+        }
+
+        // Face and mine the ore
+        faceLocation(npc, oreLoc);
+        ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
+        Material oreType = state.targetOre.getType();
+        state.targetOre.breakNaturally(tool);
+        state.oresMined++;
+
+        debugLog("Mined " + oreType + " (total: " + state.oresMined + ")");
+
+        // Phase 3: Trigger Denizen event for ore mined
+        if (denizenEnabled) {
+            Map<String, Object> eventData = new HashMap<>();
+            eventData.put("ore_type", oreType.name());
+            eventData.put("total_mined", state.oresMined);
+            eventData.put("x", oreLoc.getBlockX());
+            eventData.put("y", oreLoc.getBlockY());
+            eventData.put("z", oreLoc.getBlockZ());
+            triggerDenizenEvent("ore_mined", player, npc, eventData);
+        }
+
+        // Remove from cluster
+        if (state.currentCluster != null) {
+            state.currentCluster.removeOre(state.targetOre);
+        }
+
+        state.targetOre = null;
+        state.transitionTo(MiningPhase.COLLECTING);
+    }
+
+    /**
+     * COLLECTING phase - Pick up drops
+     */
+    private void processCollecting(NPC npc, Player player, MiningState state, Location npcLoc) {
+        debugLog("Phase: COLLECTING");
+
+        pickupNearbyItems(npc);
+
+        // Short delay for items to spawn
+        if (state.ticksInPhase < 3) {
+            return;
+        }
+
+        // Check if cluster has more ores
+        if (state.currentCluster != null && !state.currentCluster.isEmpty()) {
+            state.transitionTo(MiningPhase.PLANNING);
+        } else {
+            // Cluster exhausted, search for new one
+            state.transitionTo(MiningPhase.SEARCHING);
+        }
+    }
+
+    /**
+     * STUCK phase - Recovery logic
+     */
+    private void processStuck(NPC npc, Player player, MiningState state, Location npcLoc) {
+        debugLog("Phase: STUCK, ticks: " + state.ticksInPhase);
+
+        if (state.ticksInPhase == 1) {
+            // First: Try mining around
+            if (stuckMineAround) {
+                player.sendMessage(ChatColor.YELLOW + "Jarvis: Stuck, clearing space...");
+                mineAroundWhenStuck(npc, npcLoc);
+            }
+        } else if (state.ticksInPhase == 10) {
+            // Second: Reset current target
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: Finding different path...");
+            state.pathSegments.clear();
+            if (state.currentCluster != null && state.targetOre != null) {
+                state.currentCluster.removeOre(state.targetOre);
+            }
+            state.targetOre = null;
+        } else if (state.ticksInPhase >= 20) {
+            // Last resort: Teleport to player
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: Coming back to you!");
+            Location safeLoc = findSafeSpawnLocation(player.getLocation());
+            npc.teleport(safeLoc, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+            cleanupPillarBlocks(state);
+            state.currentCluster = null;
+            state.ticksStuck = 0;
+        }
+
+        // Check if unstuck
+        if (state.ticksStuck == 0) {
+            state.transitionTo(MiningPhase.SEARCHING);
+        }
+    }
+
+    /**
+     * RETREATING phase - Escape from danger
+     */
+    private void processRetreating(NPC npc, Player player, MiningState state, Location npcLoc) {
+        debugLog("Phase: RETREATING");
+
+        retreatToSafety(npc, player, npcLoc);
+
+        // Check if safe now
+        if (!isDangerNearby(npcLoc)) {
+            state.transitionTo(MiningPhase.SEARCHING);
+        } else if (state.ticksInPhase > 20) {
+            // Teleport to player if can't escape
+            Location safeLoc = findSafeSpawnLocation(player.getLocation());
+            npc.teleport(safeLoc, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+            state.transitionTo(MiningPhase.SEARCHING);
+        }
+    }
+
+    // ========== PHASE 2: ORE CLUSTERING ==========
+
+    /**
+     * Find the best ore cluster to mine (Phase 2)
+     */
+    private OreCluster findBestOreCluster(Location center) {
+        List<OreCluster> clusters = new ArrayList<>();
+        Set<Block> assignedOres = new HashSet<>();
+
+        // Find all ores in range
+        List<OreInfo> allOres = new ArrayList<>();
+        for (int x = -SEARCH_RADIUS; x <= SEARCH_RADIUS; x++) {
+            for (int y = -SEARCH_RADIUS; y <= SEARCH_RADIUS; y++) {
+                for (int z = -SEARCH_RADIUS; z <= SEARCH_RADIUS; z++) {
+                    Block block = center.clone().add(x, y, z).getBlock();
+                    Material material = block.getType();
+
+                    if (!isOre(material)) continue;
+
+                    double distance = center.distance(block.getLocation().add(0.5, 0.5, 0.5));
+                    if (distance > SEARCH_RADIUS) continue;
+
+                    int priority = ORE_PRIORITY.indexOf(material);
+                    if (priority < 0) priority = ORE_PRIORITY.size();
+
+                    allOres.add(new OreInfo(block, distance, true, priority));
+                }
+            }
+        }
+
+        if (allOres.isEmpty()) return null;
+
+        // Cluster nearby ores together (within 5 blocks of each other)
+        double clusterRadius = 5.0;
+
+        for (OreInfo oreInfo : allOres) {
+            if (assignedOres.contains(oreInfo.block)) continue;
+
+            // Start new cluster
+            OreCluster cluster = new OreCluster();
+            cluster.addOre(oreInfo.block, oreInfo.valuePriority);
+            assignedOres.add(oreInfo.block);
+
+            // Find nearby ores to add to cluster
+            for (OreInfo other : allOres) {
+                if (assignedOres.contains(other.block)) continue;
+
+                double dist = oreInfo.block.getLocation().distance(other.block.getLocation());
+                if (dist <= clusterRadius) {
+                    cluster.addOre(other.block, other.valuePriority);
+                    assignedOres.add(other.block);
+                }
+            }
+
+            cluster.distanceFromNpc = center.distance(cluster.center);
+            clusters.add(cluster);
+        }
+
+        if (clusters.isEmpty()) return null;
+
+        // Sort clusters by value/distance ratio (prefer high value, close clusters)
+        clusters.sort((a, b) -> {
+            double scoreA = a.totalValue / (a.distanceFromNpc + 1);
+            double scoreB = b.totalValue / (b.distanceFromNpc + 1);
+            return Double.compare(scoreB, scoreA); // Higher score first
+        });
+
+        return clusters.get(0);
+    }
+
+    // ========== PHASE 2: PATH SEGMENTATION ==========
+
+    /**
+     * Calculate path segments from current location to target (Phase 2)
+     */
+    private void calculatePathSegments(Location from, Location to, MiningState state) {
+        double distance = from.distance(to);
+
+        // If close enough, no segments needed
+        if (distance <= REACH_DISTANCE) {
+            return;
+        }
+
+        Vector direction = to.toVector().subtract(from.toVector()).normalize();
+        double segmentLength = 2.0; // 2 blocks per segment
+
+        Location current = from.clone();
+        int maxSegments = 20;
+        int segments = 0;
+
+        while (current.distance(to) > REACH_DISTANCE && segments < maxSegments) {
+            Location nextPoint = current.clone().add(direction.clone().multiply(segmentLength));
+
+            // Check for blocking blocks along the way
+            Block blockingBlock = findBlockingBlock(current, nextPoint);
+
+            if (blockingBlock != null && blockingBlock.getType().isSolid()) {
+                // Need to break this block
+                state.pathSegments.add(new PathSegment(
+                    blockingBlock.getLocation().add(0.5, 0.5, 0.5),
+                    blockingBlock
+                ));
+            } else {
+                // Clear path, just move
+                state.pathSegments.add(new PathSegment(nextPoint));
+            }
+
+            current = nextPoint;
+            segments++;
+        }
+
+        debugLog("Calculated " + state.pathSegments.size() + " path segments");
     }
 
     // ========== BRANCH MINING MODE ==========
@@ -625,6 +1491,158 @@ public class JarvisNPC {
         }
     }
 
+    // ========== PHASE 1: DANGER DETECTION & STUCK RECOVERY ==========
+
+    /**
+     * Check if there are dangerous blocks nearby (lava, fire, etc.)
+     */
+    private boolean isDangerNearby(Location loc) {
+        int checkRadius = 2;
+        for (int x = -checkRadius; x <= checkRadius; x++) {
+            for (int y = -1; y <= 2; y++) {
+                for (int z = -checkRadius; z <= checkRadius; z++) {
+                    Block block = loc.clone().add(x, y, z).getBlock();
+                    Material type = block.getType();
+
+                    if (avoidLava && (type == Material.LAVA)) {
+                        debugLog("Danger: Lava detected at " + block.getLocation());
+                        return true;
+                    }
+                    if (avoidFire && type == Material.FIRE) {
+                        debugLog("Danger: Fire detected at " + block.getLocation());
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Check Y level
+        if (loc.getY() < minYLevel) {
+            debugLog("Danger: Below minimum Y level");
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if a specific location is safe to move to
+     */
+    private boolean isSafeLocation(Location loc) {
+        Block block = loc.getBlock();
+        Block below = block.getRelative(BlockFace.DOWN);
+        Block above = block.getRelative(BlockFace.UP);
+
+        // Must have solid ground
+        if (!below.getType().isSolid()) return false;
+
+        // Must have space for NPC
+        if (!block.getType().isAir() && block.getType() != Material.CAVE_AIR) return false;
+        if (!above.getType().isAir() && above.getType() != Material.CAVE_AIR) return false;
+
+        // Check for danger blocks
+        Material belowType = below.getType();
+        if (avoidLava && belowType == Material.LAVA) return false;
+        if (avoidFire && belowType == Material.FIRE) return false;
+        if (belowType == Material.MAGMA_BLOCK) return false;
+        if (belowType == Material.CACTUS) return false;
+
+        return true;
+    }
+
+    /**
+     * Retreat to a safe location when danger is detected
+     */
+    private void retreatToSafety(NPC npc, Player player, Location currentLoc) {
+        // Try to find safe spot in expanding radius
+        for (int radius = 2; radius <= 8; radius++) {
+            for (int x = -radius; x <= radius; x++) {
+                for (int z = -radius; z <= radius; z++) {
+                    Location check = currentLoc.clone().add(x, 1, z);
+                    if (isSafeLocation(check) && !isDangerNearby(check)) {
+                        debugLog("Retreating to safe location: " + check);
+
+                        if (useNavigator) {
+                            npc.getNavigator().setTarget(check);
+                        } else {
+                            npc.teleport(check, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+
+        // No safe spot found, teleport to player
+        Location safeLoc = findSafeSpawnLocation(player.getLocation());
+        npc.teleport(safeLoc, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+        player.sendMessage(ChatColor.YELLOW + "Jarvis: Had to teleport back - too dangerous!");
+    }
+
+    /**
+     * Mine blocks in immediate vicinity when stuck
+     */
+    private void mineAroundWhenStuck(NPC npc, Location npcLoc) {
+        ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
+        int mined = 0;
+
+        // Mine blocks at NPC level and one above (2-high clearance)
+        for (int y = 0; y <= 1; y++) {
+            for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
+                Block target = npcLoc.getBlock().getRelative(face).getRelative(BlockFace.UP, y);
+
+                if (target.getType().isSolid() && !isOre(target.getType())) {
+                    // Don't mine bedrock or other unbreakables
+                    if (target.getType() == Material.BEDROCK ||
+                        target.getType() == Material.BARRIER ||
+                        target.getType() == Material.END_PORTAL_FRAME) {
+                        continue;
+                    }
+
+                    target.breakNaturally(tool);
+                    mined++;
+                }
+            }
+        }
+
+        if (mined > 0) {
+            debugLog("Mined " + mined + " blocks while stuck");
+            pickupNearbyItems(npc);
+        }
+    }
+
+    /**
+     * Navigate to target using Citizens Navigator (Phase 1 improvement)
+     */
+    private void navigateToLocation(NPC npc, Location target) {
+        if (useNavigator && npc.getNavigator() != null) {
+            Navigator nav = npc.getNavigator();
+
+            // Configure navigator parameters
+            NavigatorParameters params = nav.getLocalParameters();
+            params.distanceMargin(1.5);
+            params.avoidWater(avoidWater);
+            // StuckAction: teleport NPC to target when stuck
+            params.stuckAction((npcRef, navigator) -> {
+                if (navigator.getTargetAsLocation() != null) {
+                    npcRef.teleport(navigator.getTargetAsLocation(),
+                        org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                }
+                return false; // Don't cancel navigation
+            });
+
+            // Set target
+            if (!nav.isNavigating() || nav.getTargetAsLocation() == null ||
+                nav.getTargetAsLocation().distance(target) > 2) {
+                nav.setTarget(target);
+            }
+        } else {
+            // Fallback to old method if navigator disabled
+            Location npcLoc = getCurrentLocation(npc);
+            moveTowardsLocation(npc, npcLoc, target);
+        }
+    }
+
     // ========== MINING LOGIC ==========
 
     private void processMining(NPC npc, Player player, MiningState state) {
@@ -691,7 +1709,13 @@ public class JarvisNPC {
             blockingBlock.breakNaturally(tool);
             pickupNearbyItems(npc);
         } else {
-            moveTowardsLocation(npc, npcLoc, oreLoc);
+            // Phase 1: Check if destination is safe before moving
+            if (isSafeLocation(oreLoc.getBlock().getLocation())) {
+                navigateToLocation(npc, oreLoc);
+            } else {
+                debugLog("Target ore location is unsafe, skipping");
+                state.reset();
+            }
         }
     }
 

@@ -26,7 +26,7 @@ import org.bukkit.command.CommandSender;
  */
 public class Jarvis extends JavaPlugin {
 
-    private static final String VERSION = "0.0.6";
+    private static final String VERSION = "0.0.7";
     
     private AIConnector aiConnector;
     private JarvisNPC jarvisNPC;
