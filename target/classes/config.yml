@@ -54,11 +54,24 @@ mining:
   branch-length: 16           # Length of each branch
   tunnel-height: 2            # Height of mining tunnels
   
-  # Torch placement (NEW in 0.0.6)
-  place-torches: true         # Auto-place torches while mining
+  # Torch placement (DISABLED by default in 0.0.7)
+  place-torches: false        # Auto-place torches while mining
   torch-spacing: 8            # Blocks between torches
   torch-on-floor: true        # Place torches on floor vs walls
-  
+
+  # Phase 1: Safety settings (NEW in 0.0.7)
+  use-navigator: true         # Use Citizens pathfinding (recommended)
+  safety:
+    avoid-lava: true          # Avoid lava blocks
+    avoid-water: true         # Avoid swimming through water
+    avoid-fire: true          # Avoid fire blocks
+    min-y-level: -60          # Never mine below this Y level
+
+  # Phase 1: Stuck recovery (NEW in 0.0.7)
+  stuck-recovery:
+    teleport-threshold: 60    # Ticks before teleporting to player (60 = 3 sec)
+    mine-around: true         # Try mining surrounding blocks when stuck
+
   # Auto-return
   auto-return-threshold: 90   # Return when inventory this % full
   auto-return-enabled: true   # Enable auto-return feature
@@ -73,6 +86,16 @@ mining:
   
   # Debug mode
   debug: false                # Enable detailed logging
+
+  # Phase 3: Plugin integrations
+  integrations:
+    denizen:
+      enabled: true           # Enable Denizen scripting events
+      scripts-folder: jarvis  # Folder in Denizen/scripts/ for Jarvis scripts
+    worldguard:
+      enabled: true           # Enable WorldGuard region protection
+      respect-regions: true   # Respect protected regions
+      warn-on-deny: true      # Warn player when mining is denied
 
 # ========== COMBAT CONFIGURATION ==========
 combat:

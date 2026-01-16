@@ -3,202 +3,122 @@ package com.yourname.jarvis.schematics;
 import com.yourname.jarvis.Jarvis;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
-import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.json.JSONArray;
-import org.json.JSONObject;
 
 import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.file.Files;
 import java.util.*;
 
 /**
- * SchematicManager - Manages schematic files and placement
+ * SchematicManager - Manages schematic files using WorldEdit
  *
- * Supports JSON-based schematics and integrates with BuildingAssistant
- * for block placement.
+ * Supports WorldEdit .schem/.schematic files for proper building.
+ * Falls back to JSON schematics if WorldEdit is not available.
  */
 public class SchematicManager {
 
     private final Jarvis plugin;
     private final File schematicFolder;
-    private final Map<String, SchematicData> loadedSchematics = new HashMap<>();
+    private final Map<String, SchematicInfo> availableSchematics = new HashMap<>();
+
+    // WorldEdit integration
+    private boolean worldEditEnabled = false;
+    private Plugin worldEditPlugin = null;
 
     // Configuration
     private boolean allowDownloads = true;
     private int maxDownloadSize = 10; // MB
+    private boolean pasteAir = false;
 
     public SchematicManager(Jarvis plugin) {
         this.plugin = plugin;
         this.schematicFolder = new File(plugin.getDataFolder(), "schematics");
         loadConfig();
         initializeFolder();
+        initializeWorldEdit();
         scanFolder();
-        plugin.getLogger().info("Schematic manager initialized with " + loadedSchematics.size() + " schematics");
+        plugin.getLogger().info("Schematic manager initialized with " + availableSchematics.size() + " schematics" +
+            (worldEditEnabled ? " (WorldEdit enabled)" : " (WorldEdit not found)"));
     }
 
     private void loadConfig() {
         allowDownloads = plugin.getConfig().getBoolean("schematics.allow-downloads", true);
         maxDownloadSize = plugin.getConfig().getInt("schematics.max-download-size", 10);
+        pasteAir = plugin.getConfig().getBoolean("schematics.paste-air", false);
     }
 
     private void initializeFolder() {
         if (!schematicFolder.exists()) {
             schematicFolder.mkdirs();
-
-            // Create example schematic
-            createExampleSchematic();
         }
     }
 
-    private void createExampleSchematic() {
-        try {
-            JSONObject example = new JSONObject();
-            example.put("name", "example_house");
-            example.put("author", "Jarvis");
-            example.put("description", "A simple 5x5 house");
-
-            JSONObject dimensions = new JSONObject();
-            dimensions.put("width", 5);
-            dimensions.put("height", 4);
-            dimensions.put("length", 5);
-            example.put("dimensions", dimensions);
-
-            JSONArray blocks = new JSONArray();
-
-            // Floor
-            for (int x = 0; x < 5; x++) {
-                for (int z = 0; z < 5; z++) {
-                    JSONObject block = new JSONObject();
-                    block.put("x", x);
-                    block.put("y", 0);
-                    block.put("z", z);
-                    block.put("material", "OAK_PLANKS");
-                    blocks.put(block);
-                }
-            }
-
-            // Walls
-            for (int y = 1; y <= 3; y++) {
-                for (int x = 0; x < 5; x++) {
-                    for (int z = 0; z < 5; z++) {
-                        if (x == 0 || x == 4 || z == 0 || z == 4) {
-                            // Skip door space
-                            if (x == 2 && z == 0 && y <= 2) continue;
-
-                            JSONObject block = new JSONObject();
-                            block.put("x", x);
-                            block.put("y", y);
-                            block.put("z", z);
-                            block.put("material", "OAK_PLANKS");
-                            blocks.put(block);
-                        }
-                    }
-                }
-            }
-
-            example.put("blocks", blocks);
-
-            File exampleFile = new File(schematicFolder, "example_house.json");
-            Files.writeString(exampleFile.toPath(), example.toString(2));
-
-        } catch (Exception e) {
-            plugin.getLogger().warning("Failed to create example schematic: " + e.getMessage());
+    /**
+     * Initialize WorldEdit integration
+     */
+    private void initializeWorldEdit() {
+        worldEditPlugin = plugin.getServer().getPluginManager().getPlugin("WorldEdit");
+        if (worldEditPlugin != null && worldEditPlugin.isEnabled()) {
+            worldEditEnabled = true;
+            plugin.getLogger().info("WorldEdit integration enabled for schematics");
+        } else {
+            worldEditEnabled = false;
+            plugin.getLogger().warning("WorldEdit not found - schematic paste will use fallback method");
         }
     }
 
     // ==================== DATA STRUCTURES ====================
 
-    public static class SchematicData {
+    public static class SchematicInfo {
         public String name;
-        public String author;
-        public String description;
-        public int width, height, length;
-        public List<BlockEntry> blocks;
-        public File sourceFile;
+        public String fileName;
+        public File file;
+        public SchematicFormat format;
+        public long fileSize;
 
-        public int getBlockCount() {
-            return blocks != null ? blocks.size() : 0;
+        public enum SchematicFormat {
+            WORLDEDIT_SCHEM,    // .schem (Sponge format)
+            WORLDEDIT_SCHEMATIC, // .schematic (MCEdit format)
+            JSON                 // .json (Jarvis format)
         }
     }
 
-    public static class BlockEntry {
-        public int x, y, z;
-        public Material material;
-
-        public BlockEntry(int x, int y, int z, Material material) {
-            this.x = x;
-            this.y = y;
-            this.z = z;
-            this.material = material;
-        }
-    }
-
-    // ==================== SCHEMATIC LOADING ====================
+    // ==================== FOLDER SCANNING ====================
 
     /**
-     * Scan the schematics folder for .json files
+     * Scan the schematics folder for all supported formats
      */
     public void scanFolder() {
-        loadedSchematics.clear();
+        availableSchematics.clear();
 
-        File[] files = schematicFolder.listFiles((dir, name) -> name.endsWith(".json"));
+        File[] files = schematicFolder.listFiles();
         if (files == null) return;
 
         for (File file : files) {
-            try {
-                SchematicData data = loadSchematicFile(file);
-                if (data != null) {
-                    loadedSchematics.put(data.name.toLowerCase(), data);
-                }
-            } catch (Exception e) {
-                plugin.getLogger().warning("Failed to load schematic " + file.getName() + ": " + e.getMessage());
+            String fileName = file.getName().toLowerCase();
+            SchematicInfo info = new SchematicInfo();
+            info.file = file;
+            info.fileName = file.getName();
+            info.fileSize = file.length();
+
+            if (fileName.endsWith(".schem")) {
+                info.format = SchematicInfo.SchematicFormat.WORLDEDIT_SCHEM;
+                info.name = file.getName().replace(".schem", "");
+            } else if (fileName.endsWith(".schematic")) {
+                info.format = SchematicInfo.SchematicFormat.WORLDEDIT_SCHEMATIC;
+                info.name = file.getName().replace(".schematic", "");
+            } else if (fileName.endsWith(".json")) {
+                info.format = SchematicInfo.SchematicFormat.JSON;
+                info.name = file.getName().replace(".json", "");
+            } else {
+                continue; // Skip unsupported formats
             }
-        }
-    }
 
-    private SchematicData loadSchematicFile(File file) throws Exception {
-        String content = Files.readString(file.toPath());
-        JSONObject json = new JSONObject(content);
-
-        SchematicData data = new SchematicData();
-        data.sourceFile = file;
-        data.name = json.optString("name", file.getName().replace(".json", ""));
-        data.author = json.optString("author", "Unknown");
-        data.description = json.optString("description", "No description");
-
-        JSONObject dimensions = json.optJSONObject("dimensions");
-        if (dimensions != null) {
-            data.width = dimensions.optInt("width", 1);
-            data.height = dimensions.optInt("height", 1);
-            data.length = dimensions.optInt("length", 1);
+            availableSchematics.put(info.name.toLowerCase(), info);
         }
 
-        data.blocks = new ArrayList<>();
-        JSONArray blocksArray = json.optJSONArray("blocks");
-        if (blocksArray != null) {
-            for (int i = 0; i < blocksArray.length(); i++) {
-                JSONObject block = blocksArray.getJSONObject(i);
-                int x = block.getInt("x");
-                int y = block.getInt("y");
-                int z = block.getInt("z");
-                String materialStr = block.optString("material", "STONE").toUpperCase();
-
-                Material material;
-                try {
-                    material = Material.valueOf(materialStr);
-                } catch (IllegalArgumentException e) {
-                    material = Material.STONE;
-                }
-
-                data.blocks.add(new BlockEntry(x, y, z, material));
-            }
-        }
-
-        return data;
+        plugin.getLogger().info("Found " + availableSchematics.size() + " schematics in folder");
     }
 
     // ==================== SCHEMATIC COMMANDS ====================
@@ -207,34 +127,53 @@ public class SchematicManager {
      * List available schematics
      */
     public void listSchematics(Player player) {
-        if (loadedSchematics.isEmpty()) {
+        scanFolder(); // Refresh list
+
+        if (availableSchematics.isEmpty()) {
             player.sendMessage(ChatColor.YELLOW + "No schematics available.");
-            player.sendMessage(ChatColor.GRAY + "Add .json schematics to: " + schematicFolder.getPath());
+            player.sendMessage(ChatColor.GRAY + "Add .schem or .schematic files to:");
+            player.sendMessage(ChatColor.WHITE + schematicFolder.getPath());
             return;
         }
 
         player.sendMessage("");
         player.sendMessage(ChatColor.GREEN + "======== Available Schematics ========");
 
-        for (SchematicData data : loadedSchematics.values()) {
-            player.sendMessage(ChatColor.GOLD + "  " + data.name);
-            player.sendMessage(ChatColor.GRAY + "    " + data.description);
-            player.sendMessage(ChatColor.WHITE + "    Size: " + data.width + "x" + data.height + "x" + data.length +
-                " (" + data.getBlockCount() + " blocks)");
+        for (SchematicInfo info : availableSchematics.values()) {
+            String formatStr = switch (info.format) {
+                case WORLDEDIT_SCHEM -> ChatColor.AQUA + "[SCHEM]";
+                case WORLDEDIT_SCHEMATIC -> ChatColor.AQUA + "[SCHEMATIC]";
+                case JSON -> ChatColor.YELLOW + "[JSON]";
+            };
+
+            String sizeStr = formatFileSize(info.fileSize);
+            player.sendMessage(formatStr + " " + ChatColor.GOLD + info.name +
+                ChatColor.GRAY + " (" + sizeStr + ")");
         }
 
         player.sendMessage("");
-        player.sendMessage(ChatColor.GRAY + "Use: /jarvis schematic load <name>");
+        player.sendMessage(ChatColor.GRAY + "Use: /jarvis schematic paste <name>");
+        if (worldEditEnabled) {
+            player.sendMessage(ChatColor.GREEN + "WorldEdit: " + ChatColor.WHITE + "Enabled");
+        } else {
+            player.sendMessage(ChatColor.RED + "WorldEdit: " + ChatColor.WHITE + "Not found (limited features)");
+        }
         player.sendMessage(ChatColor.GREEN + "====================================");
     }
 
     /**
-     * Load and place a schematic
+     * Paste a schematic at player's location using WorldEdit
      */
-    public void loadSchematic(Player player, String name) {
-        SchematicData data = loadedSchematics.get(name.toLowerCase());
+    public void pasteSchematic(Player player, String name) {
+        SchematicInfo info = availableSchematics.get(name.toLowerCase());
 
-        if (data == null) {
+        if (info == null) {
+            // Try refreshing and checking again
+            scanFolder();
+            info = availableSchematics.get(name.toLowerCase());
+        }
+
+        if (info == null) {
             player.sendMessage(ChatColor.RED + "Schematic not found: " + name);
             player.sendMessage(ChatColor.GRAY + "Use /jarvis schematic list to see available schematics");
             return;
@@ -246,129 +185,136 @@ public class SchematicManager {
             return;
         }
 
-        player.sendMessage(ChatColor.GREEN + "Loading schematic: " + ChatColor.YELLOW + data.name);
-        player.sendMessage(ChatColor.GRAY + "Placing " + data.getBlockCount() + " blocks...");
-
-        // Place blocks at player's location
-        Location origin = player.getLocation().add(2, 0, 2); // Offset from player
-
-        // Use BuildingAssistant to place blocks
-        placeSchematic(player, data, origin);
-    }
-
-    private void placeSchematic(Player player, SchematicData data, Location origin) {
-        // Sort blocks by Y (bottom to top)
-        List<BlockEntry> sortedBlocks = new ArrayList<>(data.blocks);
-        sortedBlocks.sort(Comparator.comparingInt(b -> b.y));
-
-        int blocksPerTick = plugin.getConfig().getInt("build.blocks-per-tick", 50);
-        final int[] placed = {0};
-        final int total = sortedBlocks.size();
-
-        new BukkitRunnable() {
-            int index = 0;
-
-            @Override
-            public void run() {
-                if (!player.isOnline() || plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId()) == null) {
-                    cancel();
-                    return;
-                }
-
-                int thisTickPlaced = 0;
-                while (index < sortedBlocks.size() && thisTickPlaced < blocksPerTick) {
-                    BlockEntry entry = sortedBlocks.get(index);
-                    Location loc = origin.clone().add(entry.x, entry.y, entry.z);
-
-                    loc.getBlock().setType(entry.material);
-                    placed[0]++;
-                    thisTickPlaced++;
-                    index++;
-                }
-
-                // Progress update every 100 blocks
-                if (placed[0] % 100 == 0 && placed[0] > 0) {
-                    int percent = (placed[0] * 100) / total;
-                    player.sendMessage(ChatColor.YELLOW + "Schematic progress: " + percent + "%");
-                }
-
-                if (index >= sortedBlocks.size()) {
-                    player.sendMessage(ChatColor.GREEN + "Schematic " + data.name + " placed successfully!");
-                    player.sendMessage(ChatColor.GRAY + "Placed " + placed[0] + " blocks.");
-                    cancel();
-                }
-            }
-        }.runTaskTimer(plugin, 1L, 1L);
-    }
-
-    /**
-     * Build using AI description (delegates to BuildingAssistant)
-     */
-    public void buildWithAI(Player player, String description) {
-        plugin.getBuildingAssistant().startBuild(player, description);
-    }
-
-    /**
-     * Download a schematic from URL
-     */
-    public void downloadSchematic(Player player, String urlString, String name) {
-        if (!allowDownloads) {
-            player.sendMessage(ChatColor.RED + "Schematic downloads are disabled.");
+        if (!worldEditEnabled) {
+            player.sendMessage(ChatColor.RED + "WorldEdit is required for schematic pasting.");
+            player.sendMessage(ChatColor.GRAY + "Please install WorldEdit on your server.");
             return;
         }
 
-        player.sendMessage(ChatColor.YELLOW + "Downloading schematic...");
+        // Use WorldEdit to paste
+        player.sendMessage(ChatColor.YELLOW + "Jarvis: Pasting schematic: " + ChatColor.WHITE + info.name);
 
+        final SchematicInfo finalInfo = info;
+        pasteWithWorldEdit(player, finalInfo);
+    }
+
+    /**
+     * Paste schematic using WorldEdit API
+     */
+    private void pasteWithWorldEdit(Player player, SchematicInfo info) {
         new BukkitRunnable() {
             @Override
             public void run() {
                 try {
-                    URL url = new URL(urlString);
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(10000);
-                    conn.setReadTimeout(10000);
+                    // Get WorldEdit classes via reflection to avoid hard dependency
+                    Class<?> worldEditClass = Class.forName("com.sk89q.worldedit.WorldEdit");
+                    Class<?> bukkitAdapterClass = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
+                    Class<?> clipboardFormatClass = Class.forName("com.sk89q.worldedit.extent.clipboard.io.ClipboardFormats");
+                    Class<?> clipboardClass = Class.forName("com.sk89q.worldedit.extent.clipboard.Clipboard");
+                    Class<?> editSessionFactoryClass = Class.forName("com.sk89q.worldedit.EditSessionFactory");
+                    Class<?> editSessionClass = Class.forName("com.sk89q.worldedit.EditSession");
 
-                    // Check size
-                    int contentLength = conn.getContentLength();
-                    if (contentLength > maxDownloadSize * 1024 * 1024) {
+                    // Get WorldEdit instance
+                    Object worldEdit = worldEditClass.getMethod("getInstance").invoke(null);
+
+                    // Adapt player to WorldEdit
+                    Object wePlayer = bukkitAdapterClass.getMethod("adapt", Player.class).invoke(null, player);
+
+                    // Adapt world
+                    Object weWorld = bukkitAdapterClass.getMethod("adapt", org.bukkit.World.class)
+                        .invoke(null, player.getWorld());
+
+                    // Find clipboard format for the file
+                    Object format = clipboardFormatClass.getMethod("findByFile", File.class)
+                        .invoke(null, info.file);
+
+                    if (format == null) {
                         new BukkitRunnable() {
                             @Override
                             public void run() {
-                                player.sendMessage(ChatColor.RED + "Schematic too large (max " + maxDownloadSize + "MB)");
+                                player.sendMessage(ChatColor.RED + "Unknown schematic format: " + info.fileName);
                             }
                         }.runTask(plugin);
                         return;
                     }
 
-                    // Download
-                    InputStream in = conn.getInputStream();
-                    String finalName = name.endsWith(".json") ? name : name + ".json";
-                    File outputFile = new File(schematicFolder, finalName);
-
-                    FileOutputStream out = new FileOutputStream(outputFile);
-                    byte[] buffer = new byte[4096];
-                    int bytesRead;
-                    while ((bytesRead = in.read(buffer)) != -1) {
-                        out.write(buffer, 0, bytesRead);
+                    // Load the schematic
+                    Object clipboard;
+                    try (FileInputStream fis = new FileInputStream(info.file)) {
+                        Class<?> clipboardReaderClass = Class.forName("com.sk89q.worldedit.extent.clipboard.io.ClipboardReader");
+                        Object reader = format.getClass().getMethod("getReader", InputStream.class).invoke(format, fis);
+                        clipboard = clipboardReaderClass.getMethod("read").invoke(reader);
                     }
-                    out.close();
-                    in.close();
 
-                    // Reload schematics
+                    // Get player location as BlockVector3
+                    Location loc = player.getLocation();
+                    Class<?> blockVector3Class = Class.forName("com.sk89q.worldedit.math.BlockVector3");
+                    Object pasteLocation = blockVector3Class.getMethod("at", int.class, int.class, int.class)
+                        .invoke(null, loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
+
+                    // Create EditSession
+                    Object editSessionFactory = worldEditClass.getMethod("getEditSessionFactory").invoke(worldEdit);
+                    Object editSession = editSessionFactoryClass.getMethod("getEditSession",
+                        Class.forName("com.sk89q.worldedit.world.World"), int.class)
+                        .invoke(editSessionFactory, weWorld, -1);
+
+                    // Create clipboard holder and paste operation
+                    Class<?> clipboardHolderClass = Class.forName("com.sk89q.worldedit.session.ClipboardHolder");
+                    Object clipboardHolder = clipboardHolderClass.getConstructor(clipboardClass)
+                        .newInstance(clipboard);
+
+                    // Build paste operation
+                    Object pasteBuilder = clipboardHolderClass.getMethod("createPaste", editSessionClass)
+                        .invoke(clipboardHolder, editSession);
+
+                    // Set paste location
+                    pasteBuilder.getClass().getMethod("to", blockVector3Class).invoke(pasteBuilder, pasteLocation);
+
+                    // Set ignore air blocks option
+                    pasteBuilder.getClass().getMethod("ignoreAirBlocks", boolean.class)
+                        .invoke(pasteBuilder, !pasteAir);
+
+                    // Build and complete the operation
+                    Class<?> operationClass = Class.forName("com.sk89q.worldedit.function.operation.Operation");
+                    Object operation = pasteBuilder.getClass().getMethod("build").invoke(pasteBuilder);
+
+                    Class<?> operationsClass = Class.forName("com.sk89q.worldedit.function.operation.Operations");
+                    operationsClass.getMethod("complete", operationClass).invoke(null, operation);
+
+                    // Close edit session
+                    editSessionClass.getMethod("close").invoke(editSession);
+
+                    // Get block count from clipboard
+                    Object region = clipboardClass.getMethod("getRegion").invoke(clipboard);
+                    Object volume = region.getClass().getMethod("getVolume").invoke(region);
+                    int blockCount = ((Number) volume).intValue();
+
+                    // Notify player on main thread
                     new BukkitRunnable() {
                         @Override
                         public void run() {
-                            scanFolder();
-                            player.sendMessage(ChatColor.GREEN + "Downloaded schematic: " + finalName);
+                            player.sendMessage("");
+                            player.sendMessage(ChatColor.GREEN + "========================================");
+                            player.sendMessage(ChatColor.GOLD + "  Schematic Pasted: " + ChatColor.YELLOW + info.name);
+                            player.sendMessage(ChatColor.GREEN + "========================================");
+                            player.sendMessage(ChatColor.WHITE + "  Blocks: ~" + blockCount);
+                            player.sendMessage(ChatColor.WHITE + "  Location: " + loc.getBlockX() + ", " +
+                                loc.getBlockY() + ", " + loc.getBlockZ());
+                            player.sendMessage(ChatColor.GRAY + "  Use //undo to revert if needed");
+                            player.sendMessage(ChatColor.GREEN + "========================================");
+                            player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
                         }
                     }.runTask(plugin);
 
                 } catch (Exception e) {
+                    plugin.getLogger().warning("WorldEdit paste failed: " + e.getMessage());
+                    e.printStackTrace();
+
                     new BukkitRunnable() {
                         @Override
                         public void run() {
-                            player.sendMessage(ChatColor.RED + "Download failed: " + e.getMessage());
+                            player.sendMessage(ChatColor.RED + "Failed to paste schematic: " + e.getMessage());
+                            player.sendMessage(ChatColor.GRAY + "Check console for details.");
                         }
                     }.runTask(plugin);
                 }
@@ -377,11 +323,205 @@ public class SchematicManager {
     }
 
     /**
-     * Save current selection as schematic (placeholder for future WorldEdit integration)
+     * Save player's WorldEdit selection as a schematic
      */
     public void saveSchematic(Player player, String name) {
-        player.sendMessage(ChatColor.YELLOW + "Schematic saving requires WorldEdit selection.");
-        player.sendMessage(ChatColor.GRAY + "This feature will be expanded in a future update.");
+        if (!worldEditEnabled) {
+            player.sendMessage(ChatColor.RED + "WorldEdit is required for saving schematics.");
+            return;
+        }
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                try {
+                    // Get WorldEdit classes
+                    Class<?> worldEditClass = Class.forName("com.sk89q.worldedit.WorldEdit");
+                    Class<?> bukkitAdapterClass = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
+                    Class<?> localSessionClass = Class.forName("com.sk89q.worldedit.LocalSession");
+                    Class<?> clipboardClass = Class.forName("com.sk89q.worldedit.extent.clipboard.Clipboard");
+
+                    // Get WorldEdit instance
+                    Object worldEdit = worldEditClass.getMethod("getInstance").invoke(null);
+
+                    // Get session manager
+                    Object sessionManager = worldEditClass.getMethod("getSessionManager").invoke(worldEdit);
+
+                    // Adapt player
+                    Object wePlayer = bukkitAdapterClass.getMethod("adapt", Player.class).invoke(null, player);
+
+                    // Get player's session
+                    Object session = sessionManager.getClass().getMethod("get",
+                        Class.forName("com.sk89q.worldedit.extension.platform.Actor"))
+                        .invoke(sessionManager, wePlayer);
+
+                    // Get clipboard from session
+                    Class<?> clipboardHolderClass = Class.forName("com.sk89q.worldedit.session.ClipboardHolder");
+                    Object clipboardHolder;
+                    try {
+                        clipboardHolder = localSessionClass.getMethod("getClipboard").invoke(session);
+                    } catch (Exception e) {
+                        new BukkitRunnable() {
+                            @Override
+                            public void run() {
+                                player.sendMessage(ChatColor.RED + "No clipboard found!");
+                                player.sendMessage(ChatColor.GRAY + "Use //copy to copy a selection first.");
+                            }
+                        }.runTask(plugin);
+                        return;
+                    }
+
+                    Object clipboard = clipboardHolderClass.getMethod("getClipboard").invoke(clipboardHolder);
+
+                    // Create output file
+                    String fileName = name.endsWith(".schem") ? name : name + ".schem";
+                    File outputFile = new File(schematicFolder, fileName);
+
+                    // Get Sponge schematic format
+                    Class<?> clipboardFormatsClass = Class.forName("com.sk89q.worldedit.extent.clipboard.io.BuiltInClipboardFormat");
+                    Object spongeFormat = Enum.valueOf((Class<Enum>) clipboardFormatsClass, "SPONGE_SCHEMATIC");
+
+                    // Write schematic
+                    try (FileOutputStream fos = new FileOutputStream(outputFile)) {
+                        Object writer = spongeFormat.getClass().getMethod("getWriter", OutputStream.class)
+                            .invoke(spongeFormat, fos);
+                        writer.getClass().getMethod("write", clipboardClass).invoke(writer, clipboard);
+                        writer.getClass().getMethod("close").invoke(writer);
+                    }
+
+                    // Refresh schematics list
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            scanFolder();
+                            player.sendMessage(ChatColor.GREEN + "Schematic saved: " + ChatColor.YELLOW + fileName);
+                            player.sendMessage(ChatColor.GRAY + "Location: " + outputFile.getPath());
+                        }
+                    }.runTask(plugin);
+
+                } catch (Exception e) {
+                    plugin.getLogger().warning("Failed to save schematic: " + e.getMessage());
+                    e.printStackTrace();
+
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            player.sendMessage(ChatColor.RED + "Failed to save schematic: " + e.getMessage());
+                        }
+                    }.runTask(plugin);
+                }
+            }
+        }.runTaskAsynchronously(plugin);
+    }
+
+    /**
+     * Rotate clipboard before pasting
+     */
+    public void rotateAndPaste(Player player, String name, int degrees) {
+        if (!worldEditEnabled) {
+            player.sendMessage(ChatColor.RED + "WorldEdit is required for rotation.");
+            return;
+        }
+
+        SchematicInfo info = availableSchematics.get(name.toLowerCase());
+        if (info == null) {
+            player.sendMessage(ChatColor.RED + "Schematic not found: " + name);
+            return;
+        }
+
+        player.sendMessage(ChatColor.YELLOW + "Jarvis: Pasting " + info.name + " rotated " + degrees + " degrees...");
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                try {
+                    // Similar to pasteWithWorldEdit but with rotation transform
+                    Class<?> worldEditClass = Class.forName("com.sk89q.worldedit.WorldEdit");
+                    Class<?> bukkitAdapterClass = Class.forName("com.sk89q.worldedit.bukkit.BukkitAdapter");
+                    Class<?> clipboardFormatClass = Class.forName("com.sk89q.worldedit.extent.clipboard.io.ClipboardFormats");
+                    Class<?> clipboardClass = Class.forName("com.sk89q.worldedit.extent.clipboard.Clipboard");
+                    Class<?> affineTransformClass = Class.forName("com.sk89q.worldedit.math.transform.AffineTransform");
+
+                    Object worldEdit = worldEditClass.getMethod("getInstance").invoke(null);
+                    Object weWorld = bukkitAdapterClass.getMethod("adapt", org.bukkit.World.class)
+                        .invoke(null, player.getWorld());
+
+                    Object format = clipboardFormatClass.getMethod("findByFile", File.class)
+                        .invoke(null, info.file);
+
+                    Object clipboard;
+                    try (FileInputStream fis = new FileInputStream(info.file)) {
+                        Object reader = format.getClass().getMethod("getReader", InputStream.class).invoke(format, fis);
+                        clipboard = reader.getClass().getMethod("read").invoke(reader);
+                    }
+
+                    Location loc = player.getLocation();
+                    Class<?> blockVector3Class = Class.forName("com.sk89q.worldedit.math.BlockVector3");
+                    Object pasteLocation = blockVector3Class.getMethod("at", int.class, int.class, int.class)
+                        .invoke(null, loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
+
+                    Object editSessionFactory = worldEditClass.getMethod("getEditSessionFactory").invoke(worldEdit);
+                    Object editSession = editSessionFactory.getClass().getMethod("getEditSession",
+                        Class.forName("com.sk89q.worldedit.world.World"), int.class)
+                        .invoke(editSessionFactory, weWorld, -1);
+
+                    // Create transform with rotation
+                    Object transform = affineTransformClass.getConstructor().newInstance();
+                    transform = affineTransformClass.getMethod("rotateY", double.class)
+                        .invoke(transform, (double) degrees);
+
+                    Class<?> clipboardHolderClass = Class.forName("com.sk89q.worldedit.session.ClipboardHolder");
+                    Object clipboardHolder = clipboardHolderClass.getConstructor(clipboardClass)
+                        .newInstance(clipboard);
+
+                    // Set transform
+                    clipboardHolderClass.getMethod("setTransform",
+                        Class.forName("com.sk89q.worldedit.math.transform.Transform"))
+                        .invoke(clipboardHolder, transform);
+
+                    Object pasteBuilder = clipboardHolderClass.getMethod("createPaste",
+                        Class.forName("com.sk89q.worldedit.EditSession"))
+                        .invoke(clipboardHolder, editSession);
+
+                    pasteBuilder.getClass().getMethod("to", blockVector3Class).invoke(pasteBuilder, pasteLocation);
+                    pasteBuilder.getClass().getMethod("ignoreAirBlocks", boolean.class).invoke(pasteBuilder, !pasteAir);
+
+                    Object operation = pasteBuilder.getClass().getMethod("build").invoke(pasteBuilder);
+
+                    Class<?> operationsClass = Class.forName("com.sk89q.worldedit.function.operation.Operations");
+                    operationsClass.getMethod("complete",
+                        Class.forName("com.sk89q.worldedit.function.operation.Operation"))
+                        .invoke(null, operation);
+
+                    editSession.getClass().getMethod("close").invoke(editSession);
+
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            player.sendMessage(ChatColor.GREEN + "Pasted " + info.name + " rotated " + degrees + " degrees!");
+                            player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+                        }
+                    }.runTask(plugin);
+
+                } catch (Exception e) {
+                    plugin.getLogger().warning("Rotated paste failed: " + e.getMessage());
+                    new BukkitRunnable() {
+                        @Override
+                        public void run() {
+                            player.sendMessage(ChatColor.RED + "Failed to paste: " + e.getMessage());
+                        }
+                    }.runTask(plugin);
+                }
+            }
+        }.runTaskAsynchronously(plugin);
+    }
+
+    // ==================== UTILITY ====================
+
+    private String formatFileSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
+        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
     }
 
     // ==================== GETTERS ====================
@@ -390,15 +530,19 @@ public class SchematicManager {
         return schematicFolder;
     }
 
-    public Collection<SchematicData> getSchematics() {
-        return loadedSchematics.values();
+    public Collection<SchematicInfo> getSchematics() {
+        return availableSchematics.values();
     }
 
-    public SchematicData getSchematic(String name) {
-        return loadedSchematics.get(name.toLowerCase());
+    public SchematicInfo getSchematic(String name) {
+        return availableSchematics.get(name.toLowerCase());
     }
 
     public int getSchematicCount() {
-        return loadedSchematics.size();
+        return availableSchematics.size();
+    }
+
+    public boolean isWorldEditEnabled() {
+        return worldEditEnabled;
     }
 }

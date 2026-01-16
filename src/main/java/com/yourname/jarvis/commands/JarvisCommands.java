@@ -95,29 +95,35 @@ public class JarvisCommands implements CommandExecutor {
                 player.sendMessage(ChatColor.GREEN + "Here's your Jarvis Controller bell!");
             }
             
-            // Building commands
-            case "build" -> {
+            // Building commands - now uses WorldEdit schematics
+            case "build", "paste" -> {
                 if (plugin.getSchematicManager() == null) {
-                    player.sendMessage(ChatColor.RED + "Building system not available (WorldEdit required)");
+                    player.sendMessage(ChatColor.RED + "Schematic manager not available");
                     return true;
                 }
-                
+
                 if (args.length < 2) {
-                    player.sendMessage(ChatColor.RED + "Usage: /jarvis build <description>");
-                    player.sendMessage(ChatColor.GRAY + "Example: /jarvis build small house");
+                    player.sendMessage(ChatColor.RED + "Usage: /jarvis build <schematic_name>");
+                    player.sendMessage(ChatColor.GRAY + "Example: /jarvis build castle");
+                    player.sendMessage(ChatColor.GRAY + "Use /jarvis schematic list to see available schematics");
                     return true;
                 }
-                
-                // Join remaining args as description
-                StringBuilder description = new StringBuilder();
-                for (int i = 1; i < args.length; i++) {
-                    description.append(args[i]).append(" ");
+
+                String schematicName = args[1];
+
+                // Check for rotation argument
+                if (args.length >= 4 && args[2].equalsIgnoreCase("rotate")) {
+                    try {
+                        int degrees = Integer.parseInt(args[3]);
+                        plugin.getSchematicManager().rotateAndPaste(player, schematicName, degrees);
+                    } catch (NumberFormatException e) {
+                        player.sendMessage(ChatColor.RED + "Invalid rotation. Use: 90, 180, or 270");
+                    }
+                } else {
+                    plugin.getSchematicManager().pasteSchematic(player, schematicName);
                 }
-                
-                // Use AI to select and build schematic
-                plugin.getSchematicManager().buildWithAI(player, description.toString().trim());
             }
-            
+
             case "cancelbuild" -> {
                 if (plugin.getBuildingAssistant() == null) {
                     player.sendMessage(ChatColor.RED + "Building assistant not available");
@@ -125,48 +131,72 @@ public class JarvisCommands implements CommandExecutor {
                 }
                 plugin.getBuildingAssistant().cancelBuild(player);
             }
-            
+
             // Schematic management commands
             case "schematics", "schematic" -> {
                 if (plugin.getSchematicManager() == null) {
-                    player.sendMessage(ChatColor.RED + "Schematic manager not available (WorldEdit required)");
+                    player.sendMessage(ChatColor.RED + "Schematic manager not available");
                     return true;
                 }
-                
+
                 if (args.length < 2) {
                     plugin.getSchematicManager().listSchematics(player);
                     return true;
                 }
-                
+
                 String schematicSub = args[1].toLowerCase();
                 switch (schematicSub) {
                     case "list" -> plugin.getSchematicManager().listSchematics(player);
-                    
-                    case "scan", "reload" -> {
-                        player.sendMessage(ChatColor.GOLD + "Jarvis: Scanning for new schematics...");
-                        plugin.getSchematicManager().scanFolder();
-                        player.sendMessage(ChatColor.GREEN + "Jarvis: Scan complete! Found " + 
-                                plugin.getSchematicManager().getSchematics().size() + " schematics.");
-                    }
-                    
-                    case "download" -> {
-                        if (args.length < 4) {
-                            player.sendMessage(ChatColor.RED + "Usage: /jarvis schematics download <url> <name>");
-                            player.sendMessage(ChatColor.GRAY + "Example: /jarvis schematics download https://example.com/house.schem myhouse");
+
+                    case "paste", "load" -> {
+                        if (args.length < 3) {
+                            player.sendMessage(ChatColor.RED + "Usage: /jarvis schematic paste <name>");
                             return true;
                         }
-                        String url = args[2];
-                        String name = args[3];
-                        plugin.getSchematicManager().downloadSchematic(player, url, name);
+                        plugin.getSchematicManager().pasteSchematic(player, args[2]);
                     }
-                    
+
+                    case "save" -> {
+                        if (args.length < 3) {
+                            player.sendMessage(ChatColor.RED + "Usage: /jarvis schematic save <name>");
+                            player.sendMessage(ChatColor.GRAY + "First use //copy to copy your selection");
+                            return true;
+                        }
+                        plugin.getSchematicManager().saveSchematic(player, args[2]);
+                    }
+
+                    case "rotate" -> {
+                        if (args.length < 4) {
+                            player.sendMessage(ChatColor.RED + "Usage: /jarvis schematic rotate <name> <degrees>");
+                            player.sendMessage(ChatColor.GRAY + "Example: /jarvis schematic rotate castle 90");
+                            return true;
+                        }
+                        try {
+                            int degrees = Integer.parseInt(args[3]);
+                            plugin.getSchematicManager().rotateAndPaste(player, args[2], degrees);
+                        } catch (NumberFormatException e) {
+                            player.sendMessage(ChatColor.RED + "Invalid rotation. Use: 90, 180, or 270");
+                        }
+                    }
+
+                    case "scan", "reload" -> {
+                        player.sendMessage(ChatColor.GOLD + "Jarvis: Scanning for schematics...");
+                        plugin.getSchematicManager().scanFolder();
+                        player.sendMessage(ChatColor.GREEN + "Jarvis: Found " +
+                                plugin.getSchematicManager().getSchematics().size() + " schematics.");
+                    }
+
                     case "folder" -> {
-                        player.sendMessage(ChatColor.GOLD + "Schematics folder: " + 
+                        player.sendMessage(ChatColor.GOLD + "Schematics folder: " +
                                 ChatColor.YELLOW + plugin.getSchematicManager().getSchematicFolder().toString());
-                        player.sendMessage(ChatColor.GRAY + "Place .schem or .schematic files here and use /jarvis schematics scan");
+                        player.sendMessage(ChatColor.GRAY + "Place .schem or .schematic files here");
+                        player.sendMessage(ChatColor.GRAY + "Then use /jarvis schematic scan");
                     }
-                    
-                    default -> player.sendMessage(ChatColor.RED + "Unknown schematic command. Use: list, scan, download, folder");
+
+                    default -> {
+                        player.sendMessage(ChatColor.RED + "Unknown schematic command.");
+                        player.sendMessage(ChatColor.GRAY + "Use: list, paste, save, rotate, scan, folder");
+                    }
                 }
             }
             
@@ -251,7 +281,7 @@ public class JarvisCommands implements CommandExecutor {
 
     private void showHelp(Player player) {
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
-        player.sendMessage(ChatColor.GOLD + "  Jarvis AI Companion v0.0.4");
+        player.sendMessage(ChatColor.GOLD + "  Jarvis AI Companion v0.0.8");
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
         
         player.sendMessage(ChatColor.YELLOW + "NPC Commands:");
@@ -265,12 +295,14 @@ public class JarvisCommands implements CommandExecutor {
         player.sendMessage(ChatColor.WHITE + "  /jarvis loot" + ChatColor.GRAY + " - Open inventory");
         player.sendMessage(ChatColor.WHITE + "  /jarvis bell" + ChatColor.GRAY + " - Get controller bell");
         
-        if (plugin.getBuildingAssistant() != null) {
-            player.sendMessage(ChatColor.YELLOW + "Building Commands:");
-            player.sendMessage(ChatColor.WHITE + "  /jarvis build <desc>" + ChatColor.GRAY + " - AI builds from schematics");
-            player.sendMessage(ChatColor.WHITE + "  /jarvis schematics" + ChatColor.GRAY + " - List available schematics");
-            player.sendMessage(ChatColor.WHITE + "  /jarvis schematics scan" + ChatColor.GRAY + " - Reload schematic folder");
-            player.sendMessage(ChatColor.WHITE + "  /jarvis schematics download <url> <name>" + ChatColor.GRAY + " - Download schematic");
+        if (plugin.getSchematicManager() != null) {
+            player.sendMessage(ChatColor.YELLOW + "Schematic Commands:");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis schematic list" + ChatColor.GRAY + " - List available schematics");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis schematic paste <name>" + ChatColor.GRAY + " - Paste schematic");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis schematic save <name>" + ChatColor.GRAY + " - Save clipboard as schematic");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis schematic rotate <name> <deg>" + ChatColor.GRAY + " - Paste rotated");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis schematic scan" + ChatColor.GRAY + " - Rescan schematic folder");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis build <name>" + ChatColor.GRAY + " - Quick paste (alias)");
         }
         
         if (plugin.getQuestSystem() != null) {
