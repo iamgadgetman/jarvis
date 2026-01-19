@@ -16,6 +16,7 @@ import com.yourname.jarvis.building.BuildingAssistant;
 import com.yourname.jarvis.quests.QuestSystem;
 import com.yourname.jarvis.schematics.SchematicManager;
 import com.yourname.jarvis.listeners.ChatListener;
+import com.yourname.jarvis.listeners.PlayerConnectionListener;
 import org.bukkit.command.CommandSender;
 
 /**
@@ -26,7 +27,7 @@ import org.bukkit.command.CommandSender;
  */
 public class Jarvis extends JavaPlugin {
 
-    private static final String VERSION = "0.0.8";
+    private static final String VERSION = "0.0.6";
     
     private AIConnector aiConnector;
     private JarvisNPC jarvisNPC;
@@ -66,6 +67,9 @@ public class Jarvis extends JavaPlugin {
 
         // Register chat listener for natural language commands
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
+
+        // Register player connection listener for disconnect handling
+        getServer().getPluginManager().registerEvents(new PlayerConnectionListener(this), this);
 
         getLogger().info("Jarvis AI Companion v" + VERSION + " enabled successfully!");
         getLogger().info("NPC, Mining, Quest, and Building systems are functional!");
@@ -133,9 +137,26 @@ public class Jarvis extends JavaPlugin {
             String provider = aiConnector.getProvider();
             String modelName = aiConnector.getModel();
             boolean hasKey = aiConnector.hasApiKey();
-            String info = "AI Provider: " + provider + ", model: " + modelName + ", api key present: " + hasKey;
+            boolean autoMode = aiConnector.isAutoMode();
+
+            String info = "AI Provider: " + provider + ", model: " + modelName;
+            if (autoMode) {
+                info += " §7(auto mode)";
+            }
             getLogger().info(info);
             requester.sendMessage("§e" + info);
+
+            // Show provider status in auto mode
+            if (autoMode) {
+                requester.sendMessage("§7--- AI Provider Status ---");
+                for (var entry : aiConnector.getProviderStatus().entrySet()) {
+                    String status = entry.getValue();
+                    String color = status.contains("active") ? "§a" :
+                                   status.contains("available") ? "§e" :
+                                   status.contains("cooldown") ? "§c" : "§7";
+                    requester.sendMessage("§7  " + entry.getKey() + ": " + color + status);
+                }
+            }
         }
 
         if (jarvisNPC == null) {
@@ -157,14 +178,14 @@ public class Jarvis extends JavaPlugin {
             getLogger().info("Database connections initialized");
             requester.sendMessage("§aDatabase connections initialized");
         }
-        
+
         // Show systems status
         requester.sendMessage("§7--- Systems Status ---");
-        requester.sendMessage("§aCore NPC & Mining: §2Fully Functional");
+        requester.sendMessage("§aCore NPC & Mining: §2v0.0.6 (with verification)");
         requester.sendMessage("§aBuilding System: §2Functional");
         requester.sendMessage("§aQuest System: §2Functional (" + (questSystem != null ? questSystem.getQuestLibrary().getTemplateCount() + " templates" : "N/A") + ")");
         requester.sendMessage("§aSchematic System: §2Functional");
-        
+
         requester.sendMessage("§7==========================");
     }
 

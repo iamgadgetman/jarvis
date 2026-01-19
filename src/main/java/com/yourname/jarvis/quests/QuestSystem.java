@@ -16,6 +16,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * QuestSystem - Hybrid template + AI quest generation
@@ -27,7 +28,7 @@ public class QuestSystem implements Listener {
 
     private final Jarvis plugin;
     private final QuestLibrary questLibrary;
-    private final Map<UUID, List<Quest>> activeQuests = new HashMap<>();
+    private final Map<UUID, List<Quest>> activeQuests = new ConcurrentHashMap<>();
     private final Random random = new Random();
 
     // Configuration
@@ -246,15 +247,19 @@ public class QuestSystem implements Listener {
             JSONArray objectives = json.optJSONArray("objectives");
             if (objectives != null) {
                 for (int i = 0; i < objectives.length(); i++) {
-                    JSONObject obj = objectives.getJSONObject(i);
+                    JSONObject obj = objectives.optJSONObject(i);
+                    if (obj == null) continue;
+
                     String type = obj.optString("type", "collect");
                     String target = obj.optString("target", "DIAMOND");
                     int amount = obj.optInt("amount", 1);
                     String display = obj.optString("display", target);
                     quest.objectives.add(new Objective(type, target, amount, display));
                 }
-            } else {
-                // Default objective if none provided
+            }
+
+            // Default objective if none provided
+            if (quest.objectives.isEmpty()) {
                 quest.objectives.add(new Objective("mine", "COAL_ORE", 10, "coal ore"));
             }
 
@@ -266,7 +271,7 @@ public class QuestSystem implements Listener {
                 while (keys.hasNext()) {
                     String key = keys.next();
                     if (!key.equals("xp")) {
-                        quest.rewards.put(key.toUpperCase(), rewards.getInt(key));
+                        quest.rewards.put(key.toUpperCase(), rewards.optInt(key, 1));
                     }
                 }
             } else {

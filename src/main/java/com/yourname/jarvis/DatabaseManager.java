@@ -2,14 +2,17 @@ package com.yourname.jarvis;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import org.bukkit.Material;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 
 import java.io.File;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 public class DatabaseManager {
 
@@ -102,6 +105,20 @@ public class DatabaseManager {
                 "ai_response TEXT, " +
                 "action_taken VARCHAR(50), " +
                 "timestamp BIGINT NOT NULL)")) {
+            ps.executeUpdate();
+        }
+
+        // NPC inventory persistence
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS npc_inventory (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "player_id VARCHAR(36) NOT NULL, " +
+                "slot_index INTEGER NOT NULL, " +
+                "item_type VARCHAR(100) NOT NULL, " +
+                "item_amount INTEGER NOT NULL, " +
+                "item_data TEXT, " +
+                "saved_time BIGINT NOT NULL, " +
+                "UNIQUE(player_id, slot_index))")) {
             ps.executeUpdate();
         }
 
@@ -249,6 +266,282 @@ public class DatabaseManager {
         } catch (SQLException e) {
             plugin.getLogger().warning("Failed to log chat interaction: " + e.getMessage());
         }
+    }
+
+    // ==================== NPC INVENTORY PERSISTENCE ====================
+
+    /**
+     * Save NPC inventory to database
+     */
+    public void saveNpcInventory(UUID playerId, ItemStack[] contents) {
+        if (contents == null) return;
+
+        String playerIdStr = playerId.toString();
+        long savedTime = System.currentTimeMillis();
+
+        try (Connection c = getConnection()) {
+            // Clear existing inventory for this player
+            try (PreparedStatement ps = c.prepareStatement(
+                    "DELETE FROM npc_inventory WHERE player_id = ?")) {
+                ps.setString(1, playerIdStr);
+                ps.executeUpdate();
+            }
+
+            // Save each non-null slot
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO npc_inventory (player_id, slot_index, item_type, item_amount, item_data, saved_time) " +
+                    "VALUES (?, ?, ?, ?, ?, ?)")) {
+
+                for (int i = 0; i < contents.length; i++) {
+                    ItemStack item = contents[i];
+                    if (item == null || item.getType() == Material.AIR) continue;
+
+                    ps.setString(1, playerIdStr);
+                    ps.setInt(2, i);
+                    ps.setString(3, item.getType().name());
+                    ps.setInt(4, item.getAmount());
+                    ps.setString(5, serializeItemMeta(item));
+                    ps.setLong(6, savedTime);
+                    ps.addBatch();
+                }
+
+                ps.executeBatch();
+            }
+
+            plugin.getLogger().fine("Saved NPC inventory for " + playerIdStr);
+
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Failed to save NPC inventory: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Load NPC inventory from database
+     */
+    public ItemStack[] loadNpcInventory(UUID playerId) {
+        String playerIdStr = playerId.toString();
+        ItemStack[] contents = new ItemStack[36]; // Standard inventory size
+
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT slot_index, item_type, item_amount, item_data FROM npc_inventory " +
+                     "WHERE player_id = ? ORDER BY slot_index")) {
+
+            ps.setString(1, playerIdStr);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                boolean hasItems = false;
+                while (rs.next()) {
+                    hasItems = true;
+                    int slot = rs.getInt("slot_index");
+                    String itemType = rs.getString("item_type");
+                    int amount = rs.getInt("item_amount");
+                    String itemData = rs.getString("item_data");
+
+                    if (slot >= 0 && slot < contents.length) {
+                        try {
+                            Material material = Material.valueOf(itemType);
+                            ItemStack item = new ItemStack(material, amount);
+                            deserializeItemMeta(item, itemData);
+                            contents[slot] = item;
+                        } catch (IllegalArgumentException e) {
+                            plugin.getLogger().warning("Invalid material in saved inventory: " + itemType);
+                        }
+                    }
+                }
+
+                if (!hasItems) {
+                    return null; // No saved inventory
+                }
+            }
+
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Failed to load NPC inventory: " + e.getMessage());
+            return null;
+        }
+
+        return contents;
+    }
+
+    /**
+     * Clear saved inventory for a player
+     */
+    public void clearSavedInventory(UUID playerId) {
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "DELETE FROM npc_inventory WHERE player_id = ?")) {
+
+            ps.setString(1, playerId.toString());
+            ps.executeUpdate();
+
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Failed to clear saved inventory: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Check if player has saved inventory
+     */
+    public boolean hasSavedInventory(UUID playerId) {
+        try (Connection c = getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT COUNT(*) FROM npc_inventory WHERE player_id = ?")) {
+
+            ps.setString(1, playerId.toString());
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1) > 0;
+                }
+            }
+
+        } catch (SQLException e) {
+            plugin.getLogger().warning("Failed to check saved inventory: " + e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Serialize item meta to JSON string for storage
+     */
+    private String serializeItemMeta(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
+            return null;
+        }
+
+        ItemMeta meta = item.getItemMeta();
+        StringBuilder sb = new StringBuilder("{");
+
+        // Display name
+        if (meta.hasDisplayName()) {
+            sb.append("\"name\":\"").append(escapeJson(meta.getDisplayName())).append("\",");
+        }
+
+        // Lore
+        if (meta.hasLore()) {
+            sb.append("\"lore\":[");
+            List<String> lore = meta.getLore();
+            for (int i = 0; i < lore.size(); i++) {
+                sb.append("\"").append(escapeJson(lore.get(i))).append("\"");
+                if (i < lore.size() - 1) sb.append(",");
+            }
+            sb.append("],");
+        }
+
+        // Enchantments
+        if (!meta.getEnchants().isEmpty()) {
+            sb.append("\"enchants\":{");
+            var enchants = meta.getEnchants().entrySet().iterator();
+            while (enchants.hasNext()) {
+                var entry = enchants.next();
+                sb.append("\"").append(entry.getKey().getKey().getKey()).append("\":").append(entry.getValue());
+                if (enchants.hasNext()) sb.append(",");
+            }
+            sb.append("},");
+        }
+
+        // Remove trailing comma
+        if (sb.charAt(sb.length() - 1) == ',') {
+            sb.setLength(sb.length() - 1);
+        }
+
+        sb.append("}");
+        return sb.toString();
+    }
+
+    /**
+     * Deserialize item meta from JSON string
+     */
+    private void deserializeItemMeta(ItemStack item, String data) {
+        if (data == null || data.isEmpty() || data.equals("{}")) {
+            return;
+        }
+
+        try {
+            ItemMeta meta = item.getItemMeta();
+            if (meta == null) return;
+
+            // Simple JSON parsing for our known format
+            // Note: This is a basic implementation; consider using a JSON library for complex cases
+
+            // Parse display name
+            int nameStart = data.indexOf("\"name\":\"");
+            if (nameStart >= 0) {
+                nameStart += 8;
+                int nameEnd = data.indexOf("\"", nameStart);
+                if (nameEnd > nameStart) {
+                    meta.setDisplayName(unescapeJson(data.substring(nameStart, nameEnd)));
+                }
+            }
+
+            // Parse lore
+            int loreStart = data.indexOf("\"lore\":[");
+            if (loreStart >= 0) {
+                loreStart += 8;
+                int loreEnd = data.indexOf("]", loreStart);
+                if (loreEnd > loreStart) {
+                    String loreSection = data.substring(loreStart, loreEnd);
+                    List<String> lore = new ArrayList<>();
+                    int pos = 0;
+                    while (pos < loreSection.length()) {
+                        int start = loreSection.indexOf("\"", pos);
+                        if (start < 0) break;
+                        int end = loreSection.indexOf("\"", start + 1);
+                        if (end < 0) break;
+                        lore.add(unescapeJson(loreSection.substring(start + 1, end)));
+                        pos = end + 1;
+                    }
+                    if (!lore.isEmpty()) {
+                        meta.setLore(lore);
+                    }
+                }
+            }
+
+            // Parse enchantments
+            int enchantsStart = data.indexOf("\"enchants\":{");
+            if (enchantsStart >= 0) {
+                enchantsStart += 12;
+                int enchantsEnd = data.indexOf("}", enchantsStart);
+                if (enchantsEnd > enchantsStart) {
+                    String enchantsSection = data.substring(enchantsStart, enchantsEnd);
+                    String[] pairs = enchantsSection.split(",");
+                    for (String pair : pairs) {
+                        String[] kv = pair.split(":");
+                        if (kv.length == 2) {
+                            String enchantName = kv[0].replace("\"", "").trim();
+                            int level = Integer.parseInt(kv[1].trim());
+                            org.bukkit.enchantments.Enchantment enchant =
+                                org.bukkit.enchantments.Enchantment.getByKey(
+                                    org.bukkit.NamespacedKey.minecraft(enchantName));
+                            if (enchant != null) {
+                                meta.addEnchant(enchant, level, true);
+                            }
+                        }
+                    }
+                }
+            }
+
+            item.setItemMeta(meta);
+
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to deserialize item meta: " + e.getMessage());
+        }
+    }
+
+    private String escapeJson(String str) {
+        if (str == null) return "";
+        return str.replace("\\", "\\\\")
+                  .replace("\"", "\\\"")
+                  .replace("\n", "\\n")
+                  .replace("\r", "\\r");
+    }
+
+    private String unescapeJson(String str) {
+        if (str == null) return "";
+        return str.replace("\\\"", "\"")
+                  .replace("\\\\", "\\")
+                  .replace("\\n", "\n")
+                  .replace("\\r", "\r");
     }
 
     public void closeDatabases() {

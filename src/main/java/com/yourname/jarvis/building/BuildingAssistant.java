@@ -13,6 +13,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * BuildingAssistant - AI-powered building system
@@ -23,8 +24,8 @@ import java.util.*;
 public class BuildingAssistant {
 
     private final Jarvis plugin;
-    private final Map<UUID, BuildState> activeBuilds = new HashMap<>();
-    private final Map<UUID, Deque<List<BuildAction>>> undoHistory = new HashMap<>();
+    private final Map<UUID, BuildState> activeBuilds = new ConcurrentHashMap<>();
+    private final Map<UUID, Deque<List<BuildAction>>> undoHistory = new ConcurrentHashMap<>();
 
     // Configuration
     private int blocksPerTick = 50;
@@ -178,10 +179,12 @@ public class BuildingAssistant {
             List<BlockPlacement> placements = new ArrayList<>();
 
             for (int i = 0; i < blocks.length(); i++) {
-                JSONObject block = blocks.getJSONObject(i);
-                int x = block.getInt("x");
-                int y = block.getInt("y");
-                int z = block.getInt("z");
+                JSONObject block = blocks.optJSONObject(i);
+                if (block == null) continue;
+
+                int x = block.optInt("x", 0);
+                int y = block.optInt("y", 0);
+                int z = block.optInt("z", 0);
                 String materialStr = block.optString("material", "minecraft:stone")
                     .replace("minecraft:", "").toUpperCase();
 

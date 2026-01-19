@@ -90,6 +90,15 @@ public class JarvisCommands implements CommandExecutor {
                 plugin.getJarvisNPC().battle(player, target);
             }
             case "loot" -> plugin.getJarvisNPC().openInventory(player);
+            case "clearloot" -> {
+                if (args.length >= 2 && args[1].equalsIgnoreCase("confirm")) {
+                    plugin.getJarvisNPC().clearInventory(player);
+                } else {
+                    player.sendMessage(ChatColor.YELLOW + "This will drop all collected items at Jarvis's location.");
+                    player.sendMessage(ChatColor.RED + "Type " + ChatColor.WHITE + "/jarvis clearloot confirm" +
+                        ChatColor.RED + " to proceed.");
+                }
+            }
             case "bell" -> {
                 player.getInventory().addItem(plugin.getControllerBell());
                 player.sendMessage(ChatColor.GREEN + "Here's your Jarvis Controller bell!");
@@ -311,6 +320,7 @@ public class JarvisCommands implements CommandExecutor {
         player.sendMessage(ChatColor.WHITE + "  /jarvis mine [ore]" + ChatColor.GRAY + " - Mine ores (e.g. diamond)");
         player.sendMessage(ChatColor.WHITE + "  /jarvis battle <player>" + ChatColor.GRAY + " - Battle another Jarvis");
         player.sendMessage(ChatColor.WHITE + "  /jarvis loot" + ChatColor.GRAY + " - Open inventory");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis clearloot" + ChatColor.GRAY + " - Drop all collected items");
         player.sendMessage(ChatColor.WHITE + "  /jarvis bell" + ChatColor.GRAY + " - Get controller bell");
         
         if (plugin.getSchematicManager() != null) {

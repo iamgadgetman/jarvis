@@ -49,10 +49,10 @@ public class JarvisNPC {
 
     private final Jarvis plugin;
     private final Map<UUID, NPC> playerNPCs = new ConcurrentHashMap<>();
-    private final Map<UUID, BukkitRunnable> activeTasks = new HashMap<>();
-    private final Map<UUID, MiningState> miningStates = new HashMap<>();
-    private final Map<UUID, BranchMiningState> branchMiningStates = new HashMap<>();
-    private final Map<UUID, Location> lastTorchPlaced = new HashMap<>();
+    private final Map<UUID, BukkitRunnable> activeTasks = new ConcurrentHashMap<>();
+    private final Map<UUID, MiningState> miningStates = new ConcurrentHashMap<>();
+    private final Map<UUID, BranchMiningState> branchMiningStates = new ConcurrentHashMap<>();
+    private final Map<UUID, Location> lastTorchPlaced = new ConcurrentHashMap<>();
 
     // Mining configuration constants
     private static final int SEARCH_RADIUS = 16;
@@ -221,6 +221,24 @@ public class JarvisNPC {
         int ticksInPhase = 0;
         Location lastLocation;
 
+        // Mining verification (v0.0.6)
+        boolean awaitingBreakConfirmation = false;
+        long breakStartTime = 0;
+        int miningAttempts = 0;
+        Material lastTargetType = null;
+
+        // Navigation verification (v0.0.6)
+        boolean awaitingNavigation = false;
+        long navigationStartTime = 0;
+
+        // Metrics tracking (v0.0.6)
+        int oresFound = 0;
+        int oresActuallyMined = 0;
+        int navigationAttempts = 0;
+        int navigationSuccesses = 0;
+        int blockBreakAttempts = 0;
+        int blockBreakSuccesses = 0;
+
         // Legacy support
         List<Block> pillarBlocks = new ArrayList<>();
         Block currentBlockToBreak;
@@ -231,6 +249,9 @@ public class JarvisNPC {
             previousPhase = phase;
             phase = newPhase;
             ticksInPhase = 0;
+            // Reset verification flags on phase transition
+            awaitingBreakConfirmation = false;
+            awaitingNavigation = false;
         }
 
         void reset() {
@@ -240,6 +261,9 @@ public class JarvisNPC {
             currentVein.clear();
             miningVein = false;
             pathSegments.clear();
+            miningAttempts = 0;
+            awaitingBreakConfirmation = false;
+            awaitingNavigation = false;
             transitionTo(MiningPhase.SEARCHING);
         }
 
@@ -247,6 +271,17 @@ public class JarvisNPC {
             reset();
             currentCluster = null;
             transitionTo(MiningPhase.IDLE);
+        }
+
+        // Get success rate for debugging
+        double getMiningSuccessRate() {
+            return blockBreakAttempts > 0 ?
+                (double) blockBreakSuccesses / blockBreakAttempts * 100 : 0;
+        }
+
+        double getNavigationSuccessRate() {
+            return navigationAttempts > 0 ?
+                (double) navigationSuccesses / navigationAttempts * 100 : 0;
         }
     }
 
@@ -274,7 +309,7 @@ public class JarvisNPC {
 
     public JarvisNPC(Jarvis plugin) {
         this.plugin = plugin;
-        
+
         // Load configuration
         this.torchSpacing = plugin.getConfig().getInt("mining.torch-spacing", 8);
         this.placeTorches = plugin.getConfig().getBoolean("mining.place-torches", false);
@@ -293,6 +328,81 @@ public class JarvisNPC {
         // Phase 3: Initialize Denizen and WorldGuard hooks
         initializeDenizenHook();
         initializeWorldGuardHook();
+
+        // Phase 6: Start cleanup task for memory leak prevention
+        startCleanupTask();
+    }
+
+    /**
+     * Phase 6: Periodic cleanup task to prevent memory leaks
+     * Runs every 5 minutes to clean up stale entries
+     */
+    private void startCleanupTask() {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                int cleaned = 0;
+
+                // Clean up lastTorchPlaced entries for offline players
+                Iterator<UUID> torchIterator = lastTorchPlaced.keySet().iterator();
+                while (torchIterator.hasNext()) {
+                    UUID playerId = torchIterator.next();
+                    if (plugin.getServer().getPlayer(playerId) == null) {
+                        torchIterator.remove();
+                        cleaned++;
+                    }
+                }
+
+                // Clean up stale NPC entries for disconnected players
+                Iterator<Map.Entry<UUID, NPC>> npcIterator = playerNPCs.entrySet().iterator();
+                while (npcIterator.hasNext()) {
+                    Map.Entry<UUID, NPC> entry = npcIterator.next();
+                    UUID playerId = entry.getKey();
+                    NPC npc = entry.getValue();
+
+                    // If player is offline and NPC still exists
+                    if (plugin.getServer().getPlayer(playerId) == null) {
+                        // Check if NPC is orphaned (spawned but player offline for a while)
+                        if (npc != null && npc.isSpawned()) {
+                            // Save inventory before destroying
+                            try {
+                                Inventory invTrait = npc.getOrAddTrait(Inventory.class);
+                                ItemStack[] contents = invTrait.getContents();
+                                plugin.getDatabaseManager().saveNpcInventory(playerId, contents);
+                            } catch (Exception e) {
+                                plugin.getLogger().warning("Failed to save inventory during cleanup: " + e.getMessage());
+                            }
+
+                            npc.destroy();
+                            debugLog("Cleaned up orphaned NPC for offline player: " + playerId);
+                        }
+                        npcIterator.remove();
+                        cleaned++;
+                    }
+                }
+
+                // Clean up mining states for offline players
+                miningStates.keySet().removeIf(playerId -> plugin.getServer().getPlayer(playerId) == null);
+
+                // Clean up branch mining states for offline players
+                branchMiningStates.keySet().removeIf(playerId -> plugin.getServer().getPlayer(playerId) == null);
+
+                // Clean up active tasks for offline players
+                Iterator<Map.Entry<UUID, BukkitRunnable>> taskIterator = activeTasks.entrySet().iterator();
+                while (taskIterator.hasNext()) {
+                    Map.Entry<UUID, BukkitRunnable> entry = taskIterator.next();
+                    if (plugin.getServer().getPlayer(entry.getKey()) == null) {
+                        entry.getValue().cancel();
+                        taskIterator.remove();
+                        cleaned++;
+                    }
+                }
+
+                if (cleaned > 0) {
+                    debugLog("Cleanup task removed " + cleaned + " stale entries");
+                }
+            }
+        }.runTaskTimer(plugin, 6000L, 6000L); // Run every 5 minutes (6000 ticks)
     }
 
     // ========== PHASE 3: DENIZEN INTEGRATION ==========
@@ -573,45 +683,68 @@ public class JarvisNPC {
 
         NPC npc = CitizensAPI.getNPCRegistry().createNPC(EntityType.PLAYER, "Jarvis");
         Location spawnLoc = findSafeSpawnLocation(player.getLocation());
-        
+
         npc.spawn(spawnLoc);
         npc.getOrAddTrait(Inventory.class);
         npc.setProtected(true);
         playerNPCs.put(player.getUniqueId(), npc);
 
-        // Give Jarvis starting equipment
-        giveStartingEquipment(npc);
+        // Check for saved inventory from previous session
+        UUID playerId = player.getUniqueId();
+        ItemStack[] savedInventory = plugin.getDatabaseManager().loadNpcInventory(playerId);
+
+        if (savedInventory != null && savedInventory.length > 0) {
+            // Restore saved inventory
+            Inventory invTrait = npc.getOrAddTrait(Inventory.class);
+            invTrait.setContents(savedInventory);
+            plugin.getDatabaseManager().clearSavedInventory(playerId);
+            player.sendMessage("§aJarvis: At your service—I've got your items from last time!");
+            debugLog("Restored saved inventory for " + player.getName());
+        } else {
+            // Give Jarvis starting equipment
+            giveStartingEquipment(npc);
+            player.sendMessage("§aJarvis: At your service—let's make some magic.");
+        }
 
         player.getWorld().playSound(spawnLoc, Sound.BLOCK_BELL_USE, 1.0f, 1.0f);
-        player.sendMessage("§aJarvis: At your service—let's make some magic.");
 
         debugLog("Jarvis spawned for " + player.getName() + " at " + spawnLoc);
     }
 
     public void dismiss(Player player) {
-        NPC npc = playerNPCs.remove(player.getUniqueId());
+        UUID playerId = player.getUniqueId();
+        NPC npc = playerNPCs.remove(playerId);
         if (npc == null) {
             player.sendMessage("§cJarvis: I'm not summoned yet!");
             return;
         }
 
         // Clean up any mining state
-        MiningState state = miningStates.remove(player.getUniqueId());
+        MiningState state = miningStates.remove(playerId);
         if (state != null) {
             cleanupPillarBlocks(state);
         }
-        
+
         // Clean up branch mining state
-        branchMiningStates.remove(player.getUniqueId());
-        lastTorchPlaced.remove(player.getUniqueId());
-        
-        // Drop inventory but keep equipment
-        dropInventoryItems(npc);
-        
+        branchMiningStates.remove(playerId);
+        lastTorchPlaced.remove(playerId);
+
+        // Save inventory to database instead of dropping
+        try {
+            Inventory invTrait = npc.getOrAddTrait(Inventory.class);
+            ItemStack[] contents = invTrait.getContents();
+            plugin.getDatabaseManager().saveNpcInventory(playerId, contents);
+            debugLog("Saved NPC inventory for " + player.getName());
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to save NPC inventory: " + e.getMessage());
+            // Fallback: drop items if save fails
+            dropInventoryItems(npc);
+        }
+
         npc.destroy();
         stopTask(player);
-        player.sendMessage("§7Jarvis: Until next time—poof!");
-        
+        player.sendMessage("§7Jarvis: Until next time—your items are safe with me!");
+
         debugLog("Jarvis dismissed for " + player.getName());
     }
 
@@ -886,9 +1019,35 @@ public class JarvisNPC {
 
     /**
      * MOVING phase - Follow path segments
+     * v0.0.6: Added navigation verification - wait for movement to complete
      */
     private void processMoving(NPC npc, Player player, MiningState state, Location npcLoc) {
         debugLog("Phase: MOVING, segments remaining: " + state.pathSegments.size());
+
+        // v0.0.6: Check if we're still navigating - don't interrupt
+        Navigator nav = npc.getNavigator();
+        if (nav != null && nav.isNavigating()) {
+            // Still moving, check for timeout
+            if (state.awaitingNavigation) {
+                long elapsed = System.currentTimeMillis() - state.navigationStartTime;
+                if (elapsed > 10000) { // 10 second navigation timeout
+                    debugLog("Navigation timeout after " + elapsed + "ms");
+                    nav.cancelNavigation();
+                    state.awaitingNavigation = false;
+                    state.ticksStuck += 5;
+                }
+            }
+            return; // Let navigation continue
+        }
+
+        // Navigation completed or not started
+        if (state.awaitingNavigation) {
+            // Navigation just completed
+            state.awaitingNavigation = false;
+            state.navigationSuccesses++;
+            state.ticksStuck = 0;
+            debugLog("Navigation completed successfully");
+        }
 
         if (state.pathSegments.isEmpty()) {
             // Reached destination, start mining
@@ -908,6 +1067,7 @@ public class JarvisNPC {
         if (distance < 1.5) {
             state.pathSegments.poll(); // Remove completed segment
             state.ticksStuck = 0; // Reset stuck counter on progress
+            debugLog("Reached path segment, " + state.pathSegments.size() + " remaining");
             return;
         }
 
@@ -917,9 +1077,24 @@ public class JarvisNPC {
             if (block.getType().isSolid() && !block.getType().isAir()) {
                 faceLocation(npc, block.getLocation().add(0.5, 0.5, 0.5));
                 ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
+
+                Material blockType = block.getType();
                 block.breakNaturally(tool);
                 state.blocksCleared++;
                 segment.attempts++;
+
+                // v0.0.6: Verify block actually broke
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        if (block.getType() == Material.AIR || block.getType() != blockType) {
+                            debugLog("Path block cleared: " + blockType);
+                        } else {
+                            debugLog("Path block failed to break: " + blockType);
+                            state.ticksStuck++;
+                        }
+                    }
+                }.runTaskLater(plugin, 5L);
 
                 if (segment.hasExceededAttempts()) {
                     state.pathSegments.poll(); // Skip this segment
@@ -938,9 +1113,17 @@ public class JarvisNPC {
                 state.pathSegments.poll(); // Skip this segment
                 return;
             }
+
+            // v0.0.6: Track navigation start
+            state.awaitingNavigation = true;
+            state.navigationStartTime = System.currentTimeMillis();
+            state.navigationAttempts++;
+
             navigateToLocation(npc, segment.target);
+            debugLog("Started navigation to segment, distance: " + String.format("%.1f", distance));
         } else {
             // Unsafe location, skip segment
+            debugLog("Skipping unsafe segment");
             state.pathSegments.poll();
         }
 
@@ -953,9 +1136,64 @@ public class JarvisNPC {
 
     /**
      * MINING phase - Break the target ore
+     * v0.0.6: Added block break verification - confirms blocks actually break
      */
     private void processMiningPhase(NPC npc, Player player, MiningState state, Location npcLoc) {
-        debugLog("Phase: MINING");
+        debugLog("Phase: MINING, awaiting confirmation: " + state.awaitingBreakConfirmation);
+
+        // v0.0.6: If waiting for break confirmation, check status
+        if (state.awaitingBreakConfirmation) {
+            long elapsed = System.currentTimeMillis() - state.breakStartTime;
+            Block block = state.targetOre;
+
+            // Check if block actually broke
+            if (block == null || block.getType() == Material.AIR ||
+                (state.lastTargetType != null && block.getType() != state.lastTargetType)) {
+                // SUCCESS - block broke!
+                state.awaitingBreakConfirmation = false;
+                state.oresActuallyMined++;
+                state.blockBreakSuccesses++;
+                state.miningAttempts = 0;
+
+                debugLog("VERIFIED: Mined " + state.lastTargetType + " (actual: " + state.oresActuallyMined + ")");
+
+                // Remove from cluster
+                if (state.currentCluster != null) {
+                    state.currentCluster.removeOre(state.targetOre);
+                }
+
+                state.targetOre = null;
+                state.lastTargetType = null;
+                state.transitionTo(MiningPhase.COLLECTING);
+                return;
+            }
+
+            // Calculate expected dig time
+            int expectedDigTimeMs = calculateDigTime(block, npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND));
+
+            // Check for timeout (dig time + generous buffer)
+            if (elapsed > expectedDigTimeMs + 3000) {
+                // TIMEOUT - block didn't break
+                state.awaitingBreakConfirmation = false;
+                state.miningAttempts++;
+
+                debugLog("Mining timeout after " + elapsed + "ms (expected: " + expectedDigTimeMs + "ms), attempt " + state.miningAttempts);
+
+                if (state.miningAttempts >= 5) {
+                    // Give up on this ore after 5 attempts
+                    player.sendMessage(ChatColor.YELLOW + "Jarvis: This ore won't break. Finding another...");
+                    if (state.currentCluster != null) {
+                        state.currentCluster.removeOre(state.targetOre);
+                    }
+                    state.targetOre = null;
+                    state.miningAttempts = 0;
+                    state.ticksStuck += 10;
+                    state.transitionTo(MiningPhase.SEARCHING);
+                }
+                // Otherwise, will retry mining on next tick
+            }
+            return; // Still waiting
+        }
 
         if (state.targetOre == null || !isOre(state.targetOre.getType())) {
             // Ore already mined or invalid
@@ -971,6 +1209,7 @@ public class JarvisNPC {
 
         if (distance > REACH_DISTANCE) {
             // Too far, need to move closer
+            debugLog("Too far to mine (" + String.format("%.1f", distance) + " blocks), replanning");
             state.transitionTo(MiningPhase.PLANNING);
             return;
         }
@@ -996,10 +1235,19 @@ public class JarvisNPC {
         faceLocation(npc, oreLoc);
         ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
         Material oreType = state.targetOre.getType();
-        state.targetOre.breakNaturally(tool);
-        state.oresMined++;
 
-        debugLog("Mined " + oreType + " (total: " + state.oresMined + ")");
+        // v0.0.6: Record what we're mining and start verification
+        state.lastTargetType = oreType;
+        state.awaitingBreakConfirmation = true;
+        state.breakStartTime = System.currentTimeMillis();
+        state.blockBreakAttempts++;
+        state.oresMined++; // Attempted count (for backwards compatibility)
+
+        // Actually break the block
+        state.targetOre.breakNaturally(tool);
+
+        debugLog("Attempting to mine " + oreType + " at " + oreLoc.toVector() +
+                 " (attempt " + (state.miningAttempts + 1) + ")");
 
         // Phase 3: Trigger Denizen event for ore mined
         if (denizenEnabled) {
@@ -1011,14 +1259,70 @@ public class JarvisNPC {
             eventData.put("z", oreLoc.getBlockZ());
             triggerDenizenEvent("ore_mined", player, npc, eventData);
         }
+    }
 
-        // Remove from cluster
-        if (state.currentCluster != null) {
-            state.currentCluster.removeOre(state.targetOre);
+    /**
+     * Calculate expected dig time in milliseconds based on tool and block
+     * v0.0.6: Used for mining verification timeout
+     */
+    private int calculateDigTime(Block block, ItemStack tool) {
+        if (block == null) return 1000;
+
+        Material blockType = block.getType();
+        float hardness = blockType.getHardness();
+
+        // Unbreakable blocks
+        if (hardness < 0) return Integer.MAX_VALUE;
+
+        // Base dig time in seconds
+        float baseTime = hardness * 1.5f;
+
+        // Tool effectiveness
+        float multiplier = 1.0f;
+        if (tool != null) {
+            Material toolType = tool.getType();
+
+            // Check if correct tool
+            if (isPickaxe(toolType) && requiresPickaxe(blockType)) {
+                multiplier = getToolSpeed(toolType);
+
+                // Efficiency enchantment
+                int efficiency = tool.getEnchantmentLevel(Enchantment.EFFICIENCY);
+                if (efficiency > 0) {
+                    multiplier += (efficiency * efficiency + 1);
+                }
+            }
         }
 
-        state.targetOre = null;
-        state.transitionTo(MiningPhase.COLLECTING);
+        // Calculate final time in milliseconds
+        int timeMs = (int) ((baseTime / multiplier) * 1000);
+
+        // Minimum 50ms, maximum 30 seconds
+        return Math.max(50, Math.min(timeMs, 30000));
+    }
+
+    private boolean isPickaxe(Material mat) {
+        if (mat == null) return false;
+        String name = mat.name();
+        return name.endsWith("_PICKAXE");
+    }
+
+    private boolean requiresPickaxe(Material mat) {
+        String name = mat.name();
+        return name.contains("ORE") || name.contains("STONE") || name.contains("DEEPSLATE") ||
+               name.equals("OBSIDIAN") || name.equals("ANCIENT_DEBRIS");
+    }
+
+    private float getToolSpeed(Material tool) {
+        if (tool == null) return 1.0f;
+        String name = tool.name();
+        if (name.startsWith("NETHERITE_")) return 9.0f;
+        if (name.startsWith("DIAMOND_")) return 8.0f;
+        if (name.startsWith("IRON_")) return 6.0f;
+        if (name.startsWith("STONE_")) return 4.0f;
+        if (name.startsWith("GOLDEN_")) return 12.0f;
+        if (name.startsWith("WOODEN_")) return 2.0f;
+        return 1.0f;
     }
 
     /**
@@ -2120,6 +2424,55 @@ public class JarvisNPC {
         invTrait.openInventory(player);
     }
 
+    /**
+     * Clear inventory - drop all non-equipment items at NPC location
+     * and restore starting equipment
+     */
+    public void clearInventory(Player player) {
+        NPC npc = getNPC(player);
+        if (npc == null) {
+            player.sendMessage("§cJarvis: I'm not summoned yet!");
+            return;
+        }
+
+        Inventory invTrait = npc.getOrAddTrait(Inventory.class);
+        ItemStack[] contents = invTrait.getContents();
+        Location dropLoc = getCurrentLocation(npc);
+
+        int droppedCount = 0;
+
+        // Drop all items except dirt and torches (starting equipment)
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack item = contents[i];
+            if (item == null) continue;
+
+            Material type = item.getType();
+
+            // Keep dirt and torches as starting equipment
+            if (type == Material.DIRT || type == Material.TORCH) {
+                continue;
+            }
+
+            // Drop the item
+            dropLoc.getWorld().dropItemNaturally(dropLoc, item.clone());
+            droppedCount += item.getAmount();
+            contents[i] = null;
+        }
+
+        // Apply cleared contents
+        invTrait.setContents(contents);
+
+        // Ensure starting equipment is present
+        giveStartingEquipment(npc);
+
+        if (droppedCount > 0) {
+            player.sendMessage("§aJarvis: Dropped " + droppedCount + " items. Ready for a fresh start!");
+            debugLog("Cleared " + droppedCount + " items from inventory for " + player.getName());
+        } else {
+            player.sendMessage("§eJarvis: No items to drop - inventory is already clear.");
+        }
+    }
+
     public void dismissAll() {
         for (MiningState state : miningStates.values()) {
             cleanupPillarBlocks(state);
@@ -2138,6 +2491,60 @@ public class JarvisNPC {
 
     public NPC getNPCForPlayer(UUID uuid) {
         return playerNPCs.get(uuid);
+    }
+
+    /**
+     * Handle player disconnect - save inventory and cleanup
+     * Called by PlayerConnectionListener when player quits
+     */
+    public void handlePlayerDisconnect(Player player) {
+        UUID playerId = player.getUniqueId();
+        NPC npc = playerNPCs.remove(playerId);
+
+        if (npc == null) {
+            debugLog("No NPC to cleanup for disconnected player: " + player.getName());
+            return;
+        }
+
+        // Save inventory to database before destroying
+        if (npc.isSpawned()) {
+            try {
+                Inventory invTrait = npc.getOrAddTrait(Inventory.class);
+                ItemStack[] contents = invTrait.getContents();
+                plugin.getDatabaseManager().saveNpcInventory(playerId, contents);
+                debugLog("Saved NPC inventory for " + player.getName() + " to database");
+            } catch (Exception e) {
+                plugin.getLogger().warning("Failed to save NPC inventory for " + player.getName() + ": " + e.getMessage());
+            }
+        }
+
+        // Clean up mining state and pillar blocks
+        MiningState state = miningStates.remove(playerId);
+        if (state != null) {
+            cleanupPillarBlocks(state);
+        }
+
+        // Clean up branch mining state
+        branchMiningStates.remove(playerId);
+        lastTorchPlaced.remove(playerId);
+
+        // Stop active tasks
+        BukkitRunnable task = activeTasks.remove(playerId);
+        if (task != null) {
+            task.cancel();
+        }
+
+        // Destroy NPC without dropping items (they're saved to DB)
+        npc.destroy();
+
+        debugLog("Cleaned up NPC for disconnected player: " + player.getName());
+    }
+
+    /**
+     * Check if player has saved inventory from previous session
+     */
+    public boolean hasSavedInventory(UUID playerId) {
+        return plugin.getDatabaseManager().hasSavedInventory(playerId);
     }
 
     public int getActiveNpcCount() {

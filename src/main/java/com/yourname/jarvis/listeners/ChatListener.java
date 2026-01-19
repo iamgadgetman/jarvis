@@ -11,9 +11,9 @@ import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.json.JSONObject;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatListener implements Listener {
 
@@ -22,10 +22,10 @@ public class ChatListener implements Listener {
     private final boolean enabled;
     private final String prefix;
     private final boolean requirePrefix;
-    
+
     // Cooldown to prevent spam (in milliseconds)
     private static final long COOLDOWN_MS = 2000;
-    private final Map<UUID, Long> lastCommandTime = new HashMap<>();
+    private final Map<UUID, Long> lastCommandTime = new ConcurrentHashMap<>();
 
     public ChatListener(Jarvis plugin) {
         this.plugin = plugin;
@@ -33,9 +33,29 @@ public class ChatListener implements Listener {
         this.enabled = plugin.getConfig().getBoolean("natural-language.enabled", true);
         this.prefix = plugin.getConfig().getString("natural-language.prefix", "jarvis").toLowerCase();
         this.requirePrefix = plugin.getConfig().getBoolean("natural-language.require-prefix", false);
+
+        // Phase 6: Start cleanup task for memory leak prevention
+        startCleanupTask();
     }
 
-    @EventHandler(priority = EventPriority.MONITOR)
+    /**
+     * Phase 6: Periodic cleanup task to remove stale cooldown entries
+     * Runs every minute to clean up entries older than 1 minute
+     */
+    private void startCleanupTask() {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                long now = System.currentTimeMillis();
+                long maxAge = 60000; // 1 minute in milliseconds
+
+                lastCommandTime.entrySet().removeIf(entry ->
+                    (now - entry.getValue()) > maxAge);
+            }
+        }.runTaskTimer(plugin, 1200L, 1200L); // Run every minute (1200 ticks)
+    }
+
+    @EventHandler(priority = EventPriority.NORMAL)
     public void onPlayerChat(AsyncPlayerChatEvent event) {
         if (event.isCancelled() || !enabled) return;
 
@@ -95,10 +115,14 @@ public class ChatListener implements Listener {
             // Query AI to parse the command
             String response = aiConnector.parseNaturalLanguage(message, player.getName(), context);
             
-            // Parse JSON response
+            // Parse JSON response with safety checks
             JSONObject action = new JSONObject(response);
-            String actionType = action.getString("action");
+            String actionType = action.optString("action", "unknown");
             JSONObject parameters = action.optJSONObject("parameters");
+
+            if (actionType.isEmpty() || actionType.equals("unknown")) {
+                throw new RuntimeException("No action in AI response");
+            }
 
             // Execute action on main thread
             new BukkitRunnable() {
@@ -157,10 +181,10 @@ public class ChatListener implements Listener {
                 player.sendMessage(ChatColor.AQUA + "Jarvis: Initiating mining operations!");
             }
             case "build" -> {
-                if (parameters != null && parameters.has("description")) {
-                    String description = parameters.getString("description");
+                String description = (parameters != null) ? parameters.optString("description", "") : "";
+                if (!description.isEmpty()) {
                     player.sendMessage(ChatColor.GOLD + "Jarvis: I'll build a " + description + " for you!");
-                    
+
                     // Trigger building assistant
                     if (plugin.getBuildingAssistant() != null) {
                         plugin.getBuildingAssistant().startBuild(player, description);
