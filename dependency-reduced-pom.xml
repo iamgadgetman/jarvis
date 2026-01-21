@@ -4,7 +4,7 @@
   <groupId>com.yourname</groupId>
   <artifactId>jarvis</artifactId>
   <name>Jarvis</name>
-  <version>0.0.6</version>
+  <version>0.0.7</version>
   <description>Jarvis AI Companion for Minecraft</description>
   <build>
     <plugins>

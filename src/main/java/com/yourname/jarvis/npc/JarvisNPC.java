@@ -33,7 +33,7 @@ import org.bukkit.plugin.Plugin;
 
 /**
  * JarvisNPC - Manages NPC spawning, combat, and intelligent mining
- * Version: 0.0.6
+ * Version: 0.0.7
  * 
  * Key features:
  * - Smart mining with exposed ore priority
@@ -364,15 +364,8 @@ public class JarvisNPC {
                     if (plugin.getServer().getPlayer(playerId) == null) {
                         // Check if NPC is orphaned (spawned but player offline for a while)
                         if (npc != null && npc.isSpawned()) {
-                            // Save inventory before destroying
-                            try {
-                                Inventory invTrait = npc.getOrAddTrait(Inventory.class);
-                                ItemStack[] contents = invTrait.getContents();
-                                plugin.getDatabaseManager().saveNpcInventory(playerId, contents);
-                            } catch (Exception e) {
-                                plugin.getLogger().warning("Failed to save inventory during cleanup: " + e.getMessage());
-                            }
-
+                            // Drop inventory items before destroying (don't save to DB)
+                            dropInventoryItems(npc);
                             npc.destroy();
                             debugLog("Cleaned up orphaned NPC for offline player: " + playerId);
                         }
@@ -689,22 +682,9 @@ public class JarvisNPC {
         npc.setProtected(true);
         playerNPCs.put(player.getUniqueId(), npc);
 
-        // Check for saved inventory from previous session
-        UUID playerId = player.getUniqueId();
-        ItemStack[] savedInventory = plugin.getDatabaseManager().loadNpcInventory(playerId);
-
-        if (savedInventory != null && savedInventory.length > 0) {
-            // Restore saved inventory
-            Inventory invTrait = npc.getOrAddTrait(Inventory.class);
-            invTrait.setContents(savedInventory);
-            plugin.getDatabaseManager().clearSavedInventory(playerId);
-            player.sendMessage("§aJarvis: At your service—I've got your items from last time!");
-            debugLog("Restored saved inventory for " + player.getName());
-        } else {
-            // Give Jarvis starting equipment
-            giveStartingEquipment(npc);
-            player.sendMessage("§aJarvis: At your service—let's make some magic.");
-        }
+        // Give Jarvis fresh starting equipment every time
+        giveStartingEquipment(npc);
+        player.sendMessage("§aJarvis: At your service—let's make some magic.");
 
         player.getWorld().playSound(spawnLoc, Sound.BLOCK_BELL_USE, 1.0f, 1.0f);
 
@@ -729,21 +709,12 @@ public class JarvisNPC {
         branchMiningStates.remove(playerId);
         lastTorchPlaced.remove(playerId);
 
-        // Save inventory to database instead of dropping
-        try {
-            Inventory invTrait = npc.getOrAddTrait(Inventory.class);
-            ItemStack[] contents = invTrait.getContents();
-            plugin.getDatabaseManager().saveNpcInventory(playerId, contents);
-            debugLog("Saved NPC inventory for " + player.getName());
-        } catch (Exception e) {
-            plugin.getLogger().warning("Failed to save NPC inventory: " + e.getMessage());
-            // Fallback: drop items if save fails
-            dropInventoryItems(npc);
-        }
+        // Drop inventory items at NPC location (don't save to DB)
+        dropInventoryItems(npc);
 
         npc.destroy();
         stopTask(player);
-        player.sendMessage("§7Jarvis: Until next time—your items are safe with me!");
+        player.sendMessage("§7Jarvis: Until next time!");
 
         debugLog("Jarvis dismissed for " + player.getName());
     }
@@ -1104,28 +1075,29 @@ public class JarvisNPC {
         }
 
         // Navigate to segment target
-        if (isSafeLocation(segment.target)) {
-            // Phase 3: Check WorldGuard before entering region
-            if (!canEnterRegion(player, segment.target)) {
-                String regionName = getRegionNameAt(segment.target);
-                player.sendMessage(ChatColor.YELLOW + "Jarvis: Can't enter protected region" +
-                    (regionName != null ? ": " + regionName : ""));
-                state.pathSegments.poll(); // Skip this segment
-                return;
-            }
-
-            // v0.0.6: Track navigation start
-            state.awaitingNavigation = true;
-            state.navigationStartTime = System.currentTimeMillis();
-            state.navigationAttempts++;
-
-            navigateToLocation(npc, segment.target);
-            debugLog("Started navigation to segment, distance: " + String.format("%.1f", distance));
-        } else {
-            // Unsafe location, skip segment
-            debugLog("Skipping unsafe segment");
-            state.pathSegments.poll();
+        // Phase 3: Check WorldGuard before entering region
+        if (!canEnterRegion(player, segment.target)) {
+            String regionName = getRegionNameAt(segment.target);
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: Can't enter protected region" +
+                (regionName != null ? ": " + regionName : ""));
+            state.pathSegments.poll(); // Skip this segment
+            return;
         }
+
+        // Check for danger at target (but don't require perfect safety - Navigator handles pathfinding)
+        if (isDangerNearby(segment.target)) {
+            debugLog("Danger near segment target, skipping");
+            state.pathSegments.poll();
+            return;
+        }
+
+        // v0.0.6: Track navigation start
+        state.awaitingNavigation = true;
+        state.navigationStartTime = System.currentTimeMillis();
+        state.navigationAttempts++;
+
+        navigateToLocation(npc, segment.target);
+        debugLog("Started navigation to segment, distance: " + String.format("%.1f", distance));
 
         segment.attempts++;
         if (segment.hasExceededAttempts()) {
@@ -1760,6 +1732,8 @@ public class JarvisNPC {
                 if (plugin.getConfig().getBoolean("mining.visual-feedback.inventory-warnings", true)) {
                     player.sendMessage(ChatColor.YELLOW + "Jarvis: Out of torches!");
                 }
+                // Set sentinel value to prevent repeat warnings
+                lastTorchPlaced.put(playerId, currentLoc.clone());
             }
             return;
         }
@@ -1917,17 +1891,23 @@ public class JarvisNPC {
 
     /**
      * Navigate to target using Citizens Navigator (Phase 1 improvement)
+     * v0.0.7: Improved with better pathfinding parameters and fallback
      */
     private void navigateToLocation(NPC npc, Location target) {
         if (useNavigator && npc.getNavigator() != null) {
             Navigator nav = npc.getNavigator();
 
-            // Configure navigator parameters
+            // Configure navigator parameters for mining
             NavigatorParameters params = nav.getLocalParameters();
             params.distanceMargin(1.5);
             params.avoidWater(avoidWater);
+            params.baseSpeed((float) MOVE_SPEED * 2); // Slightly faster movement
+            params.range(SEARCH_RADIUS * 2); // Pathfinding range
+            params.useNewPathfinder(true); // Use improved A* pathfinder
+
             // StuckAction: teleport NPC to target when stuck
             params.stuckAction((npcRef, navigator) -> {
+                debugLog("Navigator stuck action triggered");
                 if (navigator.getTargetAsLocation() != null) {
                     npcRef.teleport(navigator.getTargetAsLocation(),
                         org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
@@ -1935,13 +1915,11 @@ public class JarvisNPC {
                 return false; // Don't cancel navigation
             });
 
-            // Set target
-            if (!nav.isNavigating() || nav.getTargetAsLocation() == null ||
-                nav.getTargetAsLocation().distance(target) > 2) {
-                nav.setTarget(target);
-            }
+            // Always set a new target to ensure navigation starts
+            nav.setTarget(target);
+            debugLog("Navigator target set to: " + target.toVector());
         } else {
-            // Fallback to old method if navigator disabled
+            // Fallback to manual movement if navigator disabled
             Location npcLoc = getCurrentLocation(npc);
             moveTowardsLocation(npc, npcLoc, target);
         }
@@ -2494,8 +2472,9 @@ public class JarvisNPC {
     }
 
     /**
-     * Handle player disconnect - save inventory and cleanup
+     * Handle player disconnect - cleanup NPC and state
      * Called by PlayerConnectionListener when player quits
+     * Inventory is destroyed (not saved) to match dismiss() behavior
      */
     public void handlePlayerDisconnect(Player player) {
         UUID playerId = player.getUniqueId();
@@ -2506,16 +2485,9 @@ public class JarvisNPC {
             return;
         }
 
-        // Save inventory to database before destroying
+        // Drop inventory items at NPC location before destroying
         if (npc.isSpawned()) {
-            try {
-                Inventory invTrait = npc.getOrAddTrait(Inventory.class);
-                ItemStack[] contents = invTrait.getContents();
-                plugin.getDatabaseManager().saveNpcInventory(playerId, contents);
-                debugLog("Saved NPC inventory for " + player.getName() + " to database");
-            } catch (Exception e) {
-                plugin.getLogger().warning("Failed to save NPC inventory for " + player.getName() + ": " + e.getMessage());
-            }
+            dropInventoryItems(npc);
         }
 
         // Clean up mining state and pillar blocks
@@ -2534,17 +2506,10 @@ public class JarvisNPC {
             task.cancel();
         }
 
-        // Destroy NPC without dropping items (they're saved to DB)
+        // Destroy NPC
         npc.destroy();
 
         debugLog("Cleaned up NPC for disconnected player: " + player.getName());
-    }
-
-    /**
-     * Check if player has saved inventory from previous session
-     */
-    public boolean hasSavedInventory(UUID playerId) {
-        return plugin.getDatabaseManager().hasSavedInventory(playerId);
     }
 
     public int getActiveNpcCount() {

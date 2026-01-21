@@ -1,29 +1,53 @@
 # Jarvis AI Companion Configuration
-# Version 0.0.6
+# Version 0.0.7
 
 # ========== AI CONFIGURATION ==========
 ai:
-  provider: openai  # Options: openai, claude, gemini, grok
-  
+  # Provider options: openai, claude, gemini, grok, ollama, auto
+  # "auto" will try providers in priority order, switching on failure
+  provider: auto
+
+  # Provider priority for auto mode (tried top-to-bottom)
+  # Providers without API keys (except ollama) are skipped
+  provider-priority:
+    - claude
+    - openai
+    - grok
+    - gemini
+    - ollama
+
   openai:
     api-key: ""
-    model: gpt-3.5-turbo
+    model: gpt-4o-mini
     endpoint: ""  # Leave blank for default
-  
+    timeout-seconds: 30
+
   claude:
     api-key: ""
     model: claude-sonnet-4-20250514
     endpoint: ""  # Leave blank for default
-  
+    timeout-seconds: 30
+
   grok:
     api-key: ""
     model: grok-4
     endpoint: ""  # Leave blank for default
-  
+    timeout-seconds: 30
+
   gemini:
     api-key: ""
     model: gemini-1.5-flash
     endpoint: ""  # Leave blank for default
+    timeout-seconds: 30
+
+  # Ollama - Local LLM server (no API key required)
+  # Install: https://ollama.ai
+  # Pull model: ollama pull mistral
+  ollama:
+    endpoint: "http://localhost:11434"
+    model: mistral  # Options: mistral, llama3.2, neural-chat, etc.
+    keep-alive: "5m"  # Keep model loaded in memory
+    timeout-seconds: 60  # Local models may be slower
 
 # ========== MINING CONFIGURATION ==========
 mining:

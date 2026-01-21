@@ -27,7 +27,7 @@ import org.bukkit.command.CommandSender;
  */
 public class Jarvis extends JavaPlugin {
 
-    private static final String VERSION = "0.0.6";
+    private static final String VERSION = "0.0.7";
     
     private AIConnector aiConnector;
     private JarvisNPC jarvisNPC;
@@ -181,7 +181,7 @@ public class Jarvis extends JavaPlugin {
 
         // Show systems status
         requester.sendMessage("§7--- Systems Status ---");
-        requester.sendMessage("§aCore NPC & Mining: §2v0.0.6 (with verification)");
+        requester.sendMessage("§aCore NPC & Mining: §2v0.0.7 (improved movement)");
         requester.sendMessage("§aBuilding System: §2Functional");
         requester.sendMessage("§aQuest System: §2Functional (" + (questSystem != null ? questSystem.getQuestLibrary().getTemplateCount() + " templates" : "N/A") + ")");
         requester.sendMessage("§aSchematic System: §2Functional");

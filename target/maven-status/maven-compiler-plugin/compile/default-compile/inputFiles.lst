@@ -11,5 +11,7 @@
 /home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/building/BuildingAssistant.java
 /home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/schematics/SchematicPreview.java
 /home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/quests/QuestTemplate.java
+/home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/listeners/PlayerConnectionListener.java
 /home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/ai/AIConnector.java
+/home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/schematics/SchemReader.java
 /home/gadget/apps/jarvis/jarvis/src/main/java/com/yourname/jarvis/commands/JarvisCommands.java
