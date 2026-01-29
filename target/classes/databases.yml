@@ -1,5 +1,0 @@
-sqlite:
-  driver: org.sqlite.JDBC
-  url: jdbc:sqlite:./plugins/Jarvis/database.db
-  username: ""
-  password: ""
