@@ -21,13 +21,13 @@ import org.bukkit.command.CommandSender;
 
 /**
  * Jarvis AI Companion Plugin
- * Version: 0.0.5
- * 
+ * Version: 0.0.8
+ *
  * Main plugin class that manages all subsystems
  */
 public class Jarvis extends JavaPlugin {
 
-    private static final String VERSION = "0.0.7";
+    private static final String VERSION = "0.0.8";
     
     private AIConnector aiConnector;
     private JarvisNPC jarvisNPC;
