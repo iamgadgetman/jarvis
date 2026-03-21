@@ -174,21 +174,71 @@ public class SchematicManager {
     }
 
     /**
-     * Paste a schematic at player's location
-     * Uses native reader for .schem files, WorldEdit as fallback
+     * Find a schematic by fuzzy name matching.
+     * Tries: exact → contains → word-by-word → suggestion fallback.
+     */
+    private SchematicInfo findSchematic(String name) {
+        String lower = name.toLowerCase().trim();
+
+        // 1. Exact match (already lowercased key in map)
+        SchematicInfo info = availableSchematics.get(lower);
+        if (info != null) return info;
+
+        // Refresh and retry exact
+        scanFolder();
+        info = availableSchematics.get(lower);
+        if (info != null) return info;
+
+        // 2. Schematic name contains the query  (e.g. "castle" matches "gadgets_castle_v2")
+        for (Map.Entry<String, SchematicInfo> entry : availableSchematics.entrySet()) {
+            if (entry.getKey().contains(lower)) return entry.getValue();
+        }
+
+        // 3. Query contains the schematic name  (e.g. "build a castle" matches "castle")
+        for (Map.Entry<String, SchematicInfo> entry : availableSchematics.entrySet()) {
+            if (lower.contains(entry.getKey())) return entry.getValue();
+        }
+
+        // 4. Word-by-word — any meaningful word in query matches any word in schematic name
+        String[] queryWords = lower.split("[_\\s]+");
+        for (Map.Entry<String, SchematicInfo> entry : availableSchematics.entrySet()) {
+            String[] nameWords = entry.getKey().split("[_\\s]+");
+            for (String qw : queryWords) {
+                if (qw.length() < 3) continue;
+                for (String nw : nameWords) {
+                    if (nw.length() < 3) continue;
+                    if (nw.contains(qw) || qw.contains(nw)) return entry.getValue();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Paste a schematic at player's location.
+     * Accepts fuzzy names — e.g. "castle" matches "gadgets_castle_v2".
      */
     public void pasteSchematic(Player player, String name) {
-        SchematicInfo info = availableSchematics.get(name.toLowerCase());
-
-        if (info == null) {
-            // Try refreshing and checking again
-            scanFolder();
-            info = availableSchematics.get(name.toLowerCase());
-        }
+        SchematicInfo info = findSchematic(name);
 
         if (info == null) {
             player.sendMessage(ChatColor.RED + "Schematic not found: " + name);
-            player.sendMessage(ChatColor.GRAY + "Use /jarvis schematic list to see available schematics");
+            // Show suggestions
+            List<String> suggestions = availableSchematics.keySet().stream()
+                    .filter(k -> {
+                        String n = name.toLowerCase();
+                        return k.contains(n.substring(0, Math.min(3, n.length())));
+                    })
+                    .limit(5)
+                    .sorted()
+                    .collect(java.util.stream.Collectors.toList());
+            if (!suggestions.isEmpty()) {
+                player.sendMessage(ChatColor.GRAY + "Did you mean: " + ChatColor.YELLOW
+                        + String.join(ChatColor.GRAY + ", " + ChatColor.YELLOW, suggestions) + "?");
+            } else {
+                player.sendMessage(ChatColor.GRAY + "Use /jarvis schematic list to see available schematics");
+            }
             return;
         }
 
@@ -449,9 +499,10 @@ public class SchematicManager {
             return;
         }
 
-        SchematicInfo info = availableSchematics.get(name.toLowerCase());
+        SchematicInfo info = findSchematic(name);
         if (info == null) {
             player.sendMessage(ChatColor.RED + "Schematic not found: " + name);
+            player.sendMessage(ChatColor.GRAY + "Use /jarvis schematic list to see available schematics");
             return;
         }
 

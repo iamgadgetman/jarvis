@@ -17,6 +17,7 @@ import com.yourname.jarvis.quests.QuestSystem;
 import com.yourname.jarvis.schematics.SchematicManager;
 import com.yourname.jarvis.listeners.ChatListener;
 import com.yourname.jarvis.listeners.PlayerConnectionListener;
+import com.yourname.jarvis.listeners.PlayerEventListener;
 import org.bukkit.command.CommandSender;
 
 /**
@@ -27,8 +28,8 @@ import org.bukkit.command.CommandSender;
  */
 public class Jarvis extends JavaPlugin {
 
-    private static final String VERSION = "0.0.8";
-    
+    private static final String VERSION = "0.0.9";
+
     private AIConnector aiConnector;
     private JarvisNPC jarvisNPC;
     private UIManager uiManager;
@@ -36,6 +37,9 @@ public class Jarvis extends JavaPlugin {
     private BuildingAssistant buildingAssistant;
     private QuestSystem questSystem;
     private SchematicManager schematicManager;
+    private JarvisActionExecutor actionExecutor;
+    private ConfirmationManager confirmationManager;
+    private PlayerRequestManager playerRequestManager;
 
     @Override
     public void onEnable() {
@@ -64,12 +68,32 @@ public class Jarvis extends JavaPlugin {
         buildingAssistant = new BuildingAssistant(this);
         questSystem = new QuestSystem(this);
         schematicManager = new SchematicManager(this);
+        actionExecutor = new JarvisActionExecutor(this);
+        confirmationManager = new ConfirmationManager(
+                getConfig().getLong("confirmation-timeout-seconds", 30));
+        playerRequestManager = new PlayerRequestManager();
 
-        // Register chat listener for natural language commands
+        // Register listeners
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
-
-        // Register player connection listener for disconnect handling
         getServer().getPluginManager().registerEvents(new PlayerConnectionListener(this), this);
+        getServer().getPluginManager().registerEvents(new PlayerEventListener(this), this);
+
+        // Periodic cleanup of old requests (every 5 minutes)
+        getServer().getScheduler().runTaskTimer(this,
+                () -> playerRequestManager.cleanOld(), 6000L, 6000L);
+
+        // TPS monitor — warn admins if TPS drops below 18
+        double tpsThreshold = getConfig().getDouble("butler.tps-warn-threshold", 18.0);
+        getServer().getScheduler().runTaskTimer(this, () -> {
+            double[] tps = getServer().getTPS();
+            if (tps.length > 0 && tps[0] < tpsThreshold) {
+                String msg = org.bukkit.ChatColor.RED + "[Jarvis] Warning: Server TPS is "
+                        + String.format("%.1f", tps[0]) + " (threshold: " + tpsThreshold + ")";
+                for (org.bukkit.entity.Player p : getServer().getOnlinePlayers()) {
+                    if (p.hasPermission("jarvis.admin")) p.sendMessage(msg);
+                }
+            }
+        }, 1200L, 1200L); // every 60 seconds
 
         getLogger().info("Jarvis AI Companion v" + VERSION + " enabled successfully!");
         getLogger().info("NPC, Mining, Quest, and Building systems are functional!");
@@ -118,6 +142,18 @@ public class Jarvis extends JavaPlugin {
     
     public SchematicManager getSchematicManager() {
         return schematicManager;
+    }
+
+    public JarvisActionExecutor getActionExecutor() {
+        return actionExecutor;
+    }
+
+    public ConfirmationManager getConfirmationManager() {
+        return confirmationManager;
+    }
+
+    public PlayerRequestManager getPlayerRequestManager() {
+        return playerRequestManager;
     }
 
     public String getVersion() {

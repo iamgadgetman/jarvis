@@ -1,6 +1,12 @@
 package com.yourname.jarvis.commands;
 
+import com.yourname.jarvis.ConfirmationManager;
+import com.yourname.jarvis.JarvisActionExecutor;
 import com.yourname.jarvis.Jarvis;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -8,6 +14,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.json.JSONObject;
 
 public class JarvisCommands implements CommandExecutor {
 
@@ -299,11 +306,236 @@ public class JarvisCommands implements CommandExecutor {
                 }
             }
             
-            case "help" -> showHelp(player);
-            
-            default -> player.sendMessage(ChatColor.RED + "Unknown command. Type /jarvis help for help.");
+            case "confirm"   -> handleConfirm(player);
+            case "cancel"    -> handleCancel(player);
+            case "requests"  -> handleRequests(player);
+            case "approve"   -> {
+                if (!player.hasPermission("jarvis.admin")) {
+                    player.sendMessage(ChatColor.RED + "You don't have permission.");
+                    return true;
+                }
+                if (args.length < 2) {
+                    player.sendMessage(ChatColor.RED + "Usage: /jarvis approve <id>");
+                    return true;
+                }
+                try { handleApprove(player, Integer.parseInt(args[1])); }
+                catch (NumberFormatException e) {
+                    player.sendMessage(ChatColor.RED + "Invalid request ID.");
+                }
+            }
+            case "deny" -> {
+                if (!player.hasPermission("jarvis.admin")) {
+                    player.sendMessage(ChatColor.RED + "You don't have permission.");
+                    return true;
+                }
+                if (args.length < 2) {
+                    player.sendMessage(ChatColor.RED + "Usage: /jarvis deny <id>");
+                    return true;
+                }
+                try { handleDeny(player, Integer.parseInt(args[1])); }
+                catch (NumberFormatException e) {
+                    player.sendMessage(ChatColor.RED + "Invalid request ID.");
+                }
+            }
+            case "help"      -> showHelp(player);
+
+            default -> {
+                // Unknown subcommand — treat entire input as natural language
+                String nlInput = String.join(" ", args);
+                player.sendMessage(ChatColor.GOLD + "Jarvis: On it...");
+                new BukkitRunnable() {
+                    @Override public void run() {
+                        try {
+                            String context = "Location: " + player.getWorld().getName()
+                                    + ", Health: " + (int) player.getHealth() + "/20"
+                                    + ", Jarvis summoned: " + (plugin.getJarvisNPC().getNPC(player) != null);
+                            String resp = plugin.getAIConnector().parseNaturalLanguage(
+                                    nlInput, player.getName(), context);
+                            JSONObject action = new JSONObject(resp);
+                            String actionType  = action.optString("action", "unknown");
+                            JSONObject params   = action.optJSONObject("parameters");
+                            String aiResponse  = action.optString("response", "");
+
+                            new BukkitRunnable() {
+                                @Override public void run() {
+                                    if (!aiResponse.isEmpty()) {
+                                        player.sendMessage(ChatColor.AQUA + "Jarvis: " + ChatColor.WHITE + aiResponse);
+                                    }
+                                    if (!actionType.isEmpty() && !actionType.equals("unknown")) {
+                                        executeNLAction(player, actionType, params);
+                                    } else if (aiResponse.isEmpty()) {
+                                        player.sendMessage(ChatColor.GRAY + "Jarvis: Not sure what you mean — try /jarvis help");
+                                    }
+                                }
+                            }.runTask(plugin);
+                        } catch (Exception e) {
+                            new BukkitRunnable() {
+                                @Override public void run() {
+                                    player.sendMessage(ChatColor.RED + "Jarvis: Couldn't process that. Try /jarvis help");
+                                }
+                            }.runTask(plugin);
+                        }
+                    }
+                }.runTaskAsynchronously(plugin);
+            }
         }
         return true;
+    }
+
+    private void handleConfirm(Player player) {
+        ConfirmationManager cm = plugin.getConfirmationManager();
+        if (!cm.hasPending(player.getUniqueId())) {
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: No pending action, or it timed out.");
+            return;
+        }
+        String actionType  = cm.getPendingAction(player.getUniqueId());
+        JSONObject params   = cm.getPendingParameters(player.getUniqueId());
+        cm.clearPending(player.getUniqueId());
+
+        String result = plugin.getActionExecutor().execute(actionType, params, player);
+        if (result != null) {
+            player.sendMessage(ChatColor.GREEN + "[Jarvis] " + result);
+        }
+    }
+
+    private void handleCancel(Player player) {
+        ConfirmationManager cm = plugin.getConfirmationManager();
+        if (!cm.hasPending(player.getUniqueId())) {
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: Nothing to cancel.");
+            return;
+        }
+        cm.clearPending(player.getUniqueId());
+        player.sendMessage(ChatColor.GRAY + "Jarvis: Action cancelled. Wise choice, perhaps.");
+    }
+
+    private void handleRequests(Player player) {
+        if (!player.hasPermission("jarvis.admin")) {
+            player.sendMessage(ChatColor.RED + "You don't have permission.");
+            return;
+        }
+        var rm = plugin.getPlayerRequestManager();
+        if (rm == null || !rm.hasPending()) {
+            player.sendMessage(ChatColor.GRAY + "Jarvis: No pending item requests.");
+            return;
+        }
+        player.sendMessage(ChatColor.GOLD + "═══ Pending Item Requests ═══");
+        for (var req : rm.getAllRequests()) {
+            net.kyori.adventure.text.Component line = net.kyori.adventure.text.Component
+                    .text("#" + req.id + " ", net.kyori.adventure.text.format.NamedTextColor.YELLOW)
+                    .append(net.kyori.adventure.text.Component.text(
+                            req.playerName + " wants " + req.amount + "x " + req.item
+                            + (req.reason.isEmpty() ? "" : " — " + req.reason),
+                            net.kyori.adventure.text.format.NamedTextColor.WHITE))
+                    .append(net.kyori.adventure.text.Component.text(" [Approve]",
+                            net.kyori.adventure.text.format.NamedTextColor.GREEN)
+                            .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/jarvis approve " + req.id))
+                            .hoverEvent(net.kyori.adventure.text.event.HoverEvent.showText(
+                                    net.kyori.adventure.text.Component.text("Approve this request"))))
+                    .append(net.kyori.adventure.text.Component.text(" [Deny]",
+                            net.kyori.adventure.text.format.NamedTextColor.RED)
+                            .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/jarvis deny " + req.id))
+                            .hoverEvent(net.kyori.adventure.text.event.HoverEvent.showText(
+                                    net.kyori.adventure.text.Component.text("Deny this request"))));
+            player.sendMessage(line);
+        }
+        player.sendMessage(ChatColor.GOLD + "════════════════════════════");
+    }
+
+    private void handleApprove(Player admin, int id) {
+        var rm = plugin.getPlayerRequestManager();
+        if (rm == null) { admin.sendMessage(ChatColor.RED + "Request system not available."); return; }
+        var req = rm.getRequest(id);
+        if (req == null) {
+            admin.sendMessage(ChatColor.RED + "Request #" + id + " not found or already handled.");
+            return;
+        }
+        rm.removeRequest(id);
+
+        // Give item to the requesting player
+        org.bukkit.entity.Player target = plugin.getServer().getPlayer(req.playerUUID);
+        org.bukkit.Material mat = org.bukkit.Material.matchMaterial(req.item);
+        if (mat == null) {
+            admin.sendMessage(ChatColor.RED + "Unknown item: " + req.item + ". Request removed.");
+            return;
+        }
+
+        if (target != null && target.isOnline()) {
+            target.getInventory().addItem(new org.bukkit.inventory.ItemStack(mat, req.amount));
+            target.sendMessage(ChatColor.GREEN + "Jarvis: " + admin.getName()
+                    + " approved your request for " + req.amount + "x " + req.item + ".");
+            admin.sendMessage(ChatColor.GREEN + "Approved #" + id + ": gave " + req.amount + "x "
+                    + req.item + " to " + req.playerName + ".");
+        } else {
+            admin.sendMessage(ChatColor.YELLOW + req.playerName + " is offline. Item will be given when they rejoin.");
+            // Store for next login — for now just notify admin
+            admin.sendMessage(ChatColor.GRAY + "(Offline delivery not yet implemented — re-approve when they join)");
+        }
+    }
+
+    private void handleDeny(Player admin, int id) {
+        var rm = plugin.getPlayerRequestManager();
+        if (rm == null) { admin.sendMessage(ChatColor.RED + "Request system not available."); return; }
+        var req = rm.getRequest(id);
+        if (req == null) {
+            admin.sendMessage(ChatColor.RED + "Request #" + id + " not found or already handled.");
+            return;
+        }
+        rm.removeRequest(id);
+
+        org.bukkit.entity.Player target = plugin.getServer().getPlayer(req.playerUUID);
+        if (target != null && target.isOnline()) {
+            target.sendMessage(ChatColor.RED + "Jarvis: " + admin.getName()
+                    + " denied your request for " + req.amount + "x " + req.item + ".");
+        }
+        admin.sendMessage(ChatColor.GRAY + "Denied request #" + id + " from " + req.playerName + ".");
+    }
+
+    /** Execute an action resolved from natural language input in /jarvis <...> */
+    private void executeNLAction(Player player, String actionType, JSONObject params) {
+        JarvisActionExecutor executor = plugin.getActionExecutor();
+
+        // Check if this is an extended world action
+        boolean isExtended = switch (actionType) {
+            case "give_item", "enchant", "potion_effect", "heal", "feed",
+                 "set_gamemode", "teleport", "set_time", "set_weather", "set_gamerule",
+                 "broadcast", "server_say", "lp_group_add", "lp_group_remove",
+                 "warp", "discord_broadcast", "paste_schematic" -> true;
+            default -> false;
+        };
+
+        if (executor != null && isExtended) {
+            if (JarvisActionExecutor.DANGEROUS_ACTIONS.contains(actionType)) {
+                String desc = executor.describe(actionType, params);
+                plugin.getConfirmationManager().setPending(
+                        player.getUniqueId(), actionType, params, desc);
+                player.sendMessage(ChatColor.YELLOW + "Jarvis: I want to — " + desc);
+                Component confirm = Component.text("[Confirm]", NamedTextColor.GREEN)
+                        .clickEvent(ClickEvent.runCommand("/jarvis confirm"))
+                        .hoverEvent(HoverEvent.showText(Component.text("Execute: " + desc)));
+                Component cancel = Component.text(" [Cancel]", NamedTextColor.RED)
+                        .clickEvent(ClickEvent.runCommand("/jarvis cancel"))
+                        .hoverEvent(HoverEvent.showText(Component.text("Cancel this action")));
+                player.sendMessage(confirm.append(cancel));
+            } else {
+                String result = executor.execute(actionType, params, player);
+                if (result != null) player.sendMessage(ChatColor.GREEN + "[Jarvis] " + result);
+            }
+            return;
+        }
+
+        // NPC / core actions
+        switch (actionType.toLowerCase()) {
+            case "summon"                   -> plugin.getJarvisNPC().summon(player);
+            case "dismiss"                  -> plugin.getJarvisNPC().dismiss(player);
+            case "return", "come", "follow" -> plugin.getJarvisNPC().returnToPlayer(player);
+            case "attack", "defend", "fight"-> plugin.getJarvisNPC().attack(player);
+            case "mine", "mining"           -> plugin.getJarvisNPC().mine(player);
+            case "stop"                     -> plugin.getJarvisNPC().stop(player);
+            case "loot", "inventory"        -> plugin.getJarvisNPC().openInventory(player);
+            case "quest_accept"             -> { if (plugin.getQuestSystem() != null) plugin.getQuestSystem().generateAndAssignQuest(player); }
+            case "quest_status"             -> { if (plugin.getQuestSystem() != null) plugin.getQuestSystem().showQuestStatus(player); }
+            case "chat", "talk"             -> {} // AI response already shown above
+        }
     }
 
     private void showHelp(Player player) {
@@ -344,18 +576,24 @@ public class JarvisCommands implements CommandExecutor {
             player.sendMessage(ChatColor.WHITE + "  /jarvis quest status" + ChatColor.GRAY + " - Quest progress");
         }
         
-        player.sendMessage(ChatColor.YELLOW + "Natural Language:");
-        player.sendMessage(ChatColor.GRAY + "  Just say 'jarvis <command>' in chat!");
-        player.sendMessage(ChatColor.GRAY + "  Example: 'jarvis come here and mine'");
-        
-        player.sendMessage(ChatColor.YELLOW + "AI Assistant:");
-        player.sendMessage(ChatColor.WHITE + "  /jarvis ask <question>" + ChatColor.GRAY + " - Ask Jarvis anything");
-        player.sendMessage(ChatColor.GRAY + "  Example: /jarvis ask what are the best enchantments?");
+        player.sendMessage(ChatColor.YELLOW + "Natural Language (just type it):");
+        player.sendMessage(ChatColor.GRAY + "  Chat: 'jarvis kill all creepers'");
+        player.sendMessage(ChatColor.GRAY + "  Command: /jarvis kill all creepers nearby");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis ask <question>" + ChatColor.GRAY + " - Ask anything");
+
+        if (plugin.getPlayerRequestManager() != null) {
+            player.sendMessage(ChatColor.YELLOW + "Item Requests:");
+            player.sendMessage(ChatColor.GRAY + "  Say 'jarvis, can I have <item>?' to request items from admins");
+        }
         
         if (player.hasPermission("jarvis.admin")) {
             player.sendMessage(ChatColor.YELLOW + "Admin Commands:");
             player.sendMessage(ChatColor.WHITE + "  /jarvis reload" + ChatColor.GRAY + " - Reload config");
             player.sendMessage(ChatColor.WHITE + "  /jarvis debug" + ChatColor.GRAY + " - Debug info");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis requests" + ChatColor.GRAY + " - View pending item requests");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis approve <id>" + ChatColor.GRAY + " - Approve item request");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis deny <id>" + ChatColor.GRAY + " - Deny item request");
+            player.sendMessage(ChatColor.GRAY + "  Console AI: 'jarvis, kill all creepers' — asks before executing");
         }
         
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");

@@ -71,6 +71,32 @@ public class JarvisNPC implements Listener {
         Material.NETHER_QUARTZ_ORE, Material.NETHER_GOLD_ORE
     );
 
+    // Keyword → ore materials mapping for targeted mining
+    private static final Map<String, Set<Material>> ORE_KEYWORDS = new java.util.LinkedHashMap<>();
+    static {
+        ORE_KEYWORDS.put("ancient debris", Set.of(Material.ANCIENT_DEBRIS));
+        ORE_KEYWORDS.put("debris",         Set.of(Material.ANCIENT_DEBRIS));
+        ORE_KEYWORDS.put("netherite",      Set.of(Material.ANCIENT_DEBRIS));
+        ORE_KEYWORDS.put("emerald",        Set.of(Material.EMERALD_ORE, Material.DEEPSLATE_EMERALD_ORE));
+        ORE_KEYWORDS.put("diamond",        Set.of(Material.DIAMOND_ORE, Material.DEEPSLATE_DIAMOND_ORE));
+        ORE_KEYWORDS.put("gold",           Set.of(Material.GOLD_ORE, Material.DEEPSLATE_GOLD_ORE, Material.NETHER_GOLD_ORE));
+        ORE_KEYWORDS.put("lapis",          Set.of(Material.LAPIS_ORE, Material.DEEPSLATE_LAPIS_ORE));
+        ORE_KEYWORDS.put("redstone",       Set.of(Material.REDSTONE_ORE, Material.DEEPSLATE_REDSTONE_ORE));
+        ORE_KEYWORDS.put("iron",           Set.of(Material.IRON_ORE, Material.DEEPSLATE_IRON_ORE));
+        ORE_KEYWORDS.put("copper",         Set.of(Material.COPPER_ORE, Material.DEEPSLATE_COPPER_ORE));
+        ORE_KEYWORDS.put("quartz",         Set.of(Material.NETHER_QUARTZ_ORE));
+        ORE_KEYWORDS.put("coal",           Set.of(Material.COAL_ORE, Material.DEEPSLATE_COAL_ORE));
+    }
+
+    // Items to ignore during pickup (blocks broken while navigating)
+    private static final Set<Material> JUNK_DROPS = Set.of(
+        Material.COBBLESTONE, Material.COBBLED_DEEPSLATE, Material.STONE,
+        Material.DIRT, Material.GRAVEL, Material.SAND, Material.FLINT,
+        Material.GRANITE, Material.DIORITE, Material.ANDESITE,
+        Material.DEEPSLATE, Material.TUFF, Material.CALCITE,
+        Material.NETHERRACK, Material.BASALT, Material.BLACKSTONE
+    );
+
     // ==================== SIMPLE MINING STATE ====================
 
     /**
@@ -95,9 +121,22 @@ public class JarvisNPC implements Listener {
         Location lastLocation = null;
         long startTime = System.currentTimeMillis();
 
+        Material targetOreType = null;
+        int miningAttempts = 0;
+
+        // Ore type filter — null means mine any ore
+        Set<Material> requestedOreTypes = null;
+
         void transitionTo(MiningPhase newPhase) {
             phase = newPhase;
             ticksInPhase = 0;
+        }
+
+        void clearTarget() {
+            targetOre = null;
+            targetLocation = null;
+            targetOreType = null;
+            miningAttempts = 0;
         }
     }
 
@@ -192,10 +231,25 @@ public class JarvisNPC implements Listener {
     // ==================== MINING - SIMPLIFIED v0.0.8 ====================
 
     public void mine(Player player, String[] args) {
-        mine(player);
+        // Parse optional ore type keyword from args (e.g. "diamond", "iron ore")
+        Set<Material> oreFilter = null;
+        if (args.length > 0) {
+            String keyword = String.join(" ", args).toLowerCase().trim();
+            for (Map.Entry<String, Set<Material>> entry : ORE_KEYWORDS.entrySet()) {
+                if (keyword.contains(entry.getKey())) {
+                    oreFilter = entry.getValue();
+                    break;
+                }
+            }
+        }
+        mine(player, oreFilter);
     }
 
     public void mine(Player player) {
+        mine(player, (Set<Material>) null);
+    }
+
+    private void mine(Player player, Set<Material> oreFilter) {
         NPC npc = getNPC(player);
         if (npc == null) {
             player.sendMessage(ChatColor.RED + "Jarvis: Summon me first!");
@@ -205,10 +259,18 @@ public class JarvisNPC implements Listener {
         stopTask(player);
 
         SimpleMiningState state = new SimpleMiningState();
+        state.requestedOreTypes = oreFilter;
         state.transitionTo(MiningPhase.SEARCHING);
         miningStates.put(player.getUniqueId(), state);
 
-        player.sendMessage(ChatColor.GOLD + "Jarvis: Mining mode activated! (v0.0.8)");
+        if (oreFilter != null) {
+            // Build a readable name from the first ore in the filter
+            String oreName = oreFilter.iterator().next().name()
+                .replace("DEEPSLATE_", "").replace("_ORE", "").replace("_", " ").toLowerCase();
+            player.sendMessage(ChatColor.GOLD + "Jarvis: Hunting for " + oreName + "!");
+        } else {
+            player.sendMessage(ChatColor.GOLD + "Jarvis: Mining mode activated! (v0.0.9)");
+        }
 
         BukkitRunnable task = new BukkitRunnable() {
             @Override
@@ -265,11 +327,12 @@ public class JarvisNPC implements Listener {
     private void processSearching(NPC npc, Player player, SimpleMiningState state, Location npcLoc) {
         debug("SEARCHING phase, tick " + state.ticksInPhase);
 
-        Block ore = findNearestOre(npcLoc);
+        Block ore = findNearestOre(npcLoc, state.requestedOreTypes);
 
         if (ore == null) {
             if (state.ticksInPhase > 5) {
-                player.sendMessage(ChatColor.YELLOW + "Jarvis: No ores found nearby. Mined " + state.oresMined + " ores total.");
+                String suffix = state.requestedOreTypes != null ? " No more of that type nearby." : "";
+                player.sendMessage(ChatColor.YELLOW + "Jarvis: No ores found nearby. Mined " + state.oresMined + " ores total." + suffix);
                 stopTask(player);
                 miningStates.remove(player.getUniqueId());
             }
@@ -353,13 +416,16 @@ public class JarvisNPC implements Listener {
     }
 
     /**
-     * MINING - Break the ore block
+     * MINING - Break the ore block.
+     * breakNaturally() is synchronous: the block is AIR immediately after the call.
+     * We check success on the same tick, retry up to 3 times if somehow it failed.
      */
     private void processMining(NPC npc, Player player, SimpleMiningState state, Location npcLoc) {
-        debug("MINING phase, tick " + state.ticksInPhase);
+        debug("MINING phase, tick=" + state.ticksInPhase);
 
+        // Ore already gone (e.g. broken by player between ticks)
         if (state.targetOre == null || !isOre(state.targetOre.getType())) {
-            debug("Target ore is gone or not an ore anymore");
+            debug("Target ore already gone, going to COLLECTING");
             state.transitionTo(MiningPhase.COLLECTING);
             return;
         }
@@ -368,27 +434,41 @@ public class JarvisNPC implements Listener {
         double distance = npcLoc.distance(oreLoc);
 
         if (distance > REACH_DISTANCE + 1) {
-            debug("Too far to mine, going back to MOVING");
+            debug("Too far to mine (" + String.format("%.1f", distance) + "), back to MOVING");
             state.transitionTo(MiningPhase.MOVING);
             return;
         }
 
-        // Face the ore
         faceLocation(npc, oreLoc);
-
-        // Break the ore
         ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
-        Material oreType = state.targetOre.getType();
+        state.targetOreType = state.targetOre.getType();
 
+        debug("Breaking " + state.targetOreType + " (attempt " + (state.miningAttempts + 1) + ")");
         state.targetOre.breakNaturally(tool);
-        state.oresMined++;
 
-        player.sendMessage(ChatColor.GREEN + "Jarvis: Mined " + formatOre(oreType) + "! (Total: " + state.oresMined + ")");
-        debug("Mined " + oreType + ", total=" + state.oresMined);
+        // breakNaturally() is synchronous — block is AIR right now if it succeeded
+        boolean broke = state.targetOre.getType() == Material.AIR
+                || !isOre(state.targetOre.getType());
 
-        state.targetOre = null;
-        state.targetLocation = null;
-        state.transitionTo(MiningPhase.COLLECTING);
+        if (broke) {
+            state.oresMined++;
+            player.sendMessage(ChatColor.GREEN + "Jarvis: Mined " + formatOre(state.targetOreType)
+                    + "! (Total: " + state.oresMined + ")");
+            debug("Break confirmed: " + state.targetOreType + ", total=" + state.oresMined);
+            state.clearTarget();
+            state.transitionTo(MiningPhase.COLLECTING);
+        } else {
+            // Block didn't break — protected or indestructible
+            state.miningAttempts++;
+            debug("Break failed (attempt " + state.miningAttempts + ")");
+            if (state.miningAttempts >= 3) {
+                player.sendMessage(ChatColor.YELLOW + "Jarvis: Can't break that "
+                        + formatOre(state.targetOreType) + ", moving on.");
+                state.clearTarget();
+                state.transitionTo(MiningPhase.SEARCHING);
+            }
+            // else: try again next tick
+        }
     }
 
     /**
@@ -462,7 +542,7 @@ public class JarvisNPC implements Listener {
 
     // ==================== ORE FINDING ====================
 
-    private Block findNearestOre(Location center) {
+    private Block findNearestOre(Location center, Set<Material> filter) {
         Block nearest = null;
         double nearestDist = Double.MAX_VALUE;
         int nearestPriority = Integer.MAX_VALUE;
@@ -473,7 +553,12 @@ public class JarvisNPC implements Listener {
                     Block block = center.clone().add(x, y, z).getBlock();
                     Material type = block.getType();
 
-                    if (!isOre(type)) continue;
+                    // Apply ore type filter
+                    if (filter != null) {
+                        if (!filter.contains(type)) continue;
+                    } else {
+                        if (!isOre(type)) continue;
+                    }
 
                     int priority = ORE_PRIORITY.indexOf(type);
                     if (priority < 0) priority = 999;
@@ -589,6 +674,9 @@ public class JarvisNPC implements Listener {
         for (Entity entity : npc.getEntity().getNearbyEntities(PICKUP_RADIUS, PICKUP_RADIUS, PICKUP_RADIUS)) {
             if (entity instanceof Item item) {
                 ItemStack stack = item.getItemStack();
+
+                // Skip worthless navigation debris
+                if (JUNK_DROPS.contains(stack.getType())) continue;
 
                 // Add to inventory
                 ItemStack[] contents = invTrait.getContents();

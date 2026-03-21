@@ -1,7 +1,13 @@
 package com.yourname.jarvis.listeners;
 
+import com.yourname.jarvis.ConfirmationManager;
+import com.yourname.jarvis.JarvisActionExecutor;
 import com.yourname.jarvis.Jarvis;
 import com.yourname.jarvis.ai.AIConnector;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -23,85 +29,63 @@ public class ChatListener implements Listener {
     private final String prefix;
     private final boolean requirePrefix;
 
-    // Cooldown to prevent spam (in milliseconds)
     private static final long COOLDOWN_MS = 2000;
     private final Map<UUID, Long> lastCommandTime = new ConcurrentHashMap<>();
 
     public ChatListener(Jarvis plugin) {
-        this.plugin = plugin;
-        this.aiConnector = plugin.getAIConnector();
-        this.enabled = plugin.getConfig().getBoolean("natural-language.enabled", true);
-        this.prefix = plugin.getConfig().getString("natural-language.prefix", "jarvis").toLowerCase();
+        this.plugin        = plugin;
+        this.aiConnector   = plugin.getAIConnector();
+        this.enabled       = plugin.getConfig().getBoolean("natural-language.enabled", true);
+        this.prefix        = plugin.getConfig().getString("natural-language.prefix", "jarvis").toLowerCase();
         this.requirePrefix = plugin.getConfig().getBoolean("natural-language.require-prefix", false);
-
-        // Phase 6: Start cleanup task for memory leak prevention
         startCleanupTask();
     }
 
-    /**
-     * Phase 6: Periodic cleanup task to remove stale cooldown entries
-     * Runs every minute to clean up entries older than 1 minute
-     */
     private void startCleanupTask() {
         new BukkitRunnable() {
-            @Override
-            public void run() {
-                long now = System.currentTimeMillis();
-                long maxAge = 60000; // 1 minute in milliseconds
-
-                lastCommandTime.entrySet().removeIf(entry ->
-                    (now - entry.getValue()) > maxAge);
+            @Override public void run() {
+                long cutoff = System.currentTimeMillis() - 60000;
+                lastCommandTime.entrySet().removeIf(e -> e.getValue() < cutoff);
             }
-        }.runTaskTimer(plugin, 1200L, 1200L); // Run every minute (1200 ticks)
+        }.runTaskTimer(plugin, 1200L, 1200L);
     }
 
     @EventHandler(priority = EventPriority.NORMAL)
     public void onPlayerChat(AsyncPlayerChatEvent event) {
         if (event.isCancelled() || !enabled) return;
 
-        Player player = event.getPlayer();
+        Player player  = event.getPlayer();
         String message = event.getMessage().toLowerCase().trim();
 
-        // Check if message should be processed
-        boolean shouldProcess = false;
+        boolean shouldProcess;
         String processedMessage = message;
 
         if (requirePrefix) {
-            // Only process if starts with prefix
-            if (message.startsWith(prefix + " ") || message.startsWith(prefix + ",")) {
-                shouldProcess = true;
+            shouldProcess = message.startsWith(prefix + " ") || message.startsWith(prefix + ",");
+            if (shouldProcess) {
                 processedMessage = message.substring(prefix.length()).trim();
-                event.setCancelled(true); // Don't broadcast to other players
+                event.setCancelled(true);
             }
         } else {
-            // Process if contains prefix or certain keywords
-            if (message.contains(prefix) || 
-                message.contains("summon") || 
-                message.contains("dismiss") ||
-                message.contains("mine") || 
-                message.contains("attack") ||
-                message.contains("build") ||
-                message.contains("come here") ||
-                message.contains("follow")) {
-                shouldProcess = true;
-            }
+            shouldProcess = message.contains(prefix)
+                    || message.contains("summon") || message.contains("dismiss")
+                    || message.contains("mine")   || message.contains("attack")
+                    || message.contains("build")  || message.contains("come here")
+                    || message.contains("follow") || message.contains("give me")
+                    || message.contains("heal")   || message.contains("feed me")
+                    || message.contains("time")   || message.contains("weather");
         }
 
         if (!shouldProcess) return;
 
-        // Check cooldown
         long now = System.currentTimeMillis();
-        Long lastTime = lastCommandTime.get(player.getUniqueId());
-        if (lastTime != null && (now - lastTime) < COOLDOWN_MS) {
-            return; // Still on cooldown
-        }
+        Long last = lastCommandTime.get(player.getUniqueId());
+        if (last != null && (now - last) < COOLDOWN_MS) return;
         lastCommandTime.put(player.getUniqueId(), now);
 
-        // Process async to avoid blocking chat
         String finalMessage = processedMessage;
         new BukkitRunnable() {
-            @Override
-            public void run() {
+            @Override public void run() {
                 processNaturalLanguageCommand(player, finalMessage);
             }
         }.runTaskAsynchronously(plugin);
@@ -109,36 +93,28 @@ public class ChatListener implements Listener {
 
     private void processNaturalLanguageCommand(Player player, String message) {
         try {
-            // Get context about player's situation
-            String context = buildContext(player);
-
-            // Query AI to parse the command
+            String context  = buildContext(player);
             String response = aiConnector.parseNaturalLanguage(message, player.getName(), context);
-            
-            // Parse JSON response with safety checks
-            JSONObject action = new JSONObject(response);
-            String actionType = action.optString("action", "unknown");
+
+            JSONObject action     = new JSONObject(response);
+            String actionType     = action.optString("action", "unknown");
             JSONObject parameters = action.optJSONObject("parameters");
+            String aiResponse     = action.optString("response", "");
 
             if (actionType.isEmpty() || actionType.equals("unknown")) {
                 throw new RuntimeException("No action in AI response");
             }
 
-            // Execute action on main thread
             new BukkitRunnable() {
-                @Override
-                public void run() {
-                    executeAction(player, actionType, parameters, message);
+                @Override public void run() {
+                    executeAction(player, actionType, parameters, aiResponse, message);
                 }
             }.runTask(plugin);
 
         } catch (Exception e) {
-            plugin.getLogger().warning("Failed to process natural language: " + e.getMessage());
-            
-            // Fallback: try to execute simple commands
+            plugin.getLogger().warning("Natural language parse failed: " + e.getMessage());
             new BukkitRunnable() {
-                @Override
-                public void run() {
+                @Override public void run() {
                     executeFallbackAction(player, message);
                 }
             }.runTask(plugin);
@@ -146,109 +122,112 @@ public class ChatListener implements Listener {
     }
 
     private String buildContext(Player player) {
-        StringBuilder context = new StringBuilder();
-        context.append("Location: ").append(player.getWorld().getName());
-        context.append(", Biome: ").append(player.getLocation().getBlock().getBiome().toString());
-        context.append(", Health: ").append((int)player.getHealth()).append("/20");
-        
-        // Check if Jarvis is summoned
-        boolean jarvisSummoned = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId()) != null;
-        context.append(", Jarvis summoned: ").append(jarvisSummoned);
-        
-        return context.toString();
+        return "Location: " + player.getWorld().getName()
+                + ", Biome: " + player.getLocation().getBlock().getBiome()
+                + ", Health: " + (int) player.getHealth() + "/20"
+                + ", Gamemode: " + player.getGameMode().name().toLowerCase()
+                + ", Jarvis summoned: " + (plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId()) != null);
     }
 
-    private void executeAction(Player player, String action, JSONObject parameters, String originalMessage) {
-        switch (action.toLowerCase()) {
-            case "summon" -> {
-                plugin.getJarvisNPC().summon(player);
-                player.sendMessage(ChatColor.GREEN + "Jarvis: On my way!");
-            }
-            case "dismiss" -> {
-                plugin.getJarvisNPC().dismiss(player);
-                player.sendMessage(ChatColor.YELLOW + "Jarvis: Farewell!");
-            }
-            case "return", "come", "follow" -> {
-                plugin.getJarvisNPC().returnToPlayer(player);
-                player.sendMessage(ChatColor.GREEN + "Jarvis: Right behind you!");
-            }
-            case "attack", "defend", "fight" -> {
-                plugin.getJarvisNPC().attack(player);
-                player.sendMessage(ChatColor.RED + "Jarvis: Engaging combat mode!");
-            }
-            case "mine", "mining" -> {
-                plugin.getJarvisNPC().mine(player);
-                player.sendMessage(ChatColor.AQUA + "Jarvis: Initiating mining operations!");
-            }
-            case "build" -> {
-                String description = (parameters != null) ? parameters.optString("description", "") : "";
-                if (!description.isEmpty()) {
-                    player.sendMessage(ChatColor.GOLD + "Jarvis: I'll build a " + description + " for you!");
+    private void executeAction(Player player, String actionType, JSONObject parameters,
+                               String aiResponse, String originalMessage) {
 
-                    // Trigger building assistant
-                    if (plugin.getBuildingAssistant() != null) {
-                        plugin.getBuildingAssistant().startBuild(player, description);
-                    }
+        // Always show Jarvis's witty response first
+        if (!aiResponse.isEmpty()) {
+            player.sendMessage(ChatColor.AQUA + "Jarvis: " + ChatColor.WHITE + aiResponse);
+        }
+
+        JarvisActionExecutor executor = plugin.getActionExecutor();
+
+        // Check if this is a new action type handled by JarvisActionExecutor
+        if (executor != null && isExtendedAction(actionType)) {
+            if (JarvisActionExecutor.DANGEROUS_ACTIONS.contains(actionType)) {
+                queueForConfirmation(player, actionType, parameters, executor);
+            } else {
+                String result = executor.execute(actionType, parameters, player);
+                if (result != null) {
+                    player.sendMessage(ChatColor.GREEN + "[Jarvis] " + result);
+                }
+            }
+            return;
+        }
+
+        // Core NPC / existing actions
+        switch (actionType.toLowerCase()) {
+            case "summon"                  -> plugin.getJarvisNPC().summon(player);
+            case "dismiss"                 -> plugin.getJarvisNPC().dismiss(player);
+            case "return", "come", "follow"-> plugin.getJarvisNPC().returnToPlayer(player);
+            case "attack", "defend", "fight"-> plugin.getJarvisNPC().attack(player);
+            case "mine", "mining"          -> plugin.getJarvisNPC().mine(player);
+            case "stop"                    -> plugin.getJarvisNPC().stop(player);
+            case "loot", "inventory"       -> plugin.getJarvisNPC().openInventory(player);
+            case "build" -> {
+                String desc = (parameters != null) ? parameters.optString("description", "") : "";
+                if (!desc.isEmpty() && plugin.getBuildingAssistant() != null) {
+                    plugin.getBuildingAssistant().startBuild(player, desc);
                 } else {
                     player.sendMessage(ChatColor.RED + "Jarvis: What would you like me to build?");
                 }
             }
             case "quest_accept" -> {
-                player.sendMessage(ChatColor.LIGHT_PURPLE + "Jarvis: Let me find a quest for you...");
-                if (plugin.getQuestSystem() != null) {
-                    plugin.getQuestSystem().generateAndAssignQuest(player);
-                }
+                if (plugin.getQuestSystem() != null) plugin.getQuestSystem().generateAndAssignQuest(player);
             }
             case "quest_status" -> {
-                player.sendMessage(ChatColor.LIGHT_PURPLE + "Jarvis: Checking your active quests...");
-                if (plugin.getQuestSystem() != null) {
-                    plugin.getQuestSystem().showQuestStatus(player);
-                }
+                if (plugin.getQuestSystem() != null) plugin.getQuestSystem().showQuestStatus(player);
             }
-            case "loot", "inventory" -> {
-                plugin.getJarvisNPC().openInventory(player);
-            }
+            case "clearloot" -> plugin.getJarvisNPC().clearInventory(player);
             case "chat", "talk" -> {
-                // Generate AI dialogue response
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            String npcContext = "You are helping " + player.getName();
-                            String response = aiConnector.generateDialogue(originalMessage, npcContext);
-                            
-                            new BukkitRunnable() {
-                                @Override
-                                public void run() {
-                                    player.sendMessage(ChatColor.AQUA + "Jarvis: " + ChatColor.WHITE + response);
-                                }
-                            }.runTask(plugin);
-                        } catch (Exception e) {
-                            plugin.getLogger().warning("Failed to generate dialogue: " + e.getMessage());
-                        }
-                    }
-                }.runTaskAsynchronously(plugin);
+                // AI response already shown above — nothing else needed
             }
             default -> {
-                player.sendMessage(ChatColor.GRAY + "Jarvis: I'm not sure what you want me to do.");
+                if (aiResponse.isEmpty()) {
+                    player.sendMessage(ChatColor.GRAY + "Jarvis: I'm not sure what you want me to do.");
+                }
             }
         }
     }
 
+    /** Show a clickable confirmation prompt for dangerous actions. */
+    private void queueForConfirmation(Player player, String actionType,
+                                      JSONObject parameters, JarvisActionExecutor executor) {
+        String description = executor.describe(actionType, parameters);
+        plugin.getConfirmationManager().setPending(
+                player.getUniqueId(), actionType, parameters, description);
+
+        player.sendMessage(ChatColor.YELLOW + "Jarvis: I want to — " + description);
+
+        Component confirm = Component.text("[Confirm]", NamedTextColor.GREEN)
+                .clickEvent(ClickEvent.runCommand("/jarvis confirm"))
+                .hoverEvent(HoverEvent.showText(Component.text("Execute: " + description)));
+        Component cancel = Component.text(" [Cancel]", NamedTextColor.RED)
+                .clickEvent(ClickEvent.runCommand("/jarvis cancel"))
+                .hoverEvent(HoverEvent.showText(Component.text("Cancel this action")));
+        player.sendMessage(confirm.append(cancel));
+        player.sendMessage(Component.text("Expires in "
+                + plugin.getConfirmationManager().getTimeoutSeconds() + "s.",
+                NamedTextColor.GRAY));
+    }
+
+    private boolean isExtendedAction(String actionType) {
+        return switch (actionType) {
+            case "give_item", "enchant", "potion_effect", "heal", "feed",
+                 "set_gamemode", "teleport", "set_time", "set_weather", "set_gamerule",
+                 "summon", "broadcast", "server_say", "lp_group_add", "lp_group_remove",
+                 "warp", "discord_broadcast", "paste_schematic",
+                 // v0.0.9 new actions
+                 "console_command", "console_commands", "clear_mobs", "clear_drops",
+                 "save_world", "set_difficulty", "announce_all", "schedule_broadcast",
+                 "request_item" -> true;
+            default -> false;
+        };
+    }
+
     private void executeFallbackAction(Player player, String message) {
-        // Simple keyword matching as fallback
-        if (message.contains("summon") || message.contains("come")) {
-            plugin.getJarvisNPC().summon(player);
-        } else if (message.contains("dismiss") || message.contains("go away")) {
-            plugin.getJarvisNPC().dismiss(player);
-        } else if (message.contains("mine") || message.contains("dig")) {
-            plugin.getJarvisNPC().mine(player);
-        } else if (message.contains("attack") || message.contains("fight") || message.contains("defend")) {
-            plugin.getJarvisNPC().attack(player);
-        } else if (message.contains("return") || message.contains("back")) {
-            plugin.getJarvisNPC().returnToPlayer(player);
-        } else if (message.contains("loot") || message.contains("inventory")) {
-            plugin.getJarvisNPC().openInventory(player);
-        }
+        if (message.contains("summon") || message.contains("come"))     plugin.getJarvisNPC().summon(player);
+        else if (message.contains("dismiss") || message.contains("away")) plugin.getJarvisNPC().dismiss(player);
+        else if (message.contains("mine") || message.contains("dig"))   plugin.getJarvisNPC().mine(player);
+        else if (message.contains("attack") || message.contains("fight")) plugin.getJarvisNPC().attack(player);
+        else if (message.contains("return") || message.contains("back")) plugin.getJarvisNPC().returnToPlayer(player);
+        else if (message.contains("loot") || message.contains("inventory")) plugin.getJarvisNPC().openInventory(player);
     }
 }

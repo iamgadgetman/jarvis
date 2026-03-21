@@ -1,6 +1,7 @@
 package com.yourname.jarvis.ui;
 
 import com.yourname.jarvis.Jarvis;
+import net.citizensnpcs.api.event.NPCRightClickEvent;
 import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -13,7 +14,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
@@ -271,13 +271,12 @@ public class UIManager implements Listener {
     }
 
     @EventHandler
-    public void onRightClickNPC(PlayerInteractEntityEvent e) {
-        if (e.getRightClicked() instanceof org.bukkit.entity.Player clicked) {
-            Player p = e.getPlayer();
-            NPC npc = plugin.getJarvisNPC().getNPCForPlayer(p.getUniqueId());
-            if (npc != null && clicked.getUniqueId().equals(npc.getUniqueId())) {
-                p.openInventory(createMainMenu(p));
-            }
+    public void onRightClickNPC(NPCRightClickEvent e) {
+        Player p = e.getClicker();
+        NPC npc = plugin.getJarvisNPC().getNPCForPlayer(p.getUniqueId());
+        if (npc != null && e.getNPC().equals(npc)) {
+            p.openInventory(createMainMenu(p));
+            e.setCancelled(true);
         }
     }
 

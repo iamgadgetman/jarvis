@@ -5,7 +5,7 @@
 
     <groupId>com.yourname</groupId>
     <artifactId>jarvis</artifactId>
-    <version>0.0.8</version>
+    <version>0.0.9</version>
     <packaging>jar</packaging>
 
     <name>Jarvis</name>

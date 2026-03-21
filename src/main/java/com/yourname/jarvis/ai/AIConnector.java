@@ -235,14 +235,63 @@ public class AIConnector {
      */
     public String parseNaturalLanguage(String message, String playerName, String context) throws Exception {
         String systemPrompt = JARVIS_PERSONALITY + "\n\n" +
-                "TASK: Parse player commands into JSON actions. " +
-                "Available actions: summon, dismiss, return, attack, mine, follow, build, quest_accept, quest_status, stop, clearloot. " +
-                "Output format: {\"action\":\"...\",\"parameters\":{...},\"response\":\"your witty response\"} " +
-                "Examples: " +
-                "'come here' -> {\"action\":\"summon\",\"response\":\"At your service. Again.\"} " +
-                "'start mining' -> {\"action\":\"mine\",\"response\":\"Ah yes, manual labor. How delightfully medieval.\"} " +
-                "'build a house' -> {\"action\":\"build\",\"parameters\":{\"description\":\"house\"},\"response\":\"A house? How ambitious for you.\"} " +
-                "Output ONLY valid JSON.";
+                "TASK: Parse player commands into JSON actions. Maintain your sarcastic butler persona in the response field.\n" +
+                "Output format: {\"action\":\"...\",\"parameters\":{...},\"response\":\"your witty 1-2 sentence response\"}\n\n" +
+                "NPC ACTIONS (control the physical Jarvis NPC):\n" +
+                "  summon - bring Jarvis to the player\n" +
+                "  dismiss - send Jarvis away\n" +
+                "  return/follow - return to player\n" +
+                "  attack - combat mode vs mobs\n" +
+                "  mine - mine ores autonomously\n" +
+                "  stop - stop current task\n" +
+                "  clearloot - drop all collected items\n" +
+                "  build - build a structure, params: {description: string}\n" +
+                "  quest_accept - generate a new quest\n" +
+                "  quest_status - show active quests\n\n" +
+                "WORLD ACTIONS (directly affect the game world):\n" +
+                "  give_item - give items to player, params: {player, item (minecraft:xxx), amount}\n" +
+                "  enchant - enchant held item, params: {player, enchantment, level}\n" +
+                "  potion_effect - apply effect, params: {player, effect, duration_seconds, amplifier}\n" +
+                "  heal - restore health, params: {player}\n" +
+                "  feed - restore hunger, params: {player}\n" +
+                "  set_gamemode - change gamemode, params: {player, mode: survival|creative|adventure|spectator}\n" +
+                "  teleport - teleport player, params: {player, x, y, z, world (optional)}\n" +
+                "  set_time - set world time, params: {value: day|night|noon|midnight}\n" +
+                "  set_weather - set weather, params: {type: clear|rain|thunder}\n" +
+                "  set_gamerule - change a rule, params: {rule, value}\n" +
+                "  summon - summon a mob/entity, params: {entity: minecraft:xxx, x (optional), y (optional), z (optional)}\n" +
+                "  broadcast - announce to all players, params: {message}\n" +
+                "  server_say - say in chat, params: {message}\n" +
+                "  lp_group_add - add to permission group, params: {player, group}\n" +
+                "  lp_group_remove - remove from permission group, params: {player, group}\n" +
+                "  warp - warp to a location, params: {player, warp}\n" +
+                "  discord_broadcast - send to Discord, params: {message}\n" +
+                "  paste_schematic - paste a saved schematic at player location, params: {schematic}\n\n" +
+                "ADMIN / CONSOLE ACTIONS (always require confirmation):\n" +
+                "  console_command - run ANY Minecraft console command, params: {command: \"the full command string\"}\n" +
+                "  console_commands - run MULTIPLE commands in sequence, params: {commands: [\"cmd1\", \"cmd2\", ...]}\n" +
+                "  clear_mobs - remove mobs from world, params: {type (optional, e.g. creeper), radius (optional, blocks)}\n" +
+                "  clear_drops - remove all ground items, params: {radius (optional)}\n" +
+                "  save_world - save the world, params: {}\n" +
+                "  set_difficulty - change difficulty, params: {difficulty: peaceful|easy|normal|hard}\n" +
+                "  announce_all - send title screen message to ALL players, params: {message, subtitle (optional)}\n" +
+                "  schedule_broadcast - scheduled/repeating chat message, params: {message, delay_seconds, interval_seconds (optional), count (optional)}\n\n" +
+                "PLAYER REQUESTS (for non-admin players):\n" +
+                "  request_item - submit an item request to admins, params: {item (minecraft:xxx), amount, reason (optional)}\n\n" +
+                "EXAMPLES:\n" +
+                "  'come here' -> {\"action\":\"summon\",\"response\":\"At your service. Again.\"}\n" +
+                "  'start mining' -> {\"action\":\"mine\",\"response\":\"Manual labour. How delightfully medieval.\"}\n" +
+                "  'give me a diamond sword' -> {\"action\":\"give_item\",\"parameters\":{\"item\":\"minecraft:diamond_sword\",\"amount\":1},\"response\":\"Here's a sword. Try not to immediately lose it to lava.\"}\n" +
+                "  'heal me' -> {\"action\":\"heal\",\"parameters\":{\"player\":\"" + playerName + "\"},\"response\":\"Patching up your self-inflicted wounds again, are we.\"}\n" +
+                "  'set time to night' -> {\"action\":\"set_time\",\"parameters\":{\"value\":\"night\"},\"response\":\"Certainly. Because daylight was apparently too convenient.\"}\n" +
+                "  'give me speed' -> {\"action\":\"potion_effect\",\"parameters\":{\"player\":\"" + playerName + "\",\"effect\":\"speed\",\"duration_seconds\":60,\"amplifier\":1},\"response\":\"Speed applied. Do try not to run off a cliff.\"}\n" +
+                "  'paste the castle schematic' -> {\"action\":\"paste_schematic\",\"parameters\":{\"schematic\":\"castle\"},\"response\":\"Materialising the castle. Stand back unless you enjoy being buried.\"}\n" +
+                "  'kill all creepers' -> {\"action\":\"console_command\",\"parameters\":{\"command\":\"kill @e[type=creeper]\"},\"response\":\"Eliminating the explosive menaces. You're welcome.\"}\n" +
+                "  'clear all mobs in 50 blocks' -> {\"action\":\"clear_mobs\",\"parameters\":{\"radius\":50},\"response\":\"Sweeping the area. Do try not to repopulate it immediately.\"}\n" +
+                "  'warn players about restart in 10 minutes' -> {\"action\":\"schedule_broadcast\",\"parameters\":{\"message\":\"Server restarting in 10 minutes!\",\"delay_seconds\":0,\"interval_seconds\":120,\"count\":5},\"response\":\"Scheduling the doomsday announcement.\"}\n" +
+                "  'replace all dirt with grass in this area' -> {\"action\":\"console_commands\",\"parameters\":{\"commands\":[\"execute in world run fill ~-20 ~-5 ~-20 ~20 ~5 ~20 grass_block replace dirt\"]},\"response\":\"Upgrading the terrain. One does try to maintain standards.\"}\n" +
+                "  'can I get some food' -> {\"action\":\"request_item\",\"parameters\":{\"item\":\"minecraft:cooked_beef\",\"amount\":16,\"reason\":\"hungry\"},\"response\":\"Request submitted. Whether the admin is feeling charitable is another matter.\"}\n" +
+                "Output ONLY valid JSON. The requesting player is: " + playerName;
 
         String userPrompt = String.format("Player %s says: \"%s\". Context: %s", playerName, message, context);
         return sendRequestWithFallback(userPrompt, systemPrompt);
