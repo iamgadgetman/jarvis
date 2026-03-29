@@ -124,6 +124,9 @@ public class JarvisNPC implements Listener {
         Material targetOreType = null;
         int miningAttempts = 0;
 
+        // Where the last ore was broken — used by COLLECTING to navigate to drops
+        Location collectLocation = null;
+
         // Ore type filter — null means mine any ore
         Set<Material> requestedOreTypes = null;
 
@@ -472,6 +475,8 @@ public class JarvisNPC implements Listener {
             player.sendMessage(ChatColor.GREEN + "Jarvis: Mined " + formatOre(state.targetOreType)
                     + "! (Total: " + state.oresMined + ")");
             debug("Break confirmed: " + state.targetOreType + ", total=" + state.oresMined);
+            // Save drop location before clearTarget() wipes targetOre
+            state.collectLocation = state.targetOre.getLocation().clone().add(0.5, 0.5, 0.5);
             state.clearTarget();
             state.transitionTo(MiningPhase.COLLECTING);
         } else {
@@ -489,21 +494,57 @@ public class JarvisNPC implements Listener {
     }
 
     /**
-     * COLLECTING - Pick up dropped items
+     * COLLECTING - Navigate to the drop location and pick up items.
+     * Stays until items are picked up or a 60-tick timeout expires.
      */
     private void processCollecting(NPC npc, Player player, SimpleMiningState state, Location npcLoc) {
         debug("COLLECTING phase, tick " + state.ticksInPhase);
 
-        // Wait a bit for items to spawn
-        if (state.ticksInPhase < 3) {
+        // Timeout — don't get stuck collecting forever
+        if (state.ticksInPhase > 60) {
+            debug("COLLECTING timeout, moving to SEARCHING");
+            state.transitionTo(MiningPhase.SEARCHING);
             return;
         }
 
-        // Pick up any items
+        // Wait a couple ticks for item entities to spawn after the break
+        if (state.ticksInPhase < 2) {
+            return;
+        }
+
+        // Navigate toward the drop if we're too far away
+        if (state.collectLocation != null) {
+            double dist = npcLoc.distance(state.collectLocation);
+            if (dist > PICKUP_RADIUS) {
+                Navigator nav = npc.getNavigator();
+                if (!nav.isNavigating()) {
+                    nav.setTarget(state.collectLocation);
+                    debug("Navigating to collect at " + formatLoc(state.collectLocation) + " (dist=" + String.format("%.1f", dist) + ")");
+                }
+                // Try picking up on the way in case radius overlaps
+                pickupNearbyItems(npc, npcLoc);
+                return;
+            }
+        }
+
+        // We're close enough — pick up
         pickupNearbyItems(npc, npcLoc);
 
-        // Go back to searching for more ores
-        state.transitionTo(MiningPhase.SEARCHING);
+        // Check if any collectable items remain nearby; if not, we're done
+        boolean itemsNearby = false;
+        if (npc.getEntity() != null) {
+            for (Entity e : npc.getEntity().getNearbyEntities(PICKUP_RADIUS, PICKUP_RADIUS, PICKUP_RADIUS)) {
+                if (e instanceof Item item && !JUNK_DROPS.contains(item.getItemStack().getType())) {
+                    itemsNearby = true;
+                    break;
+                }
+            }
+        }
+
+        if (!itemsNearby) {
+            debug("Collection done, moving to SEARCHING");
+            state.transitionTo(MiningPhase.SEARCHING);
+        }
     }
 
     /**
