@@ -380,6 +380,10 @@ public class JarvisNPC implements Listener {
 
                 nav.setTarget(state.targetLocation);
                 debug("Started navigation to " + formatLoc(state.targetLocation));
+            } else if (state.stuckTicks > 20) {
+                // Navigator is active but we haven't moved — cancel so it restarts next tick
+                debug("Navigator stuck, cancelling for restart");
+                nav.cancelNavigation();
             }
         }
 
@@ -389,14 +393,15 @@ public class JarvisNPC implements Listener {
             Block blockInFront = getBlockInFront(npcLoc, state.targetLocation);
             if (blockInFront != null && blockInFront.getType().isSolid() && !isOre(blockInFront.getType())) {
                 debug("Breaking blocking block: " + blockInFront.getType());
-                ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
-                blockInFront.breakNaturally(tool);
+                blockInFront.breakNaturally(getOrRestoreTool(npc));
                 state.stuckTicks = 0;
                 return;
             }
 
             // If no block to break, teleport closer
             if (state.stuckTicks > 40) {
+                // Cancel navigator before teleporting so it doesn't fight the position change
+                if (nav != null) nav.cancelNavigation();
                 Location stepLoc = getStepTowards(npcLoc, state.targetLocation, STEP_DISTANCE);
                 if (stepLoc != null && isSafeToStand(stepLoc)) {
                     npc.teleport(stepLoc, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
@@ -423,14 +428,20 @@ public class JarvisNPC implements Listener {
     private void processMining(NPC npc, Player player, SimpleMiningState state, Location npcLoc) {
         debug("MINING phase, tick=" + state.ticksInPhase);
 
-        // Ore already gone (e.g. broken by player between ticks)
-        if (state.targetOre == null || !isOre(state.targetOre.getType())) {
-            debug("Target ore already gone, going to COLLECTING");
+        // Ore already gone (e.g. broken by player between ticks) — snapshot type once
+        if (state.targetOre == null) {
+            debug("Target ore reference is null, going to COLLECTING");
+            state.transitionTo(MiningPhase.COLLECTING);
+            return;
+        }
+        Material snapshotType = state.targetOre.getType();
+        if (!isOre(snapshotType)) {
+            debug("Target ore already gone (" + snapshotType + "), going to COLLECTING");
             state.transitionTo(MiningPhase.COLLECTING);
             return;
         }
 
-        Location oreLoc = state.targetOre.getLocation().add(0.5, 0.5, 0.5);
+        Location oreLoc = state.targetOre.getLocation().clone().add(0.5, 0.5, 0.5);
         double distance = npcLoc.distance(oreLoc);
 
         if (distance > REACH_DISTANCE + 1) {
@@ -440,11 +451,17 @@ public class JarvisNPC implements Listener {
         }
 
         faceLocation(npc, oreLoc);
-        ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
-        state.targetOreType = state.targetOre.getType();
 
+        // Re-verify immediately before breaking — another player/plugin could have changed it
+        if (!isOre(state.targetOre.getType())) {
+            debug("Ore disappeared between check and break, going to COLLECTING");
+            state.transitionTo(MiningPhase.COLLECTING);
+            return;
+        }
+
+        state.targetOreType = snapshotType;
         debug("Breaking " + state.targetOreType + " (attempt " + (state.miningAttempts + 1) + ")");
-        state.targetOre.breakNaturally(tool);
+        state.targetOre.breakNaturally(getOrRestoreTool(npc));
 
         // breakNaturally() is synchronous — block is AIR right now if it succeeded
         boolean broke = state.targetOre.getType() == Material.AIR
@@ -520,8 +537,7 @@ public class JarvisNPC implements Listener {
         for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
             Block block = npcLoc.getBlock().getRelative(face);
             if (block.getType().isSolid() && !isOre(block.getType()) && block.getType().getHardness() >= 0) {
-                ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
-                block.breakNaturally(tool);
+                block.breakNaturally(getOrRestoreTool(npc));
                 debug("Cleared blocking block: " + block.getType());
                 state.stuckTicks = 0;
                 return;
@@ -544,13 +560,17 @@ public class JarvisNPC implements Listener {
 
     private Block findNearestOre(Location center, Set<Material> filter) {
         Block nearest = null;
-        double nearestDist = Double.MAX_VALUE;
+        double nearestDistSq = Double.MAX_VALUE;
         int nearestPriority = Integer.MAX_VALUE;
+
+        // Use getBlockAt() to avoid allocating a Location object per iteration
+        org.bukkit.World world = center.getWorld();
+        int cx = center.getBlockX(), cy = center.getBlockY(), cz = center.getBlockZ();
 
         for (int x = -SEARCH_RADIUS; x <= SEARCH_RADIUS; x++) {
             for (int y = -SEARCH_RADIUS; y <= SEARCH_RADIUS; y++) {
                 for (int z = -SEARCH_RADIUS; z <= SEARCH_RADIUS; z++) {
-                    Block block = center.clone().add(x, y, z).getBlock();
+                    Block block = world.getBlockAt(cx + x, cy + y, cz + z);
                     Material type = block.getType();
 
                     // Apply ore type filter
@@ -563,12 +583,13 @@ public class JarvisNPC implements Listener {
                     int priority = ORE_PRIORITY.indexOf(type);
                     if (priority < 0) priority = 999;
 
-                    double dist = center.distance(block.getLocation());
+                    // Use squared distance — avoids sqrt and no Location object needed
+                    double distSq = (x * x) + (y * y) + (z * z);
 
                     // Prefer higher priority ores, then closer ores
-                    if (priority < nearestPriority || (priority == nearestPriority && dist < nearestDist)) {
+                    if (priority < nearestPriority || (priority == nearestPriority && distSq < nearestDistSq)) {
                         nearest = block;
-                        nearestDist = dist;
+                        nearestDistSq = distSq;
                         nearestPriority = priority;
                     }
                 }
@@ -638,10 +659,18 @@ public class JarvisNPC implements Listener {
         if (feet.getType().isSolid()) return false;
         if (head.getType().isSolid()) return false;
 
-        // Avoid hazards
+        // Avoid hazards under feet
         Material groundType = ground.getType();
         if (groundType == Material.LAVA || groundType == Material.FIRE ||
             groundType == Material.MAGMA_BLOCK || groundType == Material.CACTUS) {
+            return false;
+        }
+
+        // Avoid water or lava at body level
+        Material feetType = feet.getType();
+        Material headType = head.getType();
+        if (feetType == Material.WATER || feetType == Material.LAVA ||
+            headType == Material.WATER || headType == Material.LAVA) {
             return false;
         }
 
@@ -708,6 +737,20 @@ public class JarvisNPC implements Listener {
 
     // ==================== UTILITY METHODS ====================
 
+    /**
+     * Returns the tool in Jarvis's hand, restoring starting equipment if it is missing.
+     * Prevents null being passed to breakNaturally() which silently fails.
+     */
+    private ItemStack getOrRestoreTool(NPC npc) {
+        ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
+        if (tool == null) {
+            debug("Tool missing — restoring starting equipment");
+            giveStartingEquipment(npc);
+            tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
+        }
+        return tool;
+    }
+
     public NPC getNPC(Player player) {
         return playerNPCs.get(player.getUniqueId());
     }
@@ -740,8 +783,9 @@ public class JarvisNPC implements Listener {
     private void giveStartingEquipment(NPC npc) {
         Equipment equipment = npc.getOrAddTrait(Equipment.class);
 
-        // Diamond pickaxe
+        // Diamond pickaxe with Fortune III
         ItemStack pickaxe = new ItemStack(Material.DIAMOND_PICKAXE);
+        pickaxe.addUnsafeEnchantment(Enchantment.FORTUNE, 3);
         equipment.set(Equipment.EquipmentSlot.HAND, pickaxe);
 
         // Some dirt for climbing
