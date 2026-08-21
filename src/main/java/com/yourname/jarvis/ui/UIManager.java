@@ -1,7 +1,6 @@
 package com.yourname.jarvis.ui;
 
 import com.yourname.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -77,8 +76,8 @@ public class UIManager implements Listener {
             "Configure Jarvis", "Torch placement, pickup range"));
 
         // Row 3: Status display
-        NPC npc = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
-        if (npc != null && npc.isSpawned()) {
+        var entity = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
+        if (entity != null && entity.isValid()) {
             menu.setItem(17, item(Material.PAPER, ChatColor.GREEN + "Status: Active",
                 ChatColor.WHITE + "Jarvis is summoned",
                 ChatColor.GRAY + "Tasks: " + plugin.getJarvisNPC().getActiveTaskCount()));
@@ -272,12 +271,13 @@ public class UIManager implements Listener {
 
     @EventHandler
     public void onRightClickNPC(PlayerInteractEntityEvent e) {
-        if (e.getRightClicked() instanceof org.bukkit.entity.Player clicked) {
-            Player p = e.getPlayer();
-            NPC npc = plugin.getJarvisNPC().getNPCForPlayer(p.getUniqueId());
-            if (npc != null && clicked.getUniqueId().equals(npc.getUniqueId())) {
-                p.openInventory(createMainMenu(p));
-            }
+        // Handle both Player-type NPCs (Citizens) and Villager (custom)
+        var clicked = e.getRightClicked();
+        Player p = e.getPlayer();
+        var npcEntity = plugin.getJarvisNPC().getNPCForPlayer(p.getUniqueId());
+        if (npcEntity != null && clicked.getUniqueId().equals(npcEntity.getUniqueId())) {
+            p.openInventory(createMainMenu(p));
+            e.setCancelled(true);
         }
     }
 

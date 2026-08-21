@@ -1,13 +1,8 @@
 package com.yourname.jarvis.npc;
 
 import com.yourname.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
-import net.citizensnpcs.api.CitizensAPI;
-import net.citizensnpcs.api.ai.Navigator;
-import net.citizensnpcs.api.ai.NavigatorParameters;
-import net.citizensnpcs.api.ai.event.NavigationCompleteEvent;
-import net.citizensnpcs.api.trait.trait.Equipment;
-import net.citizensnpcs.api.trait.trait.Inventory;
+import com.yourname.jarvis.npc.provider.INPCProvider;
+import com.yourname.jarvis.npc.custom.CustomNPCProvider;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -15,13 +10,10 @@ import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
-import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -43,7 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class JarvisNPC implements Listener {
 
     private final Jarvis plugin;
-    private final Map<UUID, NPC> playerNPCs = new ConcurrentHashMap<>();
+    private final INPCProvider provider;
     private final Map<UUID, BukkitRunnable> activeTasks = new ConcurrentHashMap<>();
     private final Map<UUID, SimpleMiningState> miningStates = new ConcurrentHashMap<>();
 
@@ -103,8 +95,9 @@ public class JarvisNPC implements Listener {
 
     // ==================== CONSTRUCTOR ====================
 
-    public JarvisNPC(Jarvis plugin) {
+    public JarvisNPC(Jarvis plugin, INPCProvider provider) {
         this.plugin = plugin;
+        this.provider = provider;
         this.debugMode = plugin.getConfig().getBoolean("mining.debug", true);
 
         // Register as listener for navigation events
@@ -113,7 +106,7 @@ public class JarvisNPC implements Listener {
         // Start cleanup task
         startCleanupTask();
 
-        debug("JarvisNPC initialized (v0.0.8 - simplified mining)");
+        debug("JarvisNPC initialized (v0.0.9 - provider-based) using " + provider.getProviderName());
     }
 
     private void debug(String message) {
@@ -125,33 +118,21 @@ public class JarvisNPC implements Listener {
     // ==================== NPC LIFECYCLE ====================
 
     public void summon(Player player) {
-        NPC existing = playerNPCs.get(player.getUniqueId());
-        if (existing != null && existing.isSpawned()) {
+        if (provider.isSpawned(player)) {
             player.sendMessage(ChatColor.YELLOW + "Jarvis: I'm already here!");
             return;
         }
 
-        NPC npc = CitizensAPI.getNPCRegistry().createNPC(EntityType.PLAYER, "Jarvis");
         Location spawnLoc = findSafeSpawnLocation(player.getLocation());
+        provider.spawn(player, spawnLoc, "Jarvis");
 
-        npc.spawn(spawnLoc);
-        npc.getOrAddTrait(Inventory.class);
-        npc.setProtected(true);
-        playerNPCs.put(player.getUniqueId(), npc);
-
-        // Give starting equipment
-        giveStartingEquipment(npc);
-
-        player.getWorld().playSound(spawnLoc, Sound.BLOCK_BELL_USE, 1.0f, 1.0f);
         player.sendMessage(ChatColor.GREEN + "Jarvis: At your service!");
 
         debug("Jarvis spawned for " + player.getName() + " at " + formatLoc(spawnLoc));
     }
 
     public void dismiss(Player player) {
-        UUID playerId = player.getUniqueId();
-        NPC npc = playerNPCs.remove(playerId);
-        if (npc == null) {
+        if (!provider.isSpawned(player)) {
             player.sendMessage(ChatColor.RED + "Jarvis: I'm not summoned yet!");
             return;
         }
@@ -159,32 +140,21 @@ public class JarvisNPC implements Listener {
         // Stop any active task
         stopTask(player);
 
-        // Drop inventory items
-        dropInventoryItems(npc);
-
         // Clean up mining state
-        miningStates.remove(playerId);
+        miningStates.remove(player.getUniqueId());
 
-        npc.destroy();
+        // Despawn via provider (handles inventory drop)
+        provider.despawn(player);
+
         player.sendMessage(ChatColor.GRAY + "Jarvis: Until next time!");
 
         debug("Jarvis dismissed for " + player.getName());
     }
 
     public void handlePlayerDisconnect(Player player) {
-        UUID playerId = player.getUniqueId();
-        NPC npc = playerNPCs.remove(playerId);
-
-        if (npc == null) return;
-
         stopTask(player);
-
-        if (npc.isSpawned()) {
-            dropInventoryItems(npc);
-        }
-
-        miningStates.remove(playerId);
-        npc.destroy();
+        miningStates.remove(player.getUniqueId());
+        provider.handlePlayerDisconnect(player);
 
         debug("Cleaned up NPC for disconnected player: " + player.getName());
     }
@@ -196,8 +166,7 @@ public class JarvisNPC implements Listener {
     }
 
     public void mine(Player player) {
-        NPC npc = getNPC(player);
-        if (npc == null) {
+        if (!provider.isSpawned(player)) {
             player.sendMessage(ChatColor.RED + "Jarvis: Summon me first!");
             return;
         }
@@ -208,22 +177,27 @@ public class JarvisNPC implements Listener {
         state.transitionTo(MiningPhase.SEARCHING);
         miningStates.put(player.getUniqueId(), state);
 
-        player.sendMessage(ChatColor.GOLD + "Jarvis: Mining mode activated! (v0.0.8)");
+        player.sendMessage(ChatColor.GOLD + "Jarvis: Mining mode activated! (v0.0.9 - " + provider.getProviderName() + ")");
 
         BukkitRunnable task = new BukkitRunnable() {
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline()) {
+                if (!provider.isSpawned(player) || !player.isOnline()) {
                     cancel();
                     miningStates.remove(player.getUniqueId());
                     return;
                 }
 
-                Location npcLoc = getCurrentLocation(npc);
+                Location npcLoc = provider.getCurrentLocation(player);
+                if (npcLoc == null) {
+                    cancel();
+                    return;
+                }
+
                 state.ticksInPhase++;
 
                 // Always try to pick up items
-                pickupNearbyItems(npc, npcLoc);
+                pickupNearbyItems(player, npcLoc);
 
                 // Stuck detection
                 if (state.lastLocation != null) {
@@ -238,17 +212,17 @@ public class JarvisNPC implements Listener {
 
                 // State machine
                 switch (state.phase) {
-                    case SEARCHING -> processSearching(npc, player, state, npcLoc);
-                    case MOVING -> processMoving(npc, player, state, npcLoc);
-                    case MINING -> processMining(npc, player, state, npcLoc);
-                    case COLLECTING -> processCollecting(npc, player, state, npcLoc);
-                    case RETURNING -> processReturning(npc, player, state, npcLoc);
+                    case SEARCHING -> processSearching(player, state, npcLoc);
+                    case MOVING -> processMoving(player, state, npcLoc);
+                    case MINING -> processMining(player, state, npcLoc);
+                    case COLLECTING -> processCollecting(player, state, npcLoc);
+                    case RETURNING -> processReturning(player, state, npcLoc);
                 }
 
                 // Stuck recovery - after 60 ticks (3 seconds) of no movement
                 if (state.stuckTicks > 60 && state.phase != MiningPhase.MINING) {
                     debug("STUCK for " + state.stuckTicks + " ticks in phase " + state.phase);
-                    handleStuck(npc, player, state, npcLoc);
+                    handleStuck(player, state, npcLoc);
                 }
             }
         };
@@ -262,7 +236,7 @@ public class JarvisNPC implements Listener {
     /**
      * SEARCHING - Find the nearest ore
      */
-    private void processSearching(NPC npc, Player player, SimpleMiningState state, Location npcLoc) {
+    private void processSearching(Player player, SimpleMiningState state, Location npcLoc) {
         debug("SEARCHING phase, tick " + state.ticksInPhase);
 
         Block ore = findNearestOre(npcLoc);
@@ -286,10 +260,10 @@ public class JarvisNPC implements Listener {
     }
 
     /**
-     * MOVING - Walk towards the ore using step-by-step movement
-     * v0.0.8: Uses teleportation for reliable movement
+     * MOVING - Walk towards the ore using provider's navigation
+     * v0.0.9: Uses provider for smooth movement
      */
-    private void processMoving(NPC npc, Player player, SimpleMiningState state, Location npcLoc) {
+    private void processMoving(Player player, SimpleMiningState state, Location npcLoc) {
         if (state.targetLocation == null) {
             state.transitionTo(MiningPhase.SEARCHING);
             return;
@@ -301,33 +275,32 @@ public class JarvisNPC implements Listener {
         // Close enough to mine
         if (distance <= REACH_DISTANCE) {
             debug("Within reach, transitioning to MINING");
+            provider.cancelNavigation(player);
             state.transitionTo(MiningPhase.MINING);
             return;
         }
 
-        // Try to move closer using Citizens Navigator
-        Navigator nav = npc.getNavigator();
-        if (nav != null) {
-            if (!nav.isNavigating()) {
-                // Start navigation
-                NavigatorParameters params = nav.getLocalParameters();
-                params.baseSpeed(0.6f);
-                params.distanceMargin(2.0);
-                params.range(SEARCH_RADIUS * 2);
-
-                nav.setTarget(state.targetLocation);
-                debug("Started navigation to " + formatLoc(state.targetLocation));
+        // Navigate using provider (uses smooth movement on custom provider)
+        if (!provider.isNavigating(player)) {
+            provider.setNavigationParams(player, 0.6f, SEARCH_RADIUS * 2);
+            provider.navigateTo(player, state.targetLocation);
+            debug("Started navigation to " + formatLoc(state.targetLocation));
+        } else {
+            // Dynamic target update - re-issue navigation periodically (like attack mode)
+            if (state.ticksInPhase % 10 == 0) {
+                provider.navigateTo(player, state.targetLocation);
             }
         }
 
-        // Fallback: If stuck for too long, teleport step-by-step
+        // Fallback: If stuck for too long, try recovery
         if (state.stuckTicks > 20) {
             // Clear path by breaking blocks in the way
             Block blockInFront = getBlockInFront(npcLoc, state.targetLocation);
             if (blockInFront != null && blockInFront.getType().isSolid() && !isOre(blockInFront.getType())) {
                 debug("Breaking blocking block: " + blockInFront.getType());
-                ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
+                ItemStack tool = provider.getHeldItem(player);
                 blockInFront.breakNaturally(tool);
+                provider.playSwingAnimation(player);
                 state.stuckTicks = 0;
                 return;
             }
@@ -336,7 +309,7 @@ public class JarvisNPC implements Listener {
             if (state.stuckTicks > 40) {
                 Location stepLoc = getStepTowards(npcLoc, state.targetLocation, STEP_DISTANCE);
                 if (stepLoc != null && isSafeToStand(stepLoc)) {
-                    npc.teleport(stepLoc, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                    provider.teleport(player, stepLoc);
                     debug("Teleported step towards ore: " + formatLoc(stepLoc));
                     state.stuckTicks = 0;
                 }
@@ -346,6 +319,7 @@ public class JarvisNPC implements Listener {
         // Timeout - ore is unreachable
         if (state.ticksInPhase > 100) {
             player.sendMessage(ChatColor.YELLOW + "Jarvis: Can't reach that ore, finding another...");
+            provider.cancelNavigation(player);
             state.targetOre = null;
             state.targetLocation = null;
             state.transitionTo(MiningPhase.SEARCHING);
@@ -355,7 +329,7 @@ public class JarvisNPC implements Listener {
     /**
      * MINING - Break the ore block
      */
-    private void processMining(NPC npc, Player player, SimpleMiningState state, Location npcLoc) {
+    private void processMining(Player player, SimpleMiningState state, Location npcLoc) {
         debug("MINING phase, tick " + state.ticksInPhase);
 
         if (state.targetOre == null || !isOre(state.targetOre.getType())) {
@@ -374,10 +348,13 @@ public class JarvisNPC implements Listener {
         }
 
         // Face the ore
-        faceLocation(npc, oreLoc);
+        provider.lookAt(player, oreLoc);
+
+        // Play swing animation
+        provider.playSwingAnimation(player);
 
         // Break the ore
-        ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
+        ItemStack tool = provider.getHeldItem(player);
         Material oreType = state.targetOre.getType();
 
         state.targetOre.breakNaturally(tool);
@@ -394,7 +371,7 @@ public class JarvisNPC implements Listener {
     /**
      * COLLECTING - Pick up dropped items
      */
-    private void processCollecting(NPC npc, Player player, SimpleMiningState state, Location npcLoc) {
+    private void processCollecting(Player player, SimpleMiningState state, Location npcLoc) {
         debug("COLLECTING phase, tick " + state.ticksInPhase);
 
         // Wait a bit for items to spawn
@@ -403,7 +380,7 @@ public class JarvisNPC implements Listener {
         }
 
         // Pick up any items
-        pickupNearbyItems(npc, npcLoc);
+        pickupNearbyItems(player, npcLoc);
 
         // Go back to searching for more ores
         state.transitionTo(MiningPhase.SEARCHING);
@@ -412,7 +389,7 @@ public class JarvisNPC implements Listener {
     /**
      * RETURNING - Go back to player
      */
-    private void processReturning(NPC npc, Player player, SimpleMiningState state, Location npcLoc) {
+    private void processReturning(Player player, SimpleMiningState state, Location npcLoc) {
         Location playerLoc = player.getLocation();
         double distance = npcLoc.distance(playerLoc);
 
@@ -423,25 +400,25 @@ public class JarvisNPC implements Listener {
             return;
         }
 
-        // Teleport towards player
-        Location stepLoc = getStepTowards(npcLoc, playerLoc, STEP_DISTANCE * 2);
-        if (stepLoc != null) {
-            npc.teleport(stepLoc, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+        // Navigate towards player
+        if (!provider.isNavigating(player)) {
+            provider.navigateTo(player, playerLoc);
         }
     }
 
     /**
      * Handle being stuck
      */
-    private void handleStuck(NPC npc, Player player, SimpleMiningState state, Location npcLoc) {
+    private void handleStuck(Player player, SimpleMiningState state, Location npcLoc) {
         debug("Handling stuck state");
 
         // Try to clear surrounding blocks
+        ItemStack tool = provider.getHeldItem(player);
         for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
             Block block = npcLoc.getBlock().getRelative(face);
             if (block.getType().isSolid() && !isOre(block.getType()) && block.getType().getHardness() >= 0) {
-                ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
                 block.breakNaturally(tool);
+                provider.playSwingAnimation(player);
                 debug("Cleared blocking block: " + block.getType());
                 state.stuckTicks = 0;
                 return;
@@ -452,7 +429,7 @@ public class JarvisNPC implements Listener {
         if (state.stuckTicks > 100) {
             player.sendMessage(ChatColor.YELLOW + "Jarvis: I'm stuck! Coming back to you.");
             Location safeLoc = findSafeSpawnLocation(player.getLocation());
-            npc.teleport(safeLoc, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+            provider.teleport(player, safeLoc);
             state.stuckTicks = 0;
             state.targetOre = null;
             state.targetLocation = null;
@@ -563,54 +540,18 @@ public class JarvisNPC implements Listener {
         return true;
     }
 
-    private void faceLocation(NPC npc, Location target) {
-        Location npcLoc = getCurrentLocation(npc);
-        Vector direction = target.toVector().subtract(npcLoc.toVector());
-
-        float yaw = (float) Math.toDegrees(Math.atan2(-direction.getX(), direction.getZ()));
-        float pitch = (float) Math.toDegrees(-Math.atan2(direction.getY(),
-            Math.sqrt(direction.getX() * direction.getX() + direction.getZ() * direction.getZ())));
-
-        npcLoc.setYaw(yaw);
-        npcLoc.setPitch(pitch);
-
-        if (npc.getEntity() != null) {
-            npc.getEntity().teleport(npcLoc);
-        }
-    }
-
     // ==================== ITEM PICKUP ====================
 
-    private void pickupNearbyItems(NPC npc, Location npcLoc) {
-        if (npc.getEntity() == null) return;
+    private void pickupNearbyItems(Player owner, Location npcLoc) {
+        Entity npcEntity = provider.getEntity(owner);
+        if (npcEntity == null) return;
 
-        Inventory invTrait = npc.getOrAddTrait(Inventory.class);
-
-        for (Entity entity : npc.getEntity().getNearbyEntities(PICKUP_RADIUS, PICKUP_RADIUS, PICKUP_RADIUS)) {
+        for (Entity entity : npcEntity.getNearbyEntities(PICKUP_RADIUS, PICKUP_RADIUS, PICKUP_RADIUS)) {
             if (entity instanceof Item item) {
                 ItemStack stack = item.getItemStack();
 
-                // Add to inventory
-                ItemStack[] contents = invTrait.getContents();
-                boolean added = false;
-
-                for (int i = 0; i < contents.length; i++) {
-                    if (contents[i] == null) {
-                        contents[i] = stack.clone();
-                        added = true;
-                        break;
-                    } else if (contents[i].isSimilar(stack) &&
-                               contents[i].getAmount() < contents[i].getMaxStackSize()) {
-                        int canAdd = contents[i].getMaxStackSize() - contents[i].getAmount();
-                        int toAdd = Math.min(canAdd, stack.getAmount());
-                        contents[i].setAmount(contents[i].getAmount() + toAdd);
-                        added = true;
-                        break;
-                    }
-                }
-
-                if (added) {
-                    invTrait.setContents(contents);
+                // Add to inventory via provider
+                if (provider.addToInventory(owner, stack)) {
                     item.remove();
                     npcLoc.getWorld().playSound(npcLoc, Sound.ENTITY_ITEM_PICKUP, 0.3f, 1.2f);
                 }
@@ -620,15 +561,18 @@ public class JarvisNPC implements Listener {
 
     // ==================== UTILITY METHODS ====================
 
-    public NPC getNPC(Player player) {
-        return playerNPCs.get(player.getUniqueId());
+    /**
+     * Check if a player has an NPC spawned.
+     */
+    public boolean hasNPC(Player player) {
+        return provider.isSpawned(player);
     }
 
-    private Location getCurrentLocation(NPC npc) {
-        if (npc.getEntity() != null) {
-            return npc.getEntity().getLocation();
-        }
-        return npc.getStoredLocation();
+    /**
+     * Get the NPC entity for a player (for backwards compatibility).
+     */
+    public Entity getNPCEntity(Player player) {
+        return provider.getEntity(player);
     }
 
     private Location findSafeSpawnLocation(Location center) {
@@ -649,49 +593,13 @@ public class JarvisNPC implements Listener {
         return center; // Fallback
     }
 
-    private void giveStartingEquipment(NPC npc) {
-        Equipment equipment = npc.getOrAddTrait(Equipment.class);
-
-        // Diamond pickaxe
-        ItemStack pickaxe = new ItemStack(Material.DIAMOND_PICKAXE);
-        equipment.set(Equipment.EquipmentSlot.HAND, pickaxe);
-
-        // Some dirt for climbing
-        Inventory inv = npc.getOrAddTrait(Inventory.class);
-        ItemStack[] contents = inv.getContents();
-        contents[0] = new ItemStack(Material.DIRT, 32);
-        inv.setContents(contents);
-    }
-
-    private void dropInventoryItems(NPC npc) {
-        if (!npc.isSpawned()) return;
-
-        Location dropLoc = getCurrentLocation(npc);
-        Inventory invTrait = npc.getOrAddTrait(Inventory.class);
-        ItemStack[] contents = invTrait.getContents();
-
-        for (ItemStack item : contents) {
-            if (item != null && item.getType() != Material.AIR) {
-                // Don't drop starting equipment
-                if (item.getType() == Material.DIAMOND_PICKAXE ||
-                    item.getType() == Material.DIRT) {
-                    continue;
-                }
-                dropLoc.getWorld().dropItemNaturally(dropLoc, item.clone());
-            }
-        }
-    }
-
     public void stopTask(Player player) {
         BukkitRunnable task = activeTasks.remove(player.getUniqueId());
         if (task != null) {
             task.cancel();
         }
 
-        NPC npc = getNPC(player);
-        if (npc != null && npc.getNavigator() != null) {
-            npc.getNavigator().cancelNavigation();
-        }
+        provider.cancelNavigation(player);
     }
 
     public void stop(Player player) {
@@ -712,8 +620,7 @@ public class JarvisNPC implements Listener {
     // ==================== COMBAT MODE ====================
 
     public void attack(Player player) {
-        NPC npc = getNPC(player);
-        if (npc == null) {
+        if (!provider.isSpawned(player)) {
             player.sendMessage(ChatColor.RED + "Jarvis: Summon me first!");
             return;
         }
@@ -725,18 +632,28 @@ public class JarvisNPC implements Listener {
         BukkitRunnable task = new BukkitRunnable() {
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline()) {
+                if (!provider.isSpawned(player) || !player.isOnline()) {
                     cancel();
                     return;
                 }
 
-                Location npcLoc = getCurrentLocation(npc);
+                Location npcLoc = provider.getCurrentLocation(player);
+                if (npcLoc == null) {
+                    cancel();
+                    return;
+                }
+
+                Entity npcEntity = provider.getEntity(player);
+                if (npcEntity == null) {
+                    cancel();
+                    return;
+                }
 
                 // Find nearest hostile mob
                 Monster target = null;
                 double nearestDist = 16;
 
-                for (Entity entity : npc.getEntity().getNearbyEntities(16, 16, 16)) {
+                for (Entity entity : npcEntity.getNearbyEntities(16, 16, 16)) {
                     if (entity instanceof Monster monster) {
                         double dist = npcLoc.distance(monster.getLocation());
                         if (dist < nearestDist) {
@@ -747,21 +664,19 @@ public class JarvisNPC implements Listener {
                 }
 
                 if (target != null) {
-                    // Move towards and attack
+                    // Move towards and attack (using dynamic target tracking)
                     if (nearestDist > 2) {
-                        Navigator nav = npc.getNavigator();
-                        if (nav != null && !nav.isNavigating()) {
-                            nav.setTarget(target, true);
-                        }
+                        provider.navigateTo(player, target, true);
                     } else {
                         // Attack
-                        target.damage(6.0, npc.getEntity());
+                        target.damage(6.0, npcEntity);
+                        provider.playSwingAnimation(player);
                         npcLoc.getWorld().playSound(npcLoc, Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1f, 1f);
                     }
                 }
 
                 // Also pick up items
-                pickupNearbyItems(npc, npcLoc);
+                pickupNearbyItems(player, npcLoc);
             }
         };
 
@@ -773,8 +688,7 @@ public class JarvisNPC implements Listener {
      * Battle another player (PvP training)
      */
     public void battle(Player player, Player target) {
-        NPC npc = getNPC(player);
-        if (npc == null) {
+        if (!provider.isSpawned(player)) {
             player.sendMessage(ChatColor.RED + "Jarvis: Summon me first!");
             return;
         }
@@ -787,26 +701,32 @@ public class JarvisNPC implements Listener {
         BukkitRunnable task = new BukkitRunnable() {
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline() || !target.isOnline()) {
+                if (!provider.isSpawned(player) || !player.isOnline() || !target.isOnline()) {
                     player.sendMessage(ChatColor.YELLOW + "Jarvis: Battle ended.");
                     cancel();
                     return;
                 }
 
-                Location npcLoc = getCurrentLocation(npc);
+                Location npcLoc = provider.getCurrentLocation(player);
+                if (npcLoc == null) {
+                    cancel();
+                    return;
+                }
+
                 Location targetLoc = target.getLocation();
                 double distance = npcLoc.distance(targetLoc);
 
                 if (distance > 2) {
-                    // Move towards target
-                    Navigator nav = npc.getNavigator();
-                    if (nav != null && !nav.isNavigating()) {
-                        nav.setTarget(target, true);
-                    }
+                    // Move towards target (dynamic tracking)
+                    provider.navigateTo(player, target, true);
                 } else {
                     // Attack
-                    target.damage(4.0, npc.getEntity());
-                    npcLoc.getWorld().playSound(npcLoc, Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1f, 1f);
+                    Entity npcEntity = provider.getEntity(player);
+                    if (npcEntity != null) {
+                        target.damage(4.0, npcEntity);
+                        provider.playSwingAnimation(player);
+                        npcLoc.getWorld().playSound(npcLoc, Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1f, 1f);
+                    }
                 }
             }
         };
@@ -818,40 +738,36 @@ public class JarvisNPC implements Listener {
     // ==================== OTHER COMMANDS ====================
 
     public void returnToPlayer(Player player) {
-        NPC npc = getNPC(player);
-        if (npc == null) return;
+        if (!provider.isSpawned(player)) return;
 
         stopTask(player);
 
         Location safeLoc = findSafeSpawnLocation(player.getLocation());
-        npc.teleport(safeLoc, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+        provider.teleport(player, safeLoc);
 
         player.sendMessage(ChatColor.GREEN + "Jarvis: Right behind you!");
     }
 
     public void openInventory(Player player) {
-        NPC npc = getNPC(player);
-        if (npc == null) {
+        if (!provider.isSpawned(player)) {
             player.sendMessage(ChatColor.RED + "Jarvis: I'm not summoned yet!");
             return;
         }
 
-        Inventory invTrait = npc.getOrAddTrait(Inventory.class);
-        invTrait.openInventory(player);
+        provider.openInventory(player);
     }
 
     public void clearInventory(Player player) {
-        NPC npc = getNPC(player);
-        if (npc == null) {
+        if (!provider.isSpawned(player)) {
             player.sendMessage(ChatColor.RED + "Jarvis: I'm not summoned yet!");
             return;
         }
 
-        Inventory invTrait = npc.getOrAddTrait(Inventory.class);
-        Location dropLoc = getCurrentLocation(npc);
+        Location dropLoc = provider.getCurrentLocation(player);
+        if (dropLoc == null) return;
 
         // Drop non-equipment items
-        ItemStack[] contents = invTrait.getContents();
+        ItemStack[] contents = provider.getInventoryContents(player);
         int dropped = 0;
 
         for (int i = 0; i < contents.length; i++) {
@@ -864,10 +780,7 @@ public class JarvisNPC implements Listener {
             }
         }
 
-        invTrait.setContents(contents);
-
-        // Restore starting equipment
-        giveStartingEquipment(npc);
+        provider.setInventoryContents(player, contents);
 
         player.sendMessage(ChatColor.GREEN + "Jarvis: Dropped " + dropped + " items.");
     }
@@ -883,28 +796,40 @@ public class JarvisNPC implements Listener {
     // ==================== STATUS & INFO ====================
 
     public int getActiveNpcCount() {
-        return playerNPCs.size();
+        // Count active tasks as a proxy for active NPCs
+        return activeTasks.size();
     }
 
     public int getActiveTaskCount() {
         return activeTasks.size();
     }
 
-    public NPC getNPCForPlayer(UUID uuid) {
-        return playerNPCs.get(uuid);
+    /**
+     * Check if player has an NPC via provider.
+     */
+    public boolean playerHasNPC(UUID uuid) {
+        Player player = Bukkit.getPlayer(uuid);
+        return player != null && provider.isSpawned(player);
+    }
+
+    /**
+     * Get NPC entity for a player (for backwards compatibility).
+     * Returns the underlying entity from the provider.
+     */
+    public Entity getNPCForPlayer(UUID uuid) {
+        Player player = Bukkit.getPlayer(uuid);
+        if (player == null) return null;
+        return provider.getEntity(player);
     }
 
     public void dismissAll() {
-        for (NPC npc : playerNPCs.values()) {
-            if (npc.isSpawned()) {
-                dropInventoryItems(npc);
-            }
-            npc.destroy();
-        }
-        playerNPCs.clear();
+        // Cancel all tasks
         activeTasks.values().forEach(BukkitRunnable::cancel);
         activeTasks.clear();
         miningStates.clear();
+
+        // Let provider handle cleanup
+        provider.cleanup();
     }
 
     // ==================== CLEANUP ====================
@@ -913,22 +838,25 @@ public class JarvisNPC implements Listener {
         new BukkitRunnable() {
             @Override
             public void run() {
-                // Clean up NPCs for offline players
-                Iterator<Map.Entry<UUID, NPC>> it = playerNPCs.entrySet().iterator();
+                // Clean up tasks for offline players
+                Iterator<Map.Entry<UUID, BukkitRunnable>> it = activeTasks.entrySet().iterator();
                 while (it.hasNext()) {
-                    Map.Entry<UUID, NPC> entry = it.next();
-                    if (plugin.getServer().getPlayer(entry.getKey()) == null) {
-                        NPC npc = entry.getValue();
-                        if (npc.isSpawned()) {
-                            dropInventoryItems(npc);
-                        }
-                        npc.destroy();
+                    Map.Entry<UUID, BukkitRunnable> entry = it.next();
+                    Player player = plugin.getServer().getPlayer(entry.getKey());
+                    if (player == null) {
+                        entry.getValue().cancel();
                         it.remove();
-                        activeTasks.remove(entry.getKey());
                         miningStates.remove(entry.getKey());
                     }
                 }
             }
         }.runTaskTimer(plugin, 6000L, 6000L); // Every 5 minutes
+    }
+
+    /**
+     * Get the NPC provider (for advanced operations).
+     */
+    public INPCProvider getProvider() {
+        return provider;
     }
 }

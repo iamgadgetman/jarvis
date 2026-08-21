@@ -11,6 +11,8 @@ import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.json.JSONObject;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,36 +25,43 @@ public class ChatListener implements Listener {
     private final String prefix;
     private final boolean requirePrefix;
 
-    // Cooldown to prevent spam (in milliseconds)
-    private static final long COOLDOWN_MS = 2000;
+    // Per-player spam cooldown (configurable via natural-language.cooldown-ms)
+    private final long cooldownMs;
     private final Map<UUID, Long> lastCommandTime = new ConcurrentHashMap<>();
+
+    // Per-player rate window — prevents a single player exhausting the AI quota
+    // Configurable via natural-language.max-calls-per-minute (default 10)
+    private final int maxCallsPerMinute;
+    private final Map<UUID, Deque<Long>> callWindow = new ConcurrentHashMap<>();
 
     public ChatListener(Jarvis plugin) {
         this.plugin = plugin;
         this.aiConnector = plugin.getAIConnector();
-        this.enabled = plugin.getConfig().getBoolean("natural-language.enabled", true);
-        this.prefix = plugin.getConfig().getString("natural-language.prefix", "jarvis").toLowerCase();
-        this.requirePrefix = plugin.getConfig().getBoolean("natural-language.require-prefix", false);
+        this.enabled          = plugin.getConfig().getBoolean("natural-language.enabled", true);
+        this.prefix           = plugin.getConfig().getString("natural-language.prefix", "jarvis").toLowerCase();
+        this.requirePrefix    = plugin.getConfig().getBoolean("natural-language.require-prefix", false);
+        this.cooldownMs       = plugin.getConfig().getLong("natural-language.cooldown-ms", 2000L);
+        this.maxCallsPerMinute = plugin.getConfig().getInt("natural-language.max-calls-per-minute", 10);
 
-        // Phase 6: Start cleanup task for memory leak prevention
         startCleanupTask();
     }
 
     /**
-     * Phase 6: Periodic cleanup task to remove stale cooldown entries
-     * Runs every minute to clean up entries older than 1 minute
+     * Periodic cleanup — remove stale cooldown and rate-window entries (runs every minute)
      */
     private void startCleanupTask() {
         new BukkitRunnable() {
             @Override
             public void run() {
                 long now = System.currentTimeMillis();
-                long maxAge = 60000; // 1 minute in milliseconds
-
-                lastCommandTime.entrySet().removeIf(entry ->
-                    (now - entry.getValue()) > maxAge);
+                long windowMs = 60_000L;
+                lastCommandTime.entrySet().removeIf(e -> (now - e.getValue()) > windowMs);
+                callWindow.entrySet().removeIf(e -> {
+                    e.getValue().removeIf(ts -> (now - ts) > windowMs);
+                    return e.getValue().isEmpty();
+                });
             }
-        }.runTaskTimer(plugin, 1200L, 1200L); // Run every minute (1200 ticks)
+        }.runTaskTimer(plugin, 1200L, 1200L);
     }
 
     @EventHandler(priority = EventPriority.NORMAL)
@@ -89,13 +98,22 @@ public class ChatListener implements Listener {
 
         if (!shouldProcess) return;
 
-        // Check cooldown
+        // Per-player spam cooldown
         long now = System.currentTimeMillis();
         Long lastTime = lastCommandTime.get(player.getUniqueId());
-        if (lastTime != null && (now - lastTime) < COOLDOWN_MS) {
-            return; // Still on cooldown
+        if (lastTime != null && (now - lastTime) < cooldownMs) {
+            return;
         }
         lastCommandTime.put(player.getUniqueId(), now);
+
+        // Per-player rate window — cap total AI calls per minute
+        Deque<Long> window = callWindow.computeIfAbsent(player.getUniqueId(), k -> new ArrayDeque<>());
+        window.removeIf(ts -> (now - ts) > 60_000L);
+        if (window.size() >= maxCallsPerMinute) {
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: I appreciate the enthusiasm, but even I need a moment to breathe. Try again shortly.");
+            return;
+        }
+        window.addLast(now);
 
         // Process async to avoid blocking chat
         String finalMessage = processedMessage;
@@ -133,13 +151,19 @@ public class ChatListener implements Listener {
             }.runTask(plugin);
 
         } catch (Exception e) {
-            plugin.getLogger().warning("Failed to process natural language: " + e.getMessage());
-            
-            // Fallback: try to execute simple commands
+            plugin.getLogger().warning("Failed to process natural language command: " + e.getMessage());
+
+            // Fallback: keyword matching when AI is unavailable
             new BukkitRunnable() {
                 @Override
                 public void run() {
-                    executeFallbackAction(player, message);
+                    boolean matched = executeFallbackAction(player, message);
+                    if (!matched) {
+                        String offlineMsg = plugin.getConfig().getString(
+                            "natural-language.offline-message",
+                            "I'm afraid my higher faculties are temporarily unavailable. Try a direct command instead.");
+                        player.sendMessage(ChatColor.YELLOW + "Jarvis: " + ChatColor.WHITE + offlineMsg);
+                    }
                 }
             }.runTask(plugin);
         }
@@ -235,20 +259,32 @@ public class ChatListener implements Listener {
         }
     }
 
-    private void executeFallbackAction(Player player, String message) {
-        // Simple keyword matching as fallback
+    /** Returns true if a keyword match was found and executed, false if nothing matched. */
+    private boolean executeFallbackAction(Player player, String message) {
         if (message.contains("summon") || message.contains("come")) {
             plugin.getJarvisNPC().summon(player);
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: " + ChatColor.WHITE + "On my way. (offline mode)");
+            return true;
         } else if (message.contains("dismiss") || message.contains("go away")) {
             plugin.getJarvisNPC().dismiss(player);
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: " + ChatColor.WHITE + "Very well. (offline mode)");
+            return true;
         } else if (message.contains("mine") || message.contains("dig")) {
             plugin.getJarvisNPC().mine(player);
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: " + ChatColor.WHITE + "Mining. (offline mode)");
+            return true;
         } else if (message.contains("attack") || message.contains("fight") || message.contains("defend")) {
             plugin.getJarvisNPC().attack(player);
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: " + ChatColor.WHITE + "Engaging. (offline mode)");
+            return true;
         } else if (message.contains("return") || message.contains("back")) {
             plugin.getJarvisNPC().returnToPlayer(player);
+            player.sendMessage(ChatColor.YELLOW + "Jarvis: " + ChatColor.WHITE + "Returning. (offline mode)");
+            return true;
         } else if (message.contains("loot") || message.contains("inventory")) {
             plugin.getJarvisNPC().openInventory(player);
+            return true;
         }
+        return false;
     }
 }

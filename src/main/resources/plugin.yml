@@ -2,8 +2,7 @@ name: Jarvis
 version: 0.0.8
 main: com.yourname.jarvis.Jarvis
 api-version: 1.21
-depend: [Citizens]
-softdepend: [WorldEdit, WorldGuard]
+softdepend: [Citizens, WorldEdit, WorldGuard]
 commands:
   jarvis:
     description: Jarvis AI Companion commands

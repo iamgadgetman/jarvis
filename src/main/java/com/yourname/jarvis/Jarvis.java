@@ -9,6 +9,8 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import com.yourname.jarvis.ai.AIConnector;
 import com.yourname.jarvis.npc.JarvisNPC;
+import com.yourname.jarvis.npc.provider.INPCProvider;
+import com.yourname.jarvis.npc.provider.NPCProviderFactory;
 import com.yourname.jarvis.commands.JarvisCommands;
 import com.yourname.jarvis.ui.UIManager;
 import com.yourname.jarvis.DatabaseManager;
@@ -31,6 +33,7 @@ public class Jarvis extends JavaPlugin {
     
     private AIConnector aiConnector;
     private JarvisNPC jarvisNPC;
+    private INPCProvider npcProvider;
     private UIManager uiManager;
     private DatabaseManager databaseManager;
     private BuildingAssistant buildingAssistant;
@@ -48,11 +51,16 @@ public class Jarvis extends JavaPlugin {
         databaseManager = new DatabaseManager(this);
         databaseManager.initializeDatabaseConnections();
 
-        if (getServer().getPluginManager().getPlugin("Citizens") != null) {
-            jarvisNPC = new JarvisNPC(this);
-            getLogger().info("NPC system initialized.");
+        // Initialize NPC provider (supports Citizens or custom implementation)
+        NPCProviderFactory providerFactory = new NPCProviderFactory(this);
+        npcProvider = providerFactory.createProvider();
+
+        if (npcProvider != null) {
+            jarvisNPC = new JarvisNPC(this, npcProvider);
+            getLogger().info("NPC system initialized with " + npcProvider.getProviderName() + " provider.");
         } else {
-            getLogger().warning("Citizens not found - NPC features disabled.");
+            getLogger().warning("No NPC provider available - NPC features disabled.");
+            getLogger().warning("Install Citizens or set npc.provider to 'custom' in config.yml");
             return;
         }
 
@@ -80,6 +88,9 @@ public class Jarvis extends JavaPlugin {
         if (jarvisNPC != null) {
             jarvisNPC.dismissAll();
         }
+        if (npcProvider != null) {
+            npcProvider.cleanup();
+        }
         if (databaseManager != null) {
             databaseManager.closeDatabases();
         }
@@ -102,6 +113,10 @@ public class Jarvis extends JavaPlugin {
 
     public JarvisNPC getJarvisNPC() {
         return jarvisNPC;
+    }
+
+    public INPCProvider getNPCProvider() {
+        return npcProvider;
     }
     
     public DatabaseManager getDatabaseManager() {
@@ -163,10 +178,13 @@ public class Jarvis extends JavaPlugin {
             getLogger().warning("NPC system not initialized");
             requester.sendMessage("§cNPC system not initialized");
         } else {
+            String providerInfo = "NPC Provider: " + (npcProvider != null ? npcProvider.getProviderName() : "None");
             String npcInfo = "Active NPCs: " + jarvisNPC.getActiveNpcCount();
             String taskInfo = "Active tasks: " + jarvisNPC.getActiveTaskCount();
+            getLogger().info(providerInfo);
             getLogger().info(npcInfo);
             getLogger().info(taskInfo);
+            requester.sendMessage("§e" + providerInfo);
             requester.sendMessage("§a" + npcInfo);
             requester.sendMessage("§a" + taskInfo);
         }

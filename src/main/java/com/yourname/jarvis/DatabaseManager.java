@@ -16,6 +16,9 @@ import java.util.*;
 
 public class DatabaseManager {
 
+    // Increment this when the schema changes. Add a new applyMigration_vN() method.
+    private static final int SCHEMA_VERSION = 1;
+
     private final Jarvis plugin;
     private final Map<String, HikariDataSource> sources = new HashMap<>();
 
@@ -45,6 +48,37 @@ public class DatabaseManager {
     }
 
     private void initializeTables(Connection c) throws SQLException {
+        // Schema version tracking — always created first
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS schema_version (" +
+                "version INTEGER NOT NULL, " +
+                "applied_time BIGINT NOT NULL)")) {
+            ps.executeUpdate();
+        }
+
+        int currentVersion = 0;
+        try (PreparedStatement ps = c.prepareStatement("SELECT MAX(version) FROM schema_version");
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) currentVersion = rs.getInt(1);
+        }
+
+        if (currentVersion < 1) {
+            applyMigration_v1(c);
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO schema_version (version, applied_time) VALUES (1, ?)")) {
+                ps.setLong(1, System.currentTimeMillis());
+                ps.executeUpdate();
+            }
+            currentVersion = 1;
+            plugin.getLogger().info("Applied database migration to schema version 1");
+        }
+
+        // Future migrations: if (currentVersion < 2) { applyMigration_v2(c); ... }
+
+        plugin.getLogger().info("Database schema version: " + currentVersion + " (latest: " + SCHEMA_VERSION + ")");
+    }
+
+    private void applyMigration_v1(Connection c) throws SQLException {
         // Player stats table
         try (PreparedStatement ps = c.prepareStatement(
                 "CREATE TABLE IF NOT EXISTS player_stats (" +
@@ -122,7 +156,7 @@ public class DatabaseManager {
             ps.executeUpdate();
         }
 
-        plugin.getLogger().info("Database tables initialized successfully");
+        plugin.getLogger().info("Schema v1 tables created");
     }
 
     /**

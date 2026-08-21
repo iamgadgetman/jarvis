@@ -1,7 +1,6 @@
 package com.yourname.jarvis.building;
 
 import com.yourname.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -35,6 +34,7 @@ public class BuildingAssistant {
     private int maxUndoSize = 10000;
     private int maxAiBlocks = 5000;
     private String fallbackMaterial = "DIRT";
+    private boolean protectExistingBlocks = true; // skip non-air blocks unless forced
 
     public BuildingAssistant(Jarvis plugin) {
         this.plugin = plugin;
@@ -51,6 +51,7 @@ public class BuildingAssistant {
         maxAiBlocks = plugin.getConfig().getInt("build.max-ai-blocks", 5000);
         fallbackMaterial = plugin.getConfig().getString("build.fallback-material", "minecraft:dirt")
             .replace("minecraft:", "").toUpperCase();
+        protectExistingBlocks = plugin.getConfig().getBoolean("build.protect-existing-blocks", true);
     }
 
     // ==================== DATA STRUCTURES ====================
@@ -111,8 +112,8 @@ public class BuildingAssistant {
         }
 
         // Check if NPC is summoned
-        NPC npc = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
-        if (npc == null || !npc.isSpawned()) {
+        var npcEntity = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
+        if (npcEntity == null || !npcEntity.isValid()) {
             player.sendMessage(ChatColor.RED + "Summon Jarvis first with /jarvis summon");
             return;
         }
@@ -227,8 +228,8 @@ public class BuildingAssistant {
         state.task = new BukkitRunnable() {
             @Override
             public void run() {
-                NPC npc = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
-                if (npc == null || !npc.isSpawned() || !player.isOnline()) {
+                var npcEntity = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
+                if (npcEntity == null || !npcEntity.isValid() || !player.isOnline()) {
                     cancelBuildInternal(player, "NPC or player unavailable");
                     cancel();
                     return;
@@ -245,6 +246,19 @@ public class BuildingAssistant {
 
                     // Skip if same material
                     if (original == placement.material) {
+                        continue;
+                    }
+
+                    // Skip non-air blocks to avoid overwriting existing structures/player builds
+                    if (protectExistingBlocks && original != Material.AIR && original != Material.CAVE_AIR) {
+                        continue;
+                    }
+
+                    // Skip if a player is standing at this location
+                    boolean playerOccupied = placement.location.getWorld().getNearbyPlayers(
+                            placement.location.clone().add(0.5, 0.5, 0.5), 0.8)
+                        .stream().anyMatch(p -> !p.getUniqueId().equals(player.getUniqueId()));
+                    if (playerOccupied) {
                         continue;
                     }
 
@@ -391,8 +405,8 @@ public class BuildingAssistant {
      * Build a simple shape without AI
      */
     public void buildSimpleStructure(Player player, String type, int size) {
-        NPC npc = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
-        if (npc == null || !npc.isSpawned()) {
+        var npcEntity = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
+        if (npcEntity == null || !npcEntity.isValid()) {
             player.sendMessage(ChatColor.RED + "Summon Jarvis first!");
             return;
         }

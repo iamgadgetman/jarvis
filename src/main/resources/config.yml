@@ -49,6 +49,33 @@ ai:
     keep-alive: "5m"  # Keep model loaded in memory
     timeout-seconds: 60  # Local models may be slower
 
+# ========== NPC PROVIDER CONFIGURATION ==========
+npc:
+  # Provider options: auto, citizens, custom
+  # - auto: Use Citizens if available, fall back to custom
+  # - citizens: Require Citizens plugin
+  # - custom: Use built-in NPC system (no Citizens required)
+  provider: auto
+
+  # Custom provider settings (only used when provider is 'custom' or auto-selected)
+  custom:
+    # Pathfinding mob type (ZOMBIE is recommended for reliable AI)
+    pathfinder-mob-type: ZOMBIE
+
+    # Position sync rate (ticks between updates, 1 = every tick)
+    sync-interval: 1
+
+    # Interpolation factor for smooth movement (0.0-1.0)
+    # Higher = faster/snappier, Lower = smoother/slower
+    interpolation-factor: 0.3
+
+    # Remove NPC if owner goes too far (blocks)
+    max-distance-from-owner: 100
+
+    # Chunk handling
+    persist-on-chunk-unload: true
+    respawn-on-chunk-load: true
+
 # ========== MINING CONFIGURATION ==========
 mining:
   # Search and movement
@@ -145,6 +172,7 @@ build:
   # AI Building
   max-ai-blocks: 5000            # Max blocks for AI-generated builds
   ai-timeout: 30                 # Seconds to wait for AI response
+  protect-existing-blocks: true  # Skip non-air blocks to avoid overwriting player structures
 
 # ========== QUEST CONFIGURATION ==========
 quests:
@@ -203,7 +231,9 @@ natural-language:
   enabled: true                  # Enable chat commands
   prefix: "jarvis"               # Command prefix
   require-prefix: false          # Must start with prefix
-  cooldown-ms: 2000              # Millisecond cooldown between commands
+  cooldown-ms: 2000              # Millisecond cooldown between commands per player
+  max-calls-per-minute: 10       # Max AI calls per player per minute (prevents quota drain)
+  offline-message: "I'm afraid my higher faculties are temporarily unavailable. Try a direct command instead."
 
 # ========== DATABASE CONFIGURATION ==========
 databases:
