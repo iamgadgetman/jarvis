@@ -18,6 +18,12 @@ A housekeeping release. No new behaviour — v0.7.0 simply would not build.
   rule so stayed tracked; the rename created new paths, which git silently
   skipped. The rule is now anchored to `/schematics/`.
 
+- **`plugin.yml` no longer hardcodes the version.** It was pinned at `0.7.0`
+  with no Maven resource filtering, so the jar reported a version that had
+  to be remembered by hand on every release. It now reads
+  `${project.version}` from the pom. Only `plugin.yml` is filtered —
+  `config.yml` and the rest are copied verbatim.
+
 ### Removed
 
 - Stale docs that no longer described the plugin: `DEPLOY_v0.0.5.md`,
