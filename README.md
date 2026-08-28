@@ -165,13 +165,13 @@ can I get some food please
 ### Requirements
 - Paper / Purpur 1.21+ (or any fork with Bukkit API)
 - Java 17+
-- [Citizens 2](https://www.spigotmc.org/resources/citizens.13811/) plugin
+- [Citizens 2 on spigot](https://www.spigotmc.org/resources/citizens.13811/) or [Citizens 2 Jenkins build](https://ci.citizensnpcs.co/job/citizens2/)
 - [WorldEdit](https://enginehub.org/worldedit/) (optional — for schematic pasting)
 - At least one AI API key (or local Ollama)
 
 ### Steps
 1. Download **`Jarvis-<version>.jar`** from the
-   [latest release](https://github.com/iamgadgetman/jarvis/releases/latest)
+   [latest release](https://github.com/iamgadgetman/jarvis/releases/latest) or [latest jenkins build](https://ci.citizensnpcs.co/job/citizens2/)
    and drop it into your `plugins/` folder
 2. Drop `Citizens.jar` and `WorldEdit.jar` into `plugins/` (if not already present)
 3. Start the server — Jarvis will generate `plugins/Jarvis/config.yml`
