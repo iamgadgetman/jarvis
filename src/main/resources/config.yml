@@ -18,13 +18,18 @@ ai:
     allow-risky-actions: false   # Ollama-only mode: allow console/permission actions
 
   # Provider priority for auto mode (tried top-to-bottom)
-  # Providers without API keys (except ollama) are skipped
+  # Providers without API keys (except ollama) are skipped.
+  #
+  # ollama is first on purpose: it is free and local, so a server that runs it
+  # pays nothing for routine chat parsing. If it is not installed the call
+  # fails fast (connection refused) and the provider is put on an exponential
+  # cooldown up to 5 minutes, so the cost to everyone else is negligible.
   provider-priority:
+    - ollama
     - claude
     - openai
     - grok
     - gemini
-    - ollama
 
   # OpenAI - https://platform.openai.com/
   #   gpt-5.6-terra  balanced intelligence/cost (default)
@@ -38,12 +43,13 @@ ai:
 
   # Claude - https://console.anthropic.com/
   # Model IDs are complete as written; do not append a date suffix.
-  #   claude-opus-5    most capable (default)
-  #   claude-sonnet-5  cheaper, still strong
-  #   claude-haiku-4-5 cheapest and fastest -- good for high-traffic servers
+  #   claude-haiku-4-5 cheapest and fastest (default) -- a server parsing every
+  #                    chat line makes a lot of calls, so this is the sane floor
+  #   claude-sonnet-5  stronger, mid cost
+  #   claude-opus-5    most capable, most expensive
   claude:
     api-key: ""
-    model: claude-opus-5
+    model: claude-haiku-4-5
     endpoint: ""  # Leave blank for default
     timeout-seconds: 30
 

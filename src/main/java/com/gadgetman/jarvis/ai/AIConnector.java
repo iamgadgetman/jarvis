@@ -161,7 +161,7 @@ public class AIConnector {
 
         // Load provider priority for auto mode
         providerPriority.clear();
-        List<String> defaultPriority = Arrays.asList("claude", "openai", "grok", "gemini", "ollama");
+        List<String> defaultPriority = Arrays.asList("ollama", "claude", "openai", "grok", "gemini");
         List<String> configPriority = ai.getStringList("provider-priority");
         if (configPriority != null && !configPriority.isEmpty()) {
             providerPriority.addAll(configPriority);
@@ -171,7 +171,7 @@ public class AIConnector {
 
         // Load all provider configurations
         loadProviderConfig(ai, "openai", "https://api.openai.com/v1/chat/completions", "gpt-5.6-terra");
-        loadProviderConfig(ai, "claude", "https://api.anthropic.com/v1/messages", "claude-opus-5");
+        loadProviderConfig(ai, "claude", "https://api.anthropic.com/v1/messages", "claude-haiku-4-5");
         loadProviderConfig(ai, "grok", "https://api.x.ai/v1/chat/completions", "grok-4.6");
         loadProviderConfig(ai, "gemini", "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", "gemini-3.7-flash");
         loadProviderConfig(ai, "ollama", "http://localhost:11434", "mistral");

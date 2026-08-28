@@ -1,5 +1,33 @@
 # Jarvis Changelog
 
+## v0.7.4 (2026-08-27)
+
+### Changed
+
+Restores the cost posture this project already decided on. v0.7.2 replaced a
+retired Claude model ID but picked the most capable tier as the replacement,
+which was the wrong default for a plugin that calls a model on every chat line.
+
+- **Claude default is now `claude-haiku-4-5`** (was `claude-opus-5`).
+  `config.yml` documents `claude-sonnet-5` and `claude-opus-5` for anyone who
+  wants to trade cost for capability.
+- **`ollama` moved to the front of `provider-priority`.** It is free and local,
+  so a server running it pays nothing for routine parsing. If it is not
+  installed the call fails fast and the provider goes on an exponential
+  cooldown capped at 5 minutes, so servers without it are barely affected.
+
+Both the shipped `config.yml` and the code defaults in `AIConnector` were
+changed, so a fresh install and a config-less install agree.
+
+### Known gap
+
+The bigger cost work — a local fast path that resolves literal commands with no
+model call, and `cache_control` on the system prompt — lives on a branch that is
+not merged into `main` and is not in any release yet.
+
+As always, an existing `plugins/Jarvis/config.yml` is **not** overwritten on
+update; servers already running must edit their own file.
+
 ## v0.7.3 (2026-08-27)
 
 ### Fixed
