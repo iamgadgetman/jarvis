@@ -32,9 +32,14 @@ ai:
     endpoint: ""  # Leave blank for default
     timeout-seconds: 30
 
+  # Claude - https://console.anthropic.com/
+  # Model IDs are complete as written; do not append a date suffix.
+  #   claude-opus-5    most capable (default)
+  #   claude-sonnet-5  cheaper, still strong
+  #   claude-haiku-4-5 cheapest and fastest -- good for high-traffic servers
   claude:
     api-key: ""
-    model: claude-sonnet-4-20250514
+    model: claude-opus-5
     endpoint: ""  # Leave blank for default
     timeout-seconds: 30
 

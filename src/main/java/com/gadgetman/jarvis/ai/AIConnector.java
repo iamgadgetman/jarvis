@@ -171,7 +171,7 @@ public class AIConnector {
 
         // Load all provider configurations
         loadProviderConfig(ai, "openai", "https://api.openai.com/v1/chat/completions", "gpt-4o-mini");
-        loadProviderConfig(ai, "claude", "https://api.anthropic.com/v1/messages", "claude-sonnet-4-20250514");
+        loadProviderConfig(ai, "claude", "https://api.anthropic.com/v1/messages", "claude-opus-5");
         loadProviderConfig(ai, "grok", "https://api.x.ai/v1/chat/completions", "grok-4");
         loadProviderConfig(ai, "gemini", "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", "gemini-1.5-flash");
         loadProviderConfig(ai, "ollama", "http://localhost:11434", "mistral");

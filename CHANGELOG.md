@@ -1,6 +1,23 @@
 # Jarvis Changelog
 
-## Unreleased
+## v0.7.2 (2026-08-27)
+
+### Fixed
+
+- **The Claude provider used a retired model ID.** Both the shipped
+  `config.yml` and the code default in `AIConnector` asked for
+  `claude-sonnet-4-20250514`, a dated snapshot that is no longer served. With
+  `provider-priority` listing `claude` first, the default configuration failed
+  its first call on every request and fell through to the next provider — or
+  to none, if no other key was set. The default is now `claude-opus-5`, and
+  `config.yml` documents `claude-sonnet-5` and `claude-haiku-4-5` as cheaper
+  alternatives.
+
+  The request itself was always well-formed (`x-api-key`,
+  `anthropic-version: 2023-06-01`, `max_tokens`); only the model ID was wrong.
+
+  Existing servers keep whatever is in their own `plugins/Jarvis/config.yml` —
+  if that still names `claude-sonnet-4-20250514`, update it by hand.
 
 ### Changed
 
