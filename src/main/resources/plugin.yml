@@ -1,6 +1,6 @@
 name: Jarvis
-version: 0.0.8
-main: com.yourname.jarvis.Jarvis
+version: 0.7.0
+main: com.gadgetman.jarvis.Jarvis
 api-version: 1.21
 depend: [Citizens]
 softdepend: [WorldEdit, WorldGuard]

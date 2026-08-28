@@ -1,6 +1,6 @@
 # Jarvis — AI-Powered Minecraft Butler Plugin
 
-**Version 0.0.9** | Bukkit / Paper / Purpur | Java 17 | Minecraft 1.21+
+**Version 0.7.0** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
 
 Jarvis is a feature-rich AI companion plugin that spawns a Citizens NPC who follows you, fights for you, mines for you, builds for you — and understands natural language via OpenAI, Claude, Grok, Gemini, or a local Ollama model.
 
@@ -11,12 +11,14 @@ Jarvis is a feature-rich AI companion plugin that spawns a Citizens NPC who foll
 ### AI Natural Language Understanding
 Speak to Jarvis in plain English — in chat or via command. Jarvis routes your request through an AI model, picks the right action, and executes it (with a witty response).
 
-Supports multiple AI backends with automatic failover:
-- OpenAI (GPT-4o, etc.)
-- Anthropic Claude
-- xAI Grok
-- Google Gemini
-- Ollama (local models)
+Supports multiple AI backends with **tiered, Ollama-first routing** (new in 0.3.0):
+- Light work (chat intents, banter) runs on your local Ollama box when configured
+- Heavy work (build planning) prefers your cloud provider (Claude, OpenAI, Grok, Gemini)
+- Per-provider health tracking with automatic failover between tiers
+- **Ollama-only "reduced mode"**: fully usable with zero cloud keys — freeform build
+  planning turns off and risky console actions require opt-in
+- Jarvis remembers your recent conversation (butler memory)
+- `/jarvis ai` shows routes, provider health, and who answered last
 
 ### NPC Companion
 - **Summon / Dismiss** — Jarvis appears at your side or disappears on demand
@@ -24,24 +26,52 @@ Supports multiple AI backends with automatic failover:
 - **Right-click Menu** — opens a GUI for quick access to all Jarvis actions
 - **Custom skin & name** — configurable in `config.yml`
 
-### Smart Mining
-- `mine` — mines the nearest ore
-- `mine diamond` / `mine iron` / `mine ancient debris` — targets a specific ore type
-- Understands: diamond, emerald, gold, iron, copper, redstone, lapis, quartz, coal, netherite/ancient debris
-- Automatically collects drops and puts them in his inventory
-- Filters out junk (cobblestone, dirt, gravel, etc.) — only keeps actual ore drops
+### Branch Mining (new in 0.2.0)
+- `/jarvis mine here` — Jarvis digs a full torch-lit branch mine: staircase to diamond level, main gallery, branch tunnels on a grid
+- Harvests every ore the tunnels expose, follows veins, seals lava pockets with cobblestone
+- The mine stays lit and walkable for you afterwards
 
-### Combat & Defense
-- Attacks mobs near you on command
-- Defends the player while following
+### Butler Services (new in 0.2.0)
+- `/jarvis follow` — trails behind you, picking up loot as you go
+- `/jarvis chest` — register the chest you're looking at as his deposit chest
+- `/jarvis deposit` — he carries the loot over and unloads it; auto-delivers when his bags fill mid-mine
+
+### Smart Mining (reworked in 0.1.0)
+- **Real movement** — Citizens A* pathfinding, no more teleport-hopping
+- **Real mining** — vanilla break timing with arm swings and crack animations (Citizens BlockBreaker)
+- **Digs like a player** — when a path is blocked, Jarvis mines through the obstruction instead of warping
+- **Async ore scanning** — chunk-snapshot scans off the main thread, no TPS hit
+- `mine` — mines the nearest ore; `mine diamond` / `mine iron` / `mine ancient debris` — targets a type
+- Understands: diamond, emerald, gold, iron, copper, redstone, lapis, quartz, coal, netherite/ancient debris
+- Collects drops automatically, filters out junk (cobblestone, dirt, gravel, etc.)
+
+### Defender (reworked in 0.4.0)
+- `/jarvis guard [passive|defensive|aggressive]` — bodyguard with stances; anchor-and-leash combat (he never chases into the night)
+- `/jarvis watch` — night watch: holds a fixed post, clears spawns, returns after every fight
+- Threat callouts: "Creeper, behind you, sir!" for hostiles outside your view
+- Diamond sword in guard mode, creeper-priority targeting, retaliation memory
+
+### Groundskeeping (new in 0.7.0)
+- `/jarvis farm [crop]` / `/jarvis tend [crop]` — harvest & replant the field once, or stay on as a farmhand
+- `/jarvis chop [n]` — fells whole trees (timber cascade!), collects logs, replants saplings
+- `/jarvis fish` — casts from the water's edge with real sounds and vanilla-ish loot odds
+- `/jarvis dance` — the performance; short victory bops on big milestones too
+- `/jarvis patrol add` + `/jarvis patrol` — he walks a saved waypoint circuit as an armed sentry
+- Waves and greets you when you return; glances at what you're doing when idle
+
+### Butler Services (new in 0.6.0)
+- `/jarvis recover` — he fetches your death drops: travels to where you died, collects everything, brings it back
+- `/jarvis home set` + `/jarvis home` — saved home point; he escorts you back, torch-lighting the road and waiting when you lag behind
+- Supply handoff — hungry or your tool nearly broken? He hands over food or a spare from his own bags
+
+### Steward (new in 0.5.0)
+- `/jarvis report` — the briefing: TPS/ms-tick with health coloring, players online, his cargo, pending requests; compact version on join
+- `/jarvis duty add <minutes> <message>` — standing broadcasts that survive restarts; `/jarvis duties` to review
+- "Jarvis, build me a house" picks the best schematic from your library (works even on local-only AI); freeform AI building is just the fallback
 
 ### Building Assistant
 - Describe a structure in natural language; Jarvis plans and builds it block by block
 - Paste WorldEdit schematics by name (fuzzy matching — no need for exact filenames)
-
-### Quest System
-- AI-generated quests tailored to your location and biome
-- Track quest progress in-game
 
 ### Inventory Management
 - Jarvis has his own NPC inventory
@@ -102,7 +132,6 @@ Players can ask Jarvis for items ("Jarvis, can I get 64 iron ingots?"). Jarvis q
 | `/jarvis time <day\|night>` | Set time | `jarvis.admin` |
 | `/jarvis weather <clear\|rain\|storm>` | Set weather | `jarvis.admin` |
 | `/jarvis build <description>` | Start a build | `jarvis.use` |
-| `/jarvis quest` | Get/view a quest | `jarvis.use` |
 | `/jarvis requests` | List pending player requests | `jarvis.admin` |
 | `/jarvis approve <id>` | Approve a player item request | `jarvis.admin` |
 | `/jarvis deny <id>` | Deny a player item request | `jarvis.admin` |
@@ -141,7 +170,7 @@ can I get some food please
 - At least one AI API key (or local Ollama)
 
 ### Steps
-1. Drop `jarvis-0.0.9.jar` into your `plugins/` folder
+1. Drop `jarvis-0.7.0.jar` into your `plugins/` folder
 2. Drop `Citizens.jar` and `WorldEdit.jar` into `plugins/` (if not already present)
 3. Start the server — Jarvis will generate `plugins/Jarvis/config.yml`
 4. Add your AI API key(s) to `config.yml`
@@ -218,7 +247,7 @@ permissions:
 git clone https://github.com/iamgadgetman/jarvis.git
 cd jarvis
 mvn clean package -DskipTests
-# Output: target/jarvis-0.0.9.jar
+# Output: target/jarvis-0.7.0.jar
 ```
 
 Requires Citizens and WorldEdit JARs on the Maven classpath as configured in `pom.xml`.

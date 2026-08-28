@@ -7,6 +7,16 @@ ai:
   # "auto" will try providers in priority order, switching on failure
   provider: auto
 
+  # ---- v0.3.0 tiered routing ----
+  # Light work (chat intents, banter) runs on Ollama first when configured;
+  # heavy work (build planning) prefers your cloud provider. Override here:
+  # routing:
+  #   light: [ollama, claude]
+  #   heavy: [claude, ollama]
+  light-timeout-seconds: 5       # Light-tier timeout; slow local box -> fall through
+  reduced-mode:
+    allow-risky-actions: false   # Ollama-only mode: allow console/permission actions
+
   # Provider priority for auto mode (tried top-to-bottom)
   # Providers without API keys (except ollama) are skipped
   provider-priority:
@@ -146,57 +156,24 @@ build:
   max-ai-blocks: 5000            # Max blocks for AI-generated builds
   ai-timeout: 30                 # Seconds to wait for AI response
 
-# ========== QUEST CONFIGURATION ==========
-quests:
-  enabled: true                  # Enable quest system
-  max-active-per-player: 3       # Max simultaneous quests
-  reward-multiplier: 1.0         # Scale all rewards
-  
-  # Quest templates (NEW in 0.0.6)
-  use-templates: true            # Use pre-made quest templates
-  template-weight: 0.5           # 50% template, 50% AI-generated
-  
-  # Quest difficulty
-  scale-to-level: true           # Scale difficulty to player level
-  min-level: 1                   # Minimum player level for quests
-  
-  # Progress tracking
-  show-progress-updates: true    # Show progress in chat
-  completion-sound: true         # Play sound on completion
+# ========== MINING (v0.1.0 rework) ==========
+mining:
+  debug: false                   # Verbose mining debug logging
+  search-radius: 24              # Ore search radius in blocks (async scan)
+  navigator-range: 64.0          # Max pathfinding distance
+  use-async-pathfinder: true     # Use Citizens' async A* (recommended)
+  timed-breaking: true           # Vanilla-speed block breaking with animations
+  break-speed-modifier: 1.0      # >1.0 mines faster, <1.0 slower
+  auto-deposit: true             # Deliver loot to the registered chest when bags fill
 
-# ========== SCHEMATIC CONFIGURATION ==========
-schematics:
-  # Preview (NEW in 0.0.6)
-  enable-preview: true           # Show preview before building
-  preview-duration: 10           # Seconds to show preview
-  preview-material: minecraft:glass  # Material for preview blocks
-  
-  # Downloads
-  allow-downloads: true          # Allow downloading from URLs
-  max-download-size: 10          # MB
-  
-  # Building
-  paste-air: false               # Include air blocks from schematic
-  paste-biomes: false            # Copy biomes from schematic
-
-# ========== STATISTICS CONFIGURATION (NEW in 0.0.6) ==========
-statistics:
-  enabled: true                  # Track player statistics
-  save-interval: 300             # Save to database every N seconds
-  
-  # What to track
-  track-mining: true             # Ores mined, blocks broken
-  track-combat: true             # Mobs killed, damage dealt
-  track-building: true           # Blocks placed, builds completed
-  track-quests: true             # Quests completed, rewards earned
-  
-  # Leaderboards
-  enable-leaderboards: true      # Global leaderboards
-  leaderboard-categories:        # Categories to track
-    - "ores_mined"
-    - "quests_completed"
-    - "blocks_placed"
-    - "diamonds_found"
+  # Branch mine layout (/jarvis mine here)
+  branch:
+    target-y: -54                # Depth the staircase descends to (diamond level)
+    corridor-length: 32          # Main gallery length in blocks
+    branch-length: 12            # Length of each side branch
+    branch-spacing: 3            # Blocks between branch pairs
+    place-torches: true          # Light the mine as he digs
+    torch-interval: 8            # Torch every N blocks
 
 # ========== NATURAL LANGUAGE CONFIGURATION ==========
 natural-language:
@@ -218,7 +195,6 @@ features:
   # Core features
   npc-system: true               # Enable NPC companions
   building-system: true          # Enable building features
-  quest-system: true             # Enable quest features
   schematic-system: true         # Enable schematic features
   
   # Advanced features
@@ -260,3 +236,27 @@ dev:
   debug-mode: false              # Extra debug logging
   test-mode: false               # Skip some validations
   log-api-calls: false           # Log all API calls
+
+# ========== DEFENDER (v0.4.0) ==========
+defender:
+  engage-radius: 12.0            # How far from the anchor Jarvis engages hostiles
+  leash-range: 12.0              # Chase distance before he breaks off and returns
+  attack-damage: 7.0             # Damage per swing (7.0 = diamond sword)
+  attack-cooldown-ticks: 12      # Ticks between swings
+  callouts: true                 # "Creeper, behind you, sir."
+
+# ========== STEWARD (v0.5.0) ==========
+steward:
+  report-on-join: true           # Briefing when a player joins
+  report-join-delay-ticks: 60    # Delay before the join briefing (3s)
+  supply-handoff: true           # Offer food / replacement tools from his bags
+  charm: true                    # Waves, greetings after time away, idle glances
+  celebrations: true             # Short victory bop after big milestones
+  recovery:
+    auto: false                  # true = fetch death drops without being asked
+    max-distance: 192.0          # How far he'll travel for a recovery run
+
+# ========== FARMING & GROUNDS (v0.7.0) ==========
+farming:
+  field-radius: 16               # Crop scan radius around where he starts
+  replant-saplings: true         # Lumberjack replants after felling
