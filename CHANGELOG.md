@@ -1,5 +1,16 @@
 # Jarvis Changelog
 
+## Unreleased
+
+### Changed
+
+- **Docs consolidated into the README.** `FEATURES.md` and `INSTALLATION.md`
+  both announced a "v3.0" that never existed and duplicated most of the README.
+  What was genuinely useful — provider-by-provider API key setup, a
+  troubleshooting section, update steps, performance characteristics and a
+  first-run walkthrough — now lives in `README.md`, and both files are gone.
+- The README's inline changelog was frozen at v0.0.9. It now points here.
+
 ## v0.7.1 (2026-08-27)
 
 A housekeeping release. No new behaviour — v0.7.0 simply would not build.

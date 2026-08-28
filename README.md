@@ -170,11 +170,24 @@ can I get some food please
 - At least one AI API key (or local Ollama)
 
 ### Steps
-1. Drop `jarvis-0.7.0.jar` into your `plugins/` folder
+1. Download **`Jarvis-<version>.jar`** from the
+   [latest release](https://github.com/iamgadgetman/jarvis/releases/latest)
+   and drop it into your `plugins/` folder
 2. Drop `Citizens.jar` and `WorldEdit.jar` into `plugins/` (if not already present)
 3. Start the server — Jarvis will generate `plugins/Jarvis/config.yml`
-4. Add your AI API key(s) to `config.yml`
+4. Add your AI API key(s) to `config.yml` (see below)
 5. Restart or `/reload confirm`
+
+### First run
+
+```
+/jarvis bell        # get the controller bell
+/jarvis summon      # summon Jarvis
+/jarvis quest new   # take a quest
+/jarvis loot        # see what he is carrying
+```
+
+Then just talk to him in chat: `jarvis start mining`.
 
 ---
 
@@ -230,6 +243,23 @@ permissions:
   admin-permission: "jarvis.admin"
 ```
 
+### Getting an AI API key
+
+Pick one provider and put its key in `config.yml`. Jarvis will fall back through
+the others in `fallback-order` if the primary fails.
+
+| Provider | Where to get a key | Key looks like |
+|---|---|---|
+| **Claude** (recommended) | [console.anthropic.com](https://console.anthropic.com/) → API Keys | `sk-ant-...` |
+| **OpenAI** | [platform.openai.com](https://platform.openai.com/) → API Keys | `sk-...` |
+| **xAI Grok** | [x.ai](https://x.ai/) → request API access | — |
+| **Google Gemini** | [aistudio.google.com](https://aistudio.google.com/) | — |
+| **Ollama** | none — runs locally, see [ollama.ai](https://ollama.ai) | n/a |
+
+Ollama needs no key and no account: install it, `ollama pull mistral`, and point
+`ollama-url` at it. It is the cheapest option and keeps everything on your own
+hardware, at the cost of slower and less accurate responses.
+
 ---
 
 ## Permissions
@@ -241,13 +271,83 @@ permissions:
 
 ---
 
+## Troubleshooting
+
+**"Citizens not found"** — Citizens is required, not optional. Check it is in
+`plugins/`, that its version matches your server, and that the console shows it
+loading before Jarvis.
+
+**"WorldEdit not found"** — only building and schematic features need WorldEdit.
+Everything else works without it. Verify with `/we version`.
+
+**"AI API error"** — work through these in order:
+
+1. Check the key in `plugins/Jarvis/config.yml` — no stray quotes or spaces, and
+   it belongs to the provider named in `ai.provider`.
+2. Confirm the key is active and has quota in your provider's console.
+3. Test connectivity from the server itself:
+   ```bash
+   curl https://api.anthropic.com/v1/messages \
+     -H "x-api-key: YOUR_KEY" \
+     -H "anthropic-version: 2023-06-01" \
+     -H "content-type: application/json" \
+     -d '{"model":"claude-opus-5","max_tokens":64,
+          "messages":[{"role":"user","content":"test"}]}'
+   ```
+4. Check the host allows outbound HTTPS — some hosts block it by default.
+
+**Natural language not responding** — confirm `natural-language.enabled: true`,
+try the explicit prefix (`jarvis <command>`), and check console for errors.
+
+**Building not working** — verify WorldEdit loaded, that you have build rights
+in the area, and try something simple first (`/jarvis build wall`). AI JSON
+parse errors show in the console.
+
+**"Database init error"** — `plugins/Jarvis/` must be writable. Failing that,
+delete `database.db` and restart, and check free disk space.
+
+`/jarvis debug` prints the live provider, model and feature state — start there.
+
+---
+
+## Updating
+
+1. Back up your config: `cp plugins/Jarvis/config.yml ~/jarvis-config-backup.yml`
+2. Stop the server
+3. Replace the jar: `rm plugins/jarvis-*.jar && cp Jarvis-<new>.jar plugins/`
+4. Start the server
+
+New config keys are added automatically and your existing settings are kept.
+
+---
+
+## Performance
+
+AI calls are async and never block the main thread. Typical cost:
+
+| Operation | Latency |
+|---|---|
+| Natural language | ~200–500 ms |
+| Quest generation | ~500–1000 ms |
+| AI building design | ~1–3 s, then progressive placement |
+
+Block placement is throttled to 50 per tick so large builds do not stall the
+server, natural language has a 2-second cooldown per player, and AI caching
+costs roughly 50 MB of heap.
+
+On a busy server (50+ players), set `natural-language.require-prefix: true` so
+Jarvis only parses chat aimed at him. On a small server, leave it `false` for a
+more natural feel.
+
+---
+
 ## Building from Source
 
 ```bash
 git clone https://github.com/iamgadgetman/jarvis.git
 cd jarvis
 mvn clean package -DskipTests
-# Output: target/jarvis-0.7.0.jar
+# Output: target/jarvis-<version>.jar
 ```
 
 Requires Citizens and WorldEdit JARs on the Maven classpath as configured in `pom.xml`.
@@ -256,40 +356,8 @@ Requires Citizens and WorldEdit JARs on the Maven classpath as configured in `po
 
 ## Changelog
 
-### v0.0.9
-- **Console command execution** — Jarvis can run server console commands (always confirmation-gated)
-- **New admin actions** — `clear_mobs`, `clear_drops`, `save_world`, `set_difficulty`, `announce_all`, `schedule_broadcast`
-- **Player request system** — players ask for items; admins approve/deny via `/jarvis requests`
-- **Auto-greet** — AI-generated welcome message when players join
-- **Death commentary** — Jarvis comments on player deaths with AI-generated wit
-- **TPS monitor** — warns admins when server performance degrades
-- **Ore targeting** — `/jarvis mine diamond` now correctly targets only diamond ore
-- **Inventory cleanup** — Jarvis no longer picks up cobblestone/dirt/gravel while mining
-- **Multi-word commands** — `/jarvis set time to night` and similar now work
-- **Schematic fuzzy matching** — paste schematics without needing the exact filename
-- **Right-click menu fix** — NPC right-click GUI now reliably opens (switched to Citizens NPCRightClickEvent)
-- **Mining reliability fix** — block breaking is now synchronous and correctly detected
-
-### v0.0.8
-- Initial public release
-- AI natural language processing (OpenAI, Claude, Grok, Gemini, Ollama)
-- Citizens NPC companion with follow, mine, attack, build behaviors
-- 5-phase mining state machine (SEARCHING → MOVING → MINING → COLLECTING → RETURNING)
-- WorldEdit schematic pasting
-- Quest system
-- Clickable confirmation for dangerous actions
-- Multi-backend AI failover
-
-### v0.0.7
-- Improved NPC movement
-- Ollama support for local AI
-- Auto AI provider switching
-
-### v0.0.6
-- Mining improvements
-- Branch mining
-- Statistics system
-- Quest templates
+See [CHANGELOG.md](CHANGELOG.md) for the full history, and the
+[releases page](https://github.com/iamgadgetman/jarvis/releases) for downloads.
 
 ---
 
