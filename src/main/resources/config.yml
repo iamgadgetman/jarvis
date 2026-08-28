@@ -26,9 +26,13 @@ ai:
     - gemini
     - ollama
 
+  # OpenAI - https://platform.openai.com/
+  #   gpt-5.6-terra  balanced intelligence/cost (default)
+  #   gpt-5.6-luna   cost-optimised -- good for high-traffic servers
+  #   gpt-5.6-sol    flagship
   openai:
     api-key: ""
-    model: gpt-4o-mini
+    model: gpt-5.6-terra
     endpoint: ""  # Leave blank for default
     timeout-seconds: 30
 
@@ -43,15 +47,21 @@ ai:
     endpoint: ""  # Leave blank for default
     timeout-seconds: 30
 
+  # xAI Grok - https://x.ai/
+  #   grok-4.6  xAI's recommended default (default)
+  #   grok-4.3  cheaper
   grok:
     api-key: ""
-    model: grok-4
+    model: grok-4.6
     endpoint: ""  # Leave blank for default
     timeout-seconds: 30
 
+  # Google Gemini - https://aistudio.google.com/
+  #   gemini-3.7-flash       latest and most capable Flash (default)
+  #   gemini-3.5-flash-lite  fastest and cheapest
   gemini:
     api-key: ""
-    model: gemini-1.5-flash
+    model: gemini-3.7-flash
     endpoint: ""  # Leave blank for default
     timeout-seconds: 30
 

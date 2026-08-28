@@ -1,5 +1,30 @@
 # Jarvis Changelog
 
+## v0.7.3 (2026-08-27)
+
+### Fixed
+
+Finishes what v0.7.2 started: every remaining provider default was checked
+against its vendor's current model list. Two were broken, one was legacy.
+
+- **Gemini was broken.** `gemini-1.5-flash` has been retired and no longer
+  appears in Google's model list. Default is now `gemini-3.7-flash`, with
+  `gemini-3.5-flash-lite` documented as the cheapest option.
+- **Grok was broken.** `grok-4` is not a valid model ID — xAI ships versioned
+  variants only. Default is now `grok-4.6`, which xAI recommends as its
+  general-purpose model, with `grok-4.3` documented as cheaper.
+- **OpenAI was legacy, not broken.** `gpt-4o-mini` still answers and is not on
+  OpenAI's shutdown list, but it is no longer in the current lineup. Default is
+  now `gpt-5.6-terra`, with `gpt-5.6-luna` (cost-optimised) and `gpt-5.6-sol`
+  (flagship) documented.
+
+Endpoints were verified unchanged and needed no edit: Chat Completions
+(`/v1/chat/completions`) is not deprecated, and Gemini still serves
+`v1beta/models/{model}:generateContent`. Only the model IDs were wrong.
+
+As in v0.7.2, an existing `plugins/Jarvis/config.yml` is **not** overwritten on
+update — servers already running must edit their own file.
+
 ## v0.7.2 (2026-08-27)
 
 ### Fixed
