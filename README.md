@@ -171,7 +171,7 @@ can I get some food please
 
 ### Steps
 1. Download **`Jarvis-<version>.jar`** from the
-   [latest release](https://github.com/iamgadgetman/jarvis/releases/latest) or [latest jenkins build](https://ci.citizensnpcs.co/job/citizens2/)
+   [latest release](https://github.com/iamgadgetman/jarvis/releases/latest)
    and drop it into your `plugins/` folder
 2. Drop `Citizens.jar` and `WorldEdit.jar` into `plugins/` (if not already present)
 3. Start the server — Jarvis will generate `plugins/Jarvis/config.yml`
