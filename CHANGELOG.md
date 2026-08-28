@@ -1,5 +1,29 @@
 # Jarvis Changelog
 
+## v0.7.1 (2026-08-27)
+
+A housekeeping release. No new behaviour — v0.7.0 simply would not build.
+
+### Fixed
+
+- **The plugin compiles again.** The `com.yourname` → `com.gadgetman` package
+  rename in v0.7.0 left the three `schematics` classes behind, while
+  `Jarvis.java` still imported and constructed `SchematicManager`. Anyone
+  building from the v0.7.0 tag hit `package com.gadgetman.jarvis.schematics
+  does not exist`. `LitematicConverter`, `SchemReader` and `SchematicManager`
+  are restored under the correct package, so schematic building works again.
+- **Root cause: `.gitignore`.** The rule `schematics/` was meant to exclude
+  bulky runtime schematic data, but unanchored it also matched the source
+  package `src/main/java/**/schematics/`. The original files predated the
+  rule so stayed tracked; the rename created new paths, which git silently
+  skipped. The rule is now anchored to `/schematics/`.
+
+### Removed
+
+- Stale docs that no longer described the plugin: `DEPLOY_v0.0.5.md`,
+  `CHANGES_SUMMARY.md` (both pinned to v0.0.5, seven releases back) and
+  `IMPROVEMENT_PLAN.md` (internal debugging notes from January).
+
 ## v0.7.0 — "The Groundskeeper" (2026-08-27)
 
 The estate expands: farming, forestry, fishing — and yes, the dance.
