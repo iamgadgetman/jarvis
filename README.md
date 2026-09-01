@@ -201,7 +201,7 @@ can I get some food please
 ```
 /jarvis bell        # get the controller bell
 /jarvis summon      # summon Jarvis
-/jarvis quest new   # take a quest
+/jarvis debug       # provider, model and experience-memory status
 /jarvis loot        # see what he is carrying
 ```
 
@@ -357,7 +357,6 @@ AI calls are async and never block the main thread. Typical cost:
 | Operation | Latency |
 |---|---|
 | Natural language | ~200–500 ms |
-| Quest generation | ~500–1000 ms |
 | AI building design | ~1–3 s, then progressive placement |
 
 Block placement is throttled to 50 per tick so large builds do not stall the
