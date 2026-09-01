@@ -1,6 +1,6 @@
 # Jarvis — AI-Powered Minecraft Butler Plugin
 
-**Version 0.8.0.1** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
+**Version 0.8.3** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
 
 Jarvis is a feature-rich AI companion plugin that spawns a Citizens NPC who follows you, fights for you, mines for you, builds for you — and understands natural language via OpenAI, Claude, Grok, Gemini, or a local Ollama model.
 
@@ -72,6 +72,15 @@ Supports multiple AI backends with **tiered, Ollama-first routing** (new in 0.3.
 ### Building Assistant
 - Describe a structure in natural language; Jarvis plans and builds it block by block
 - Paste WorldEdit schematics by name (fuzzy matching — no need for exact filenames)
+
+### Lamplighter (new in 0.8.3)
+`/jarvis light [radius] [type] [spacing]` — Jarvis lights an area against mob
+spawns, on the actual spawn rule (hostiles spawn at block light 0) rather than a
+guess.
+- Torches, end rods or lanterns; ground placement by default, `lighting.placement: wall` for walls
+- Skips spots already bright enough, and drops sea lanterns for grid points that land in shallow water
+- Works from chat: *"jarvis, light this place up"*
+- He swims now, with a lifeguard monitor watching for a submerged NPC
 
 ### Experience Memory (new in 0.8.0)
 Jarvis remembers how past builds turned out and shows the AI the plans that

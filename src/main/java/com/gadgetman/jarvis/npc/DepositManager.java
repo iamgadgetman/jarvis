@@ -161,6 +161,7 @@ public class DepositManager {
             public void run() {
                 if (!npc.isSpawned() || !player.isOnline()) {
                     cancel();
+                    host.taskDone(player, this);
                     return;
                 }
 
@@ -169,6 +170,7 @@ public class DepositManager {
 
                 if (dist <= CHEST_REACH) {
                     cancel();
+                    host.taskDone(player, this);
                     dumpInto(player, npc, chestLoc);
                     onComplete.run();
                     return;
@@ -176,6 +178,7 @@ public class DepositManager {
 
                 if (dist > MAX_DEPOSIT_DISTANCE) {
                     cancel();
+                    host.taskDone(player, this);
                     host.say(player, "The chest is rather far from here, sir. I'll hold onto things for now.");
                     onComplete.run();
                     return;
@@ -219,10 +222,11 @@ public class DepositManager {
         ItemStack[] contents = invTrait.getContents();
         int moved = 0, leftBehind = 0;
 
+        // v0.8.0: slots 1+ all go in the chest — even diamond tools; only
+        // slot 0 (his hand) is the kit.
         for (int i = 1; i < Math.min(36, contents.length); i++) {
             ItemStack item = contents[i];
             if (item == null || item.getType() == Material.AIR) continue;
-            if (JarvisNPC.KIT_TOOLS.contains(item.getType())) continue;
 
             Map<Integer, ItemStack> overflow = container.getInventory().addItem(item.clone());
             if (overflow.isEmpty()) {

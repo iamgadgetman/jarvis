@@ -367,6 +367,7 @@ public class AIConnector {
                 "  fish - fish at the nearest water\n" +
                 "  dance - perform the dance\n" +
                 "  patrol - walk the saved patrol circuit as a guard\n" +
+                "  light - place lights on a grid to spawn-proof the area, params: {radius (optional, blocks), type (optional): torch|end_rod|lantern, spacing (optional, blocks)}\n" +
                 "  clearloot - drop all collected items\n" +
                 "  build - build a structure, params: {description: string}\n\n" +
                 "WORLD ACTIONS (directly affect the game world):\n" +
@@ -414,6 +415,8 @@ public class AIConnector {
                 "  'farm the carrots' -> {\"action\":\"farm\",\"parameters\":{\"crop\":\"carrots\"},\"response\":\"To the fields, sir. The carrots won't harvest themselves. Well — now they will.\"}\n" +
                 "  'chop some wood' -> {\"action\":\"chop\",\"parameters\":{\"count\":5},\"response\":\"Timber duty, sir. Mind the falling trees.\"}\n" +
                 "  'dance for me' -> {\"action\":\"dance\",\"response\":\"Very well, sir. Observe.\"}\n" +
+                "  'light this place up' -> {\"action\":\"light\",\"response\":\"Illumination, sir. The rabble spawn in the dark — let's deny them the pleasure.\"}\n" +
+                "  'torch the area with end rods, big radius' -> {\"action\":\"light\",\"parameters\":{\"radius\":32,\"type\":\"end_rod\"},\"response\":\"End rods it is, sir. Rather chic.\"}\n" +
                 "  'put your stuff in the chest' -> {\"action\":\"deposit\",\"response\":\"Delivering the goods, sir.\"}\n" +
                 "  'give me a diamond sword' -> {\"action\":\"give_item\",\"parameters\":{\"item\":\"minecraft:diamond_sword\",\"amount\":1},\"response\":\"Here's a sword. Try not to immediately lose it to lava.\"}\n" +
                 "  'heal me' -> {\"action\":\"heal\",\"parameters\":{\"player\":\"" + playerName + "\"},\"response\":\"Patching up your self-inflicted wounds again, are we.\"}\n" +

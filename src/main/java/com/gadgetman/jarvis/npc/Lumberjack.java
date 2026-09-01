@@ -57,6 +57,7 @@ class Lumberjack {
     private Block currentBase = null;
     private int stalled = 0;
     private Location lastPos = null;
+    private BukkitRunnable mainTask = null;   // v0.8.0: lets callbacks notice /jarvis stop
 
     private static final int SEARCH_RADIUS = 24;
     private static final int MAX_TREE_LOGS = 80;
@@ -82,6 +83,7 @@ class Lumberjack {
             public void run() {
                 if (!npc.isSpawned() || !player.isOnline()) {
                     cancel();
+                    host.taskDone(player, this);
                     return;
                 }
                 Location loc = host.getCurrentLocation(npc);
@@ -89,6 +91,7 @@ class Lumberjack {
                 tick(loc, this);
             }
         };
+        mainTask = task;
         task.runTaskTimer(plugin, 10L, 10L);
         host.registerTask(player, task);
     }
@@ -104,6 +107,12 @@ class Lumberjack {
             host.say(player, "Bags full of timber, sir — one delivery and I'll resume.");
             self.cancel();
             deposits.startDepositRun(player, npc, deposits.getChest(player), () -> {
+                // v0.8.0: if the chest couldn't take it, don't loop forever
+                if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
+                    host.say(player, "The chest is full and so are my bags, sir. "
+                            + "The timber work is paused for now.");
+                    return;
+                }
                 host.applyNavigatorDefaults(npc, null);
                 host.equipTool(npc, Material.DIAMOND_AXE);
                 start();
@@ -145,6 +154,8 @@ class Lumberjack {
         List<Block> tree = collectTree(base);
 
         host.breakBlockProperly(npc, base, success -> {
+            // v0.8.0: /jarvis stop mid-chop must not fell the rest of the tree
+            if (mainTask == null || mainTask.isCancelled()) return;
             if (!success) {
                 busy = false;
                 currentBase = null;
@@ -177,6 +188,10 @@ class Lumberjack {
         new BukkitRunnable() {
             @Override
             public void run() {
+                if (mainTask == null || mainTask.isCancelled() || !npc.isSpawned()) {
+                    cancel();   // stopped mid-fell — leave the rest of the tree standing
+                    return;
+                }
                 for (int i = 0; i < 2 && !queue.isEmpty(); i++) {
                     Block log = queue.poll();
                     if (LOGS.contains(log.getType())) {
@@ -270,6 +285,7 @@ class Lumberjack {
 
     private void finish(BukkitRunnable self) {
         self.cancel();
+        host.taskDone(player, self);
         npc.getNavigator().cancelNavigation();
         host.say(player, "Timber work complete, sir — " + treesFelled + " trees, "
                 + logsCollected + " logs" + (replant ? ", saplings in the ground." : "."));

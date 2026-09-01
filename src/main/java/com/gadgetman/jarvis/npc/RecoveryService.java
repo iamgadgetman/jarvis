@@ -126,11 +126,16 @@ public class RecoveryService implements Listener {
             public void run() {
                 if (!npc.isSpawned() || !player.isOnline()) {
                     cancel();
+                    host.taskDone(player, this);
                     return;
                 }
 
                 Location loc = host.getCurrentLocation(npc);
-                host.pickupNearbyItems(npc, loc);
+                // v0.8.0: on a recovery run EVERYTHING is the player's stuff —
+                // including cobblestone and dirt the junk filter normally skips.
+                // (The old filter left junk on the ground and then stood there
+                // 60 seconds waiting for it to be "collected".)
+                host.pickupNearbyItems(npc, loc, true);
 
                 // Stall watchdog (shared by travel phases)
                 if (lastPos != null && loc.distance(lastPos) < 0.2) stalled++;
@@ -178,12 +183,14 @@ public class RecoveryService implements Listener {
                         if (loc.getWorld() != playerLoc.getWorld()) {
                             // Player moved worlds — hold the goods
                             cancel();
+                            host.taskDone(player, this);
                             host.say(player, "You've changed worlds, sir. I'll hold your effects — "
                                     + "/jarvis loot when you want them.");
                             return;
                         }
                         if (loc.distance(playerLoc) <= 3.0) {
                             cancel();
+                            host.taskDone(player, this);
                             handOver(player, npc);
                             return;
                         }
@@ -229,10 +236,11 @@ public class RecoveryService implements Listener {
         ItemStack[] contents = invTrait.getContents();
         int returned = 0;
 
+        // v0.8.0: slots 1+ are ALL the player's — including their own diamond
+        // tools (the old kit filter quietly confiscated recovered tools).
         for (int i = 1; i < Math.min(36, contents.length); i++) {
             ItemStack item = contents[i];
             if (item == null || item.getType() == Material.AIR) continue;
-            if (JarvisNPC.KIT_TOOLS.contains(item.getType())) continue;
 
             returned += item.getAmount();
             Map<Integer, ItemStack> overflow = player.getInventory().addItem(item.clone());

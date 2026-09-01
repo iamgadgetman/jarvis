@@ -1,5 +1,64 @@
 # Jarvis Changelog
 
+## v0.8.3 (2026-08-31) — the Lamplighter merge
+
+Merges a line of work that was built outside this repository on 2026-08-29 and
+deployed to a live server as "0.8.2", but never pushed here. It had forked from
+**v0.7.1**, so it predated the whole provider/cost line, and the two histories
+had to be reconciled rather than one replacing the other.
+
+Version numbering: that line used 0.8.0, 0.8.1 and 0.8.2 locally. None were ever
+published, and 0.8.0 here already means Experience Memory, so the merged result
+is 0.8.3. Its work is described below under the feature it added, not under the
+numbers it used.
+
+### Added — the Lamplighter
+
+`/jarvis light [radius] [type] [spacing]`, and *"jarvis, light this place up"*
+from chat.
+
+- Grid-based area lighting built on the spawn rule: hostile mobs spawn at block
+  light 0, so the placer targets that rather than guessing.
+- Types: `torch` (default), `end_rod`, `lantern`, per command or via config.
+- Ground placement by default; `lighting.placement: wall` puts torches on walls.
+- Skips spots already bright enough (`lighting.skip-light-level`).
+- **Underwater**: grid points in shallow water get sea lanterns, configurable
+  via `lighting.underwater` (`sea_lantern` default, or `skip`). Placement works
+  from the surface, and the placer hard-guards against setting a light into a
+  cell that is not actually air or water.
+
+### Added — he swims
+
+Citizens' swim behaviour is enabled on the NPC, plus a lifeguard monitor that
+checks once a second whether any Jarvis has his head underwater.
+
+### Fixed — field and code-review fixes from that line
+
+- **Item stacks no longer vanish** when picking up a stack larger than his bags
+  could hold.
+- **Full-chest infinite loop** when the deposit chest filled mid-job.
+- **`/jarvis stop` actually stops a dig** — the block-breaker kept chewing.
+- **Finished tasks unregister themselves**; a completed task used to linger.
+- **Chat-parsing thread safety** — natural-language handling read world state
+  off the main thread.
+- **Summon after a failed spawn** no longer leaks a dead NPC registry entry.
+- The sky-stare after a summon, follow-mode wedging with no stall detection,
+  1-block stair squeeze in ore tunnels, the fishing wedge at a water's edge,
+  death-recovery stalls on the junk filter, guard-post confusion, and the "kit
+  tool" filter claiming the player's own tools.
+
+### Not merged
+
+That line's provider configuration was **left behind deliberately**. It still
+had `claude-sonnet-4-20250514` as the Claude default with `claude` first in
+`provider-priority` — the exact retired model ID that v0.7.2 was cut to remove,
+and the opposite of the ollama-first posture restored in v0.7.4. Anything
+running that build has been failing its first AI call on every request. The
+merged tree keeps `claude-haiku-4-5` and `ollama` first.
+
+Its hardcoded version constant was dropped too, in favour of the pom-derived
+one from v0.8.0.
+
 ## v0.8.0.1 (2026-08-31)
 
 Two defects in v0.8.0's experience memory, both found by running it against a

@@ -60,6 +60,7 @@ class Entertainer {
             public void run() {
                 if (!npc.isSpawned() || !player.isOnline() || tick >= durationTicks) {
                     cancel();
+                    if (bow) host.taskDone(player, this);
                     if (npc.isSpawned() && bow) {
                         // Face the audience, one last swing (a bow, in spirit)
                         npc.faceLocation(player.getLocation());

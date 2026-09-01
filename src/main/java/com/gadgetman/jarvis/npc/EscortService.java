@@ -71,6 +71,7 @@ public class EscortService {
             public void run() {
                 if (!npc.isSpawned() || !player.isOnline()) {
                     cancel();
+                    host.taskDone(player, this);
                     return;
                 }
 
@@ -80,12 +81,14 @@ public class EscortService {
 
                 if (playerLoc.getWorld() != loc.getWorld()) {
                     cancel();
+                    host.taskDone(player, this);
                     return;
                 }
 
                 // Arrived? (Both of us, ideally)
                 if (playerLoc.distance(home) <= ARRIVE_DISTANCE + 2) {
                     cancel();
+                    host.taskDone(player, this);
                     npc.getNavigator().cancelNavigation();
                     host.say(player, "Home, sir. No casualties — I do like a quiet walk.");
                     return;

@@ -86,16 +86,23 @@ public class ChatListener implements Listener {
         lastCommandTime.put(player.getUniqueId(), now);
 
         String finalMessage = processedMessage;
+        // v0.8.0: build the world context on the MAIN thread first (Bukkit API
+        // isn't thread-safe), then do the slow AI call async.
         new BukkitRunnable() {
             @Override public void run() {
-                processNaturalLanguageCommand(player, finalMessage);
+                final String worldContext = buildContext(player);
+                new BukkitRunnable() {
+                    @Override public void run() {
+                        processNaturalLanguageCommand(player, finalMessage, worldContext);
+                    }
+                }.runTaskAsynchronously(plugin);
             }
-        }.runTaskAsynchronously(plugin);
+        }.runTask(plugin);
     }
 
-    private void processNaturalLanguageCommand(Player player, String message) {
+    private void processNaturalLanguageCommand(Player player, String message, String worldContext) {
         try {
-            String context  = buildContext(player) + buildMemoryContext(player);
+            String context  = worldContext + buildMemoryContext(player);
             String response = aiConnector.parseNaturalLanguage(message, player.getName(), context);
 
             JSONObject action     = new JSONObject(response);
@@ -243,6 +250,10 @@ public class ChatListener implements Listener {
             case "fish" -> plugin.getJarvisNPC().fish(player);
             case "dance" -> plugin.getJarvisNPC().dance(player);
             case "patrol" -> plugin.getJarvisNPC().patrol(player, "start");
+            case "light", "light_area" -> plugin.getJarvisNPC().light(player,
+                    parameters != null ? parameters.optInt("radius", -1) : -1,
+                    parameters != null ? parameters.optString("type", null) : null,
+                    parameters != null ? parameters.optInt("spacing", -1) : -1);
             case "clearloot" -> plugin.getJarvisNPC().clearInventory(player);
             case "chat", "talk" -> {
                 // AI response already shown above — nothing else needed
@@ -353,6 +364,7 @@ public class ChatListener implements Listener {
         else if (message.contains("chop") || message.contains("trees")) plugin.getJarvisNPC().chop(player, 5);
         else if (message.contains("fish")) plugin.getJarvisNPC().fish(player);
         else if (message.contains("dance")) plugin.getJarvisNPC().dance(player);
+        else if (message.contains("light")) plugin.getJarvisNPC().light(player, -1, null, -1);
         else if (message.contains("loot") || message.contains("inventory")) plugin.getJarvisNPC().openInventory(player);
     }
 }
