@@ -183,6 +183,7 @@ class BranchMiner {
             public void run() {
                 if (!npc.isSpawned() || !player.isOnline() || mode == Mode.DONE) {
                     cancel();
+                    host.taskDone(player, this);
                     return;
                 }
                 Location npcLoc = host.getCurrentLocation(npc);
@@ -204,6 +205,13 @@ class BranchMiner {
                 resumeCell = npcLoc.getBlock().getLocation();
                 self.cancel();
                 deposits.startDepositRun(player, npc, deposits.getChest(player), () -> {
+                    // v0.8.0: if the chest couldn't take it, don't loop forever
+                    if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
+                        mode = Mode.DONE;
+                        host.say(player, "The chest is full and so are my bags, sir. "
+                                + "Pausing the mine until there's room somewhere.");
+                        return;
+                    }
                     mode = Mode.RETURNING;
                     host.applyNavigatorDefaults(npc, () -> navStuck = true);
                     runLoop();

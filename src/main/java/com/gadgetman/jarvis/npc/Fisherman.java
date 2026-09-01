@@ -86,6 +86,7 @@ class Fisherman {
             public void run() {
                 if (!npc.isSpawned() || !player.isOnline()) {
                     cancel();
+                    host.taskDone(player, this);
                     return;
                 }
                 Location loc = host.getCurrentLocation(npc);
@@ -94,6 +95,7 @@ class Fisherman {
                 // Bags full — deliver and stop (fishing is leisure, not a shift)
                 if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
                     cancel();
+                    host.taskDone(player, this);
                     host.say(player, "The bags are full of fish, sir — " + catches
                             + " catches. A fine session.");
                     if (deposits.hasChest(player)) {
@@ -147,7 +149,12 @@ class Fisherman {
 
     private void cast(Location npcLoc) {
         waterSpot = pickWaterSpot(npcLoc);
-        if (waterSpot == null) return;
+        if (waterSpot == null) {
+            // v0.8.0: no castable water in view — retry shortly instead of
+            // standing there forever with the rod raised (the old wedge)
+            waitTicks = 3;
+            return;
+        }
 
         npc.faceLocation(waterSpot.clone().add(0.5, 1, 0.5));
         if (npc.getEntity() instanceof LivingEntity le) le.swingMainHand();
@@ -189,20 +196,31 @@ class Fisherman {
         }
     }
 
-    /** A water block 2–4 blocks out from the edge, with air above. */
+    /**
+     * A water block 2–4 blocks out, with air above. v0.8.0: probes the facing
+     * direction first, then all four compass directions — he no longer wedges
+     * when he arrives at the edge facing the wrong way.
+     */
     private Location pickWaterSpot(Location npcLoc) {
         World world = npcLoc.getWorld();
-        Vector dir = npcLoc.getDirection().setY(0);
-        if (dir.lengthSquared() < 0.01) dir = new Vector(1, 0, 0);
-        dir.normalize();
+        Vector facing = npcLoc.getDirection().setY(0);
+        if (facing.lengthSquared() < 0.01) facing = new Vector(1, 0, 0);
+        facing.normalize();
 
-        for (int out = 2; out <= 4; out++) {
-            Location probe = npcLoc.clone().add(dir.clone().multiply(out));
-            for (int dy = 0; dy >= -3; dy--) {
-                Block b = world.getBlockAt(probe.getBlockX(), probe.getBlockY() + dy, probe.getBlockZ());
-                if (b.getType() == Material.WATER
-                        && b.getRelative(BlockFace.UP).getType() == Material.AIR) {
-                    return b.getLocation();
+        Vector[] probes = {
+                facing,
+                new Vector(1, 0, 0), new Vector(-1, 0, 0),
+                new Vector(0, 0, 1), new Vector(0, 0, -1)
+        };
+        for (Vector dir : probes) {
+            for (int out = 2; out <= 4; out++) {
+                Location probe = npcLoc.clone().add(dir.clone().multiply(out));
+                for (int dy = 0; dy >= -3; dy--) {
+                    Block b = world.getBlockAt(probe.getBlockX(), probe.getBlockY() + dy, probe.getBlockZ());
+                    if (b.getType() == Material.WATER
+                            && b.getRelative(BlockFace.UP).getType() == Material.AIR) {
+                        return b.getLocation();
+                    }
                 }
             }
         }

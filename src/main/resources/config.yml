@@ -1,5 +1,5 @@
 # Jarvis AI Companion Configuration
-# Version 0.0.7
+# Version 0.8.2
 
 # ========== AI CONFIGURATION ==========
 ai:
@@ -260,3 +260,17 @@ steward:
 farming:
   field-radius: 16               # Crop scan radius around where he starts
   replant-saplings: true         # Lumberjack replants after felling
+
+# ========== LIGHTING (v0.8.0) ==========
+# /jarvis light [radius] [type] [spacing] — spawn-proof the area.
+# The math: mobs spawn at block-light 0; a torch emits 14 and loses 1 per
+# block, so a grid spaced 13 or less keeps everything above light 0.
+lighting:
+  default-type: torch            # torch | end_rod | lantern
+  default-radius: 16             # Area radius when the command gives none
+  default-spacing: 12            # Grid spacing (12 = spawn-proof with margin)
+  placement: ground              # ground | wall (wall applies to torches, when a wall is adjacent)
+  skip-light-level: 8            # Skip spots already at this block-light or brighter (16 = never skip)
+  underwater: sea_lantern        # sea_lantern | skip — grid points in shallow water (<=4 deep)
+                                 # get a sea lantern on the floor (torches don't survive underwater);
+                                 # "skip" leaves water untouched. Deep water is always skipped.

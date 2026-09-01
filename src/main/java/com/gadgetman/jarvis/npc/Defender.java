@@ -97,6 +97,10 @@ class Defender {
         return stance;
     }
 
+    Mode getMode() {
+        return mode;
+    }
+
     void setStance(Stance stance) {
         this.stance = stance;
         if (stance == Stance.PASSIVE) {
@@ -127,6 +131,7 @@ class Defender {
             public void run() {
                 if (!npc.isSpawned() || !player.isOnline()) {
                     cancel();
+                    host.taskDone(player, this);
                     return;
                 }
                 Location npcLoc = host.getCurrentLocation(npc);

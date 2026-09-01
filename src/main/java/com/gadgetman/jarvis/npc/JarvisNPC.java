@@ -6,6 +6,7 @@ import net.citizensnpcs.api.ai.Navigator;
 import net.citizensnpcs.api.ai.NavigatorParameters;
 import net.citizensnpcs.api.ai.StuckAction;
 import net.citizensnpcs.api.ai.tree.BehaviorStatus;
+import net.citizensnpcs.api.astar.pathfinder.SwimmingExaminer;
 import net.citizensnpcs.api.npc.BlockBreaker;
 import net.citizensnpcs.api.npc.NPC;
 import net.citizensnpcs.api.trait.trait.Equipment;
@@ -39,7 +40,15 @@ import java.util.function.Consumer;
 
 /**
  * JarvisNPC - Manages NPC spawning, combat, and mining.
- * Version: 0.7.0
+ * Version: 0.8.0
+ *
+ * v0.8.0: Field-test fixes
+ * - FIXED: sky-stare after summon (idle glances now use a level gaze)
+ * - FIXED: follow mode wedging (stall watchdog with a catch-up hop)
+ * - FIXED: ore tunnels now dug 2-high on stairs so the player can follow
+ * - FIXED: partial item pickup destroying the remainder of a stack
+ * - FIXED: kit-tool filter no longer traps tools the player owns (slots 1+)
+ * - FIXED: block-breaker task now stops with /jarvis stop
  *
  * v0.1.1: Field-test fixes
  * - FIXED: pickaxe in hand (inventory slot 0 IS the held item for player
@@ -223,6 +232,7 @@ public class JarvisNPC implements Listener {
         startCleanupTask();
         startSupplyMonitor();
         startCharmMonitor();
+        startLifeguard();
 
         debug("JarvisNPC initialized (v0.2.0 butler mining)");
     }
@@ -252,6 +262,11 @@ public class JarvisNPC implements Listener {
             say(player, "I'm already here, sir.");
             return;
         }
+        if (existing != null) {
+            // A dead registry entry from a failed spawn — clean it up properly
+            playerNPCs.remove(player.getUniqueId());
+            existing.destroy();
+        }
 
         NPC npc = CitizensAPI.getNPCRegistry().createNPC(EntityType.PLAYER, "Jarvis");
         Location spawnLoc = findSafeSpawnLocation(player.getLocation());
@@ -259,6 +274,9 @@ public class JarvisNPC implements Listener {
         npc.spawn(spawnLoc);
         npc.getOrAddTrait(Inventory.class);
         npc.setProtected(true);
+        // v0.8.2: a butler who can swim — Citizens floats him to the surface
+        // when he's in water instead of letting him sink and wedge.
+        npc.data().setPersistent(NPC.Metadata.SWIM, true);
         playerNPCs.put(player.getUniqueId(), npc);
 
         // Navigator defaults: A* pathfinding, generous range, NO teleporting
@@ -283,6 +301,7 @@ public class JarvisNPC implements Listener {
         stopTask(player);
         dropInventoryItems(npc);
         miningStates.remove(playerId);
+        submergedSeconds.remove(npc.getUniqueId());
 
         npc.destroy();
         say(player, "Until next time, sir.");
@@ -300,6 +319,7 @@ public class JarvisNPC implements Listener {
             dropInventoryItems(npc);
         }
         miningStates.remove(playerId);
+        submergedSeconds.remove(npc.getUniqueId());
         npc.destroy();
 
         debug("Cleaned up NPC for disconnected player: " + player.getName());
@@ -325,6 +345,11 @@ public class JarvisNPC implements Listener {
         params.baseSpeed(1.0f);
         params.speedModifier(1.1f);
         params.stuckAction(onStuck != null ? new ButlerStuckAction(onStuck) : NO_TELEPORT);
+        // v0.8.2: let the A* route THROUGH water (swim paths) instead of
+        // treating ponds as walls he then blunders into and wedges under.
+        if (!params.hasExaminer(SwimmingExaminer.class)) {
+            params.examiner(new SwimmingExaminer());
+        }
     }
 
     /** Set a navigation target ONCE. The tick loop watches progress; no per-tick re-targeting. */
@@ -339,6 +364,9 @@ public class JarvisNPC implements Listener {
     }
 
     // ==================== BLOCK BREAKING ====================
+
+    // Active breaker task per NPC (v0.8.0): lets stopTask halt a dig mid-swing.
+    private final Map<UUID, BukkitRunnable> activeBreakers = new ConcurrentHashMap<>();
 
     /**
      * Break a block the way a player would: face it, swing, crack animation,
@@ -372,11 +400,19 @@ public class JarvisNPC implements Listener {
             return;
         }
 
-        new BukkitRunnable() {
+        UUID npcId = npc.getUniqueId();
+        BukkitRunnable breakTask = new BukkitRunnable() {
             int safety = 0;
             @Override
             public void run() {
+                // Superseded or stopped externally (v0.8.0: /jarvis stop mid-dig)
+                if (activeBreakers.get(npcId) != this) {
+                    breaker.reset();
+                    cancel();
+                    return;
+                }
                 if (!npc.isSpawned() || ++safety > 600) { // 30s hard cap per block
+                    activeBreakers.remove(npcId, this);
                     breaker.reset();
                     cancel();
                     onDone.accept(false);
@@ -385,6 +421,7 @@ public class JarvisNPC implements Listener {
                 BehaviorStatus status = breaker.run();
                 if (status == BehaviorStatus.RUNNING) return;
 
+                activeBreakers.remove(npcId, this);
                 breaker.reset();
                 cancel();
 
@@ -395,7 +432,9 @@ public class JarvisNPC implements Listener {
                 }
                 onDone.accept(block.getType() != expected);
             }
-        }.runTaskTimer(plugin, 1L, 1L);
+        };
+        activeBreakers.put(npcId, breakTask);
+        breakTask.runTaskTimer(plugin, 1L, 1L);
     }
 
     // ==================== MINING (state machine) ====================
@@ -447,6 +486,7 @@ public class JarvisNPC implements Listener {
             public void run() {
                 if (!npc.isSpawned() || !player.isOnline()) {
                     cancel();
+                    taskDone(player, this);
                     miningStates.remove(player.getUniqueId());
                     return;
                 }
@@ -460,6 +500,7 @@ public class JarvisNPC implements Listener {
                 // Bags full? Wrap up (and deliver, if a chest is registered).
                 if (!state.breaking && lootSlotsUsed(npc) >= LOOT_CAPACITY - 2) {
                     cancel();
+                    taskDone(player, this);
                     miningStates.remove(player.getUniqueId());
                     say(player, "My bags are full, sir. " + state.oresMined + " ores this trip.");
                     if (depositManager != null && depositManager.hasChest(player)) {
@@ -638,7 +679,6 @@ public class JarvisNPC implements Listener {
             state.advanceTicks++;
             if (!npc.getNavigator().isNavigating() || state.navStuck) {
                 state.navStuck = false;
-                state.navStuck = false;
                 navigateTo(npc, cellCenter, () -> state.navStuck = true);
             }
             if (state.advanceTicks > ADVANCE_NUDGE_TICKS) {
@@ -679,14 +719,19 @@ public class JarvisNPC implements Listener {
         List<Location> toDig = new ArrayList<>();
 
         if (dyT < -1 || (dyT < 0 && ady >= Math.max(adx, adz))) {
-            // Staircase DOWN: step forward and one down
+            // Staircase DOWN: step forward and one down.
+            // v0.8.0: dug 2-high per step (3 blocks in the forward column) so
+            // the player can walk the stairs behind him without breaking blocks.
             cell = new Location(world, fx + hx, fy - 1, fz + hz);
+            toDig.add(new Location(world, fx + hx, fy + 1, fz + hz));   // player head room on the step
             toDig.add(new Location(world, fx + hx, fy, fz + hz));      // head space of the lower step
             toDig.add(cell.clone());                                    // feet of the lower step
         } else if (dyT > 1 || (dyT > 0 && ady >= Math.max(adx, adz))) {
-            // Staircase UP: clear own headroom, step forward and one up
+            // Staircase UP: clear own headroom, step forward and one up.
+            // v0.8.0: same 2-high clearance on the way up.
             cell = new Location(world, fx + hx, fy + 1, fz + hz);
             toDig.add(new Location(world, fx, fy + 2, fz));             // room above own head
+            toDig.add(new Location(world, fx + hx, fy + 3, fz + hz));   // player head room on the step
             toDig.add(new Location(world, fx + hx, fy + 2, fz + hz));   // head space of the upper step
             toDig.add(cell.clone());                                    // feet of the upper step
         } else {
@@ -951,6 +996,15 @@ public class JarvisNPC implements Listener {
     // ==================== ITEM PICKUP ====================
 
     void pickupNearbyItems(NPC npc, Location npcLoc) {
+        pickupNearbyItems(npc, npcLoc, false);
+    }
+
+    /**
+     * Sweep up nearby drops into the bags (slots 1+).
+     * v0.8.0: partial merges no longer destroy the remainder of a stack —
+     * whatever the bags can't absorb stays on the ground.
+     */
+    void pickupNearbyItems(NPC npc, Location npcLoc, boolean includeJunk) {
         if (npc.getEntity() == null) return;
 
         Inventory invTrait = npc.getOrAddTrait(Inventory.class);
@@ -958,30 +1012,36 @@ public class JarvisNPC implements Listener {
         for (Entity entity : npc.getEntity().getNearbyEntities(PICKUP_RADIUS, PICKUP_RADIUS, PICKUP_RADIUS)) {
             if (entity instanceof Item item) {
                 ItemStack stack = item.getItemStack();
-                if (JUNK_DROPS.contains(stack.getType())) continue;
+                if (!includeJunk && JUNK_DROPS.contains(stack.getType())) continue;
 
                 ItemStack[] contents = invTrait.getContents();
-                boolean added = false;
+                int remaining = stack.getAmount();
 
                 // Slot 0 is the NPC's HAND for player NPCs — never store loot there
-                for (int i = 1; i < contents.length; i++) {
-                    if (contents[i] == null) {
-                        contents[i] = stack.clone();
-                        added = true;
-                        break;
-                    } else if (contents[i].isSimilar(stack) &&
-                               contents[i].getAmount() < contents[i].getMaxStackSize()) {
+                for (int i = 1; i < contents.length && remaining > 0; i++) {
+                    if (contents[i] == null || contents[i].getType() == Material.AIR) {
+                        ItemStack placed = stack.clone();
+                        placed.setAmount(remaining);
+                        contents[i] = placed;
+                        remaining = 0;
+                    } else if (contents[i].isSimilar(stack)
+                               && contents[i].getAmount() < contents[i].getMaxStackSize()) {
                         int canAdd = contents[i].getMaxStackSize() - contents[i].getAmount();
-                        int toAdd = Math.min(canAdd, stack.getAmount());
+                        int toAdd = Math.min(canAdd, remaining);
                         contents[i].setAmount(contents[i].getAmount() + toAdd);
-                        added = true;
-                        break;
+                        remaining -= toAdd;
                     }
                 }
 
-                if (added) {
+                if (remaining < stack.getAmount()) {
                     invTrait.setContents(contents);
-                    item.remove();
+                    if (remaining == 0) {
+                        item.remove();                 // fully absorbed
+                    } else {
+                        ItemStack rest = stack.clone(); // bags full mid-stack: leave the rest
+                        rest.setAmount(remaining);
+                        item.setItemStack(rest);
+                    }
                     npcLoc.getWorld().playSound(npcLoc, Sound.ENTITY_ITEM_PICKUP, 0.3f, 1.2f);
                 }
             }
@@ -1005,9 +1065,11 @@ public class JarvisNPC implements Listener {
 
         Defender.Stance stance = parseStance(stanceArg, Defender.Stance.DEFENSIVE);
 
-        // Adjust stance in place if already guarding in the same mode
+        // Adjust stance in place — but only if already in BODYGUARD mode
+        // (v0.8.0: a sentry/patrol Defender must be replaced, or he'd hold
+        // the old post instead of guarding you)
         Defender existing = activeDefenders.get(player.getUniqueId());
-        if (existing != null) {
+        if (existing != null && existing.getMode() == Defender.Mode.BODYGUARD) {
             existing.setStance(stance);
             say(player, switch (stance) {
                 case PASSIVE -> "Standing by, sir. Observing only.";
@@ -1080,7 +1142,13 @@ public class JarvisNPC implements Listener {
         }
     }
 
-    /** Tools that live in Jarvis's kit — never dropped, deposited, or handed over. */
+    /**
+     * Tools that make up Jarvis's kit. v0.8.0: kit tools live ONLY in slot 0
+     * (his hand) — anything in slots 1+ is the player's loot, even if it
+     * happens to be a diamond tool, and is dropped/deposited/handed over
+     * like everything else. (The old filter silently confiscated player
+     * tools that matched the kit.)
+     */
     static final Set<Material> KIT_TOOLS = Set.of(
             Material.DIAMOND_PICKAXE, Material.DIAMOND_SWORD, Material.DIAMOND_AXE,
             Material.DIAMOND_HOE, Material.FISHING_ROD);
@@ -1153,6 +1221,21 @@ public class JarvisNPC implements Listener {
             return;
         }
         Entertainer.dance(this, player, npc);
+    }
+
+    /**
+     * v0.8.0 Lamplighter: spawn-proof the area around the player with a grid
+     * of lights. radius/spacing <= 0 and type == null mean "use config".
+     */
+    public void light(Player player, int radius, String type, int spacing) {
+        NPC npc = getNPC(player);
+        if (npc == null) {
+            say(player, "Summon me first, sir — /jarvis summon.");
+            return;
+        }
+        stopTask(player);
+        miningStates.remove(player.getUniqueId());
+        new Lamplighter(this, player, npc, radius, type, spacing).start();
     }
 
     /** Patrol: walk a persisted waypoint circuit as a sentry. */
@@ -1234,11 +1317,10 @@ public class JarvisNPC implements Listener {
         ItemStack[] contents = invTrait.getContents();
         int dropped = 0;
 
-        // Slot 0 is his hand (the pickaxe) — leave it alone
+        // Slot 0 is his hand (the pickaxe) — leave it alone; slots 1+ are all loot
         for (int i = 1; i < contents.length; i++) {
             ItemStack item = contents[i];
-            if (item != null && item.getType() != Material.AIR
-                    && !KIT_TOOLS.contains(item.getType())) {
+            if (item != null && item.getType() != Material.AIR) {
                 dropLoc.getWorld().dropItemNaturally(dropLoc, item.clone());
                 contents[i] = null;
                 dropped += item.getAmount();
@@ -1275,10 +1357,16 @@ public class JarvisNPC implements Listener {
         say(player, "Right behind you, sir.");
 
         BukkitRunnable task = new BukkitRunnable() {
+            // v0.8.0 stall watchdog: he used to wedge on fences/corners and
+            // simply stand there until the 40-block teleport kicked in.
+            Location lastPos = null;
+            int stallTicks = 0;
+
             @Override
             public void run() {
                 if (!npc.isSpawned() || !player.isOnline()) {
                     cancel();
+                    taskDone(player, this);
                     return;
                 }
 
@@ -1291,10 +1379,35 @@ public class JarvisNPC implements Listener {
                     npc.getNavigator().cancelNavigation();
                     npc.teleport(findSafeSpawnLocation(playerLoc),
                             org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                    lastPos = null;
+                    stallTicks = 0;
                     return;
                 }
 
                 double dist = npcLoc.distance(playerLoc);
+
+                // Watchdog: behind AND not actually moving for ~4s = stuck.
+                // Re-path first; if that fails too, a short catch-up hop.
+                if (dist > 6.0 && lastPos != null
+                        && lastPos.getWorld() == npcLoc.getWorld()
+                        && npcLoc.distanceSquared(lastPos) < 0.09) {
+                    stallTicks++;
+                    if (stallTicks == 2) {
+                        // First remedy: force a fresh path
+                        npc.getNavigator().cancelNavigation();
+                        npc.getNavigator().setTarget(player, false);
+                    } else if (stallTicks >= 4) {
+                        npc.getNavigator().cancelNavigation();
+                        npc.teleport(findSafeSpawnLocation(playerLoc),
+                                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                        sayQuiet(player, "Caught up, sir.");
+                        stallTicks = 0;
+                    }
+                } else {
+                    stallTicks = 0;
+                }
+                lastPos = npcLoc.clone();
+
                 if (dist > 3.0 && !npc.getNavigator().isNavigating()) {
                     // Follow the entity — Citizens tracks a moving target on its own
                     npc.getNavigator().setTarget(player, false);
@@ -1342,6 +1455,18 @@ public class JarvisNPC implements Listener {
         return findSafeSpawnLocation(near);
     }
 
+    /**
+     * v0.8.0: face someone with a LEVEL gaze. Citizens computes the pitch
+     * from the NPC's position to the target, so aiming at a nearby player's
+     * eyes made Jarvis crane his neck at the sky and stay that way (the
+     * summon-then-stare bug). Aiming at his own eye height keeps it level.
+     */
+    void faceLevel(NPC npc, Location target) {
+        Location aim = target.clone();
+        aim.setY(getCurrentLocation(npc).getY() + 1.62); // own eye height = pitch ~0
+        npc.faceLocation(aim);
+    }
+
     /** Loot slots used out of the 35 storage slots (slot 0 is the pickaxe). */
     int lootSlotsUsed(NPC npc) {
         ItemStack[] contents = npc.getOrAddTrait(Inventory.class).getContents();
@@ -1367,9 +1492,22 @@ public class JarvisNPC implements Listener {
         }
 
         NPC npc = getNPC(player);
-        if (npc != null && npc.getNavigator() != null) {
-            npc.getNavigator().cancelNavigation();
+        if (npc != null) {
+            // Halt any block-break in progress (the breaker task self-cancels
+            // and resets the crack animation once its map entry is gone)
+            activeBreakers.remove(npc.getUniqueId());
+            if (npc.getNavigator() != null) {
+                npc.getNavigator().cancelNavigation();
+            }
         }
+    }
+
+    /**
+     * v0.8.0: tasks that finish on their own call this so the register stays
+     * accurate (otherwise idle detection and task counts go stale).
+     */
+    void taskDone(Player player, BukkitRunnable task) {
+        activeTasks.remove(player.getUniqueId(), task);
     }
 
     // ==================== UTILITY METHODS ====================
@@ -1464,10 +1602,10 @@ public class JarvisNPC implements Listener {
         ItemStack[] contents = invTrait.getContents();
 
         // Slot 0 is his pickaxe — everything else gets handed over
+        // (v0.8.0: including player-owned tools; only slot 0 is the kit)
         for (int i = 1; i < contents.length; i++) {
             ItemStack item = contents[i];
-            if (item != null && item.getType() != Material.AIR
-                    && item.getType() != Material.DIAMOND_PICKAXE) {
+            if (item != null && item.getType() != Material.AIR) {
                 dropLoc.getWorld().dropItemNaturally(dropLoc, item.clone());
             }
         }
@@ -1549,7 +1687,7 @@ public class JarvisNPC implements Listener {
                         Long last = lastGreeting.get(entry.getKey());
                         if (last == null || now - last > 300_000) {
                             lastGreeting.put(entry.getKey(), now);
-                            npc.faceLocation(owner.getLocation());
+                            faceLevel(npc, owner.getLocation());
                             if (npc.getEntity() instanceof LivingEntity le) {
                                 le.swingMainHand(); // the wave
                             }
@@ -1558,14 +1696,90 @@ public class JarvisNPC implements Listener {
                         continue;
                     }
 
-                    // Idle glance: unoccupied, owner close — look at what they're doing
+                    // Idle glance: unoccupied, owner close — look their way
+                    // (level gaze — the old eye-height target caused the sky-stare)
                     if (!activeTasks.containsKey(entry.getKey()) && dist <= 10
                             && random.nextInt(4) == 0) {
-                        npc.faceLocation(owner.getEyeLocation());
+                        faceLevel(npc, owner.getLocation());
                     }
                 }
             }
         }.runTaskTimer(plugin, 100L, 100L); // every 5s
+    }
+
+    // ==================== LIFEGUARD (v0.8.2) ====================
+
+    private final Map<UUID, Integer> submergedSeconds = new ConcurrentHashMap<>(); // NPC id -> consecutive seconds
+
+    /**
+     * The self-rescue service. Player NPCs sink, and a tall column of water
+     * (a lake, a flooded ravine) used to become a trap: he'd stand on the
+     * bottom, pathfinding uselessly at the walls. Every second this monitor:
+     * - gives any NPC whose HEAD is underwater an upward push (a swim stroke),
+     *   so he bobs to the surface and normal navigation can carry him out;
+     * - if he's still fully submerged after ~8 straight seconds, declares him
+     *   stuck and lifts him to the nearest dry land (or back to his owner).
+     */
+    private void startLifeguard() {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                for (Map.Entry<UUID, NPC> entry : playerNPCs.entrySet()) {
+                    NPC npc = entry.getValue();
+                    if (!npc.isSpawned() || !(npc.getEntity() instanceof LivingEntity le)) continue;
+
+                    boolean headUnder = le.getEyeLocation().getBlock().getType() == Material.WATER;
+                    UUID npcId = npc.getUniqueId();
+                    if (!headUnder) {
+                        submergedSeconds.remove(npcId);
+                        continue;
+                    }
+
+                    int seconds = submergedSeconds.merge(npcId, 1, Integer::sum);
+
+                    // Swim stroke: push up, keep his horizontal momentum
+                    org.bukkit.util.Vector v = le.getVelocity();
+                    le.setVelocity(new org.bukkit.util.Vector(v.getX(), Math.max(v.getY(), 0.30), v.getZ()));
+
+                    // Still under after 8 straight seconds — he's wedged. Rescue.
+                    if (seconds >= 8) {
+                        submergedSeconds.remove(npcId);
+                        Location land = findLandNear(le.getLocation(), 12);
+                        Player owner = plugin.getServer().getPlayer(entry.getKey());
+                        if (land == null && owner != null && owner.isOnline()
+                                && owner.getWorld() == le.getWorld()) {
+                            land = findSafeSpawnLocation(owner.getLocation());
+                        }
+                        if (land != null) {
+                            npc.getNavigator().cancelNavigation();
+                            npc.teleport(land, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                            if (owner != null && owner.isOnline()) {
+                                sayQuiet(owner, "Out of the drink. Do excuse the dripping, sir.");
+                            }
+                            debug("Lifeguard rescue -> " + formatLoc(land));
+                        }
+                    }
+                }
+            }
+        }.runTaskTimer(plugin, 100L, 20L); // every second
+    }
+
+    /** Nearest DRY standable spot, searched in expanding rings. Null if none in range. */
+    private Location findLandNear(Location center, int radius) {
+        for (int r = 1; r <= radius; r++) {
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue; // ring edge only
+                    for (int dy = 3; dy >= -3; dy--) {
+                        Location check = center.clone().add(dx, dy, dz);
+                        if (isSafeToStand(check)) {
+                            return check;
+                        }
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     // ==================== SUPPLY HANDOFF (v0.6.0) ====================
@@ -1633,7 +1847,6 @@ public class JarvisNPC implements Listener {
         for (int i = 1; i < Math.min(36, contents.length); i++) {
             ItemStack item = contents[i];
             if (item == null || item.getType() == Material.AIR) continue;
-            if (KIT_TOOLS.contains(item.getType())) continue;
             if (!matcher.test(item)) continue;
 
             int give = Math.min(maxAmount, item.getAmount());

@@ -119,6 +119,7 @@ class Farmer {
             public void run() {
                 if (!npc.isSpawned() || !player.isOnline()) {
                     cancel();
+                    host.taskDone(player, this);
                     return;
                 }
                 Location loc = host.getCurrentLocation(npc);
@@ -136,9 +137,14 @@ class Farmer {
         // Bags full? Deliver and continue (tend) or wrap up (sweep)
         if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2 && deposits.hasChest(player)) {
             host.say(player, "Bags full, sir — delivering the produce. Back shortly.");
-            Location resume = loc.getBlock().getLocation();
             self.cancel();
             deposits.startDepositRun(player, npc, deposits.getChest(player), () -> {
+                // v0.8.0: if the chest couldn't take it, don't loop forever
+                if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
+                    host.say(player, "The chest is full and so are my bags, sir. "
+                            + "Farming is paused until there's somewhere to put things.");
+                    return;
+                }
                 host.applyNavigatorDefaults(npc, null);
                 host.equipTool(npc, Material.DIAMOND_HOE);
                 start(); // re-enter: rescan from the field
@@ -150,6 +156,7 @@ class Farmer {
             if (!tendMode) {
                 finish();
                 self.cancel();
+                host.taskDone(player, self);
                 return;
             }
             // Tend mode: idle at the field, rescan every ~15s

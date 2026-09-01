@@ -101,6 +101,22 @@ public class JarvisCommands implements CommandExecutor {
             }
             case "fish" -> plugin.getJarvisNPC().fish(player);
             case "dance" -> plugin.getJarvisNPC().dance(player);
+            case "light" -> {
+                // /jarvis light [radius] [type] [spacing] — e.g. /jarvis light 32 torch 8
+                // Numbers are read in order (radius, then spacing); words pick the type.
+                int radius = -1, spacing = -1;
+                String type = null;
+                for (int i = 1; i < args.length; i++) {
+                    try {
+                        int n = Integer.parseInt(args[i]);
+                        if (radius < 0) radius = n;
+                        else if (spacing < 0) spacing = n;
+                    } catch (NumberFormatException e) {
+                        if (type == null) type = args[i];
+                    }
+                }
+                plugin.getJarvisNPC().light(player, radius, type, spacing);
+            }
             case "patrol" -> plugin.getJarvisNPC().patrol(player, args.length > 1 ? args[1] : null);
             case "chest" -> plugin.getJarvisNPC().getDepositManager().setChest(player);
             case "deposit" -> plugin.getJarvisNPC().getDepositManager().deposit(player);
@@ -340,12 +356,14 @@ public class JarvisCommands implements CommandExecutor {
                 // Unknown subcommand — treat entire input as natural language
                 String nlInput = String.join(" ", args);
                 player.sendMessage(ChatColor.GOLD + "Jarvis: Very good, sir. On it...");
+                // v0.8.0: gather the Bukkit-API context HERE, on the main
+                // thread, before handing off to the async AI call.
+                final String context = "Location: " + player.getWorld().getName()
+                        + ", Health: " + (int) player.getHealth() + "/20"
+                        + ", Jarvis summoned: " + (plugin.getJarvisNPC().getNPC(player) != null);
                 new BukkitRunnable() {
                     @Override public void run() {
                         try {
-                            String context = "Location: " + player.getWorld().getName()
-                                    + ", Health: " + (int) player.getHealth() + "/20"
-                                    + ", Jarvis summoned: " + (plugin.getJarvisNPC().getNPC(player) != null);
                             String resp = plugin.getAIConnector().parseNaturalLanguage(
                                     nlInput, player.getName(), context);
                             JSONObject action = new JSONObject(resp);
@@ -615,6 +633,10 @@ public class JarvisCommands implements CommandExecutor {
                     params != null ? params.optInt("count", 5) : 5);
             case "fish"                     -> plugin.getJarvisNPC().fish(player);
             case "dance"                    -> plugin.getJarvisNPC().dance(player);
+            case "light", "light_area"      -> plugin.getJarvisNPC().light(player,
+                    params != null ? params.optInt("radius", -1) : -1,
+                    params != null ? params.optString("type", null) : null,
+                    params != null ? params.optInt("spacing", -1) : -1);
             case "patrol"                   -> plugin.getJarvisNPC().patrol(player, "start");
             case "stand_down"               -> plugin.getJarvisNPC().guard(player, "passive");
             case "mine", "mining"           -> plugin.getJarvisNPC().mine(player);
@@ -629,7 +651,7 @@ public class JarvisCommands implements CommandExecutor {
 
     private void showHelp(Player player) {
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
-        player.sendMessage(ChatColor.GOLD + "  Jarvis — AI Butler v0.7.0");
+        player.sendMessage(ChatColor.GOLD + "  Jarvis — AI Butler v0.8.2");
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
         
         player.sendMessage(ChatColor.YELLOW + "NPC Commands:");
@@ -649,6 +671,7 @@ public class JarvisCommands implements CommandExecutor {
         player.sendMessage(ChatColor.WHITE + "  /jarvis fish" + ChatColor.GRAY + " - A spot of fishing");
         player.sendMessage(ChatColor.WHITE + "  /jarvis dance" + ChatColor.GRAY + " - The performance");
         player.sendMessage(ChatColor.WHITE + "  /jarvis patrol add|start|clear" + ChatColor.GRAY + " - Guard a waypoint circuit");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis light [radius] [type] [spacing]" + ChatColor.GRAY + " - Spawn-proof the area (torch/end_rod/lantern)");
         player.sendMessage(ChatColor.WHITE + "  /jarvis chest" + ChatColor.GRAY + " - Register the chest you're looking at");
         player.sendMessage(ChatColor.WHITE + "  /jarvis deposit" + ChatColor.GRAY + " - Deliver loot to your chest");
         player.sendMessage(ChatColor.WHITE + "  /jarvis loot" + ChatColor.GRAY + " - Open inventory");
