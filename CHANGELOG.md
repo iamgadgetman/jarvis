@@ -1,5 +1,58 @@
 # Jarvis Changelog
 
+## v0.8.5 (2026-09-01) — three fixes from the first real build
+
+v0.8.4 made the AI builder reachable for the first time. The first live build on
+a real server promptly found three things, all in the path that had never run.
+
+### Fixed
+
+- **A non-block material killed the build mid-placement.** `parseBuildPlan`
+  validated that a material *name* resolved, but not that the material can be
+  placed. A model asking for `minecraft:brick` gets `Material.BRICK` — the clay
+  brick **item**; the block is `BRICKS` — and `setType()` then threw
+  *"Provided material must be a block"*, aborting the build part-way:
+
+  ```
+  java.lang.IllegalArgumentException: Provided material must be a block
+    at BuildingAssistant.java:315   block.setType(placement.material)
+  ```
+
+  Non-block materials are now substituted with the configured fallback. The
+  check runs in `executeBuild` rather than in the parse, deliberately:
+  `Material#isBlock` resolves through Paper's registry, and the parse runs off
+  the main thread.
+
+  The old fallback only caught *unknown* names, which is why `minecraft:planks`
+  and `minecraft:wood` — not real material names — degraded to dirt harmlessly
+  while `brick` slipped through and crashed.
+
+- **A build that crashed could still be recorded as a success.** The placement
+  loop is now wrapped, and a build that throws goes to a new `failBuild` path
+  that records the plan as `FAILED` instead of reaching `completeBuild`. A plan
+  that crashes the placer is the clearest possible example of a plan that does
+  not work; recording it as a success would teach the memory to produce more
+  like it. Whatever was placed before the failure stays undoable.
+
+- **Undo demoted the newest success, not the build actually reverted.**
+  `markRecentBuildUndone` searched by player and recency, so undoing an older
+  build out of order demoted the wrong row. Undo entries now carry the
+  experience they produced — by reference, so the id filled in by the async
+  insert is visible — and `markUndone(experience)` targets it directly. The
+  by-player search remains as a fallback for entries with no id yet.
+
+### Field notes
+
+Verified on a live 26.2 server: situation capture works
+(`{"dimension":"NORMAL","biome":"desert","y":67,"underground":false}`),
+embeddings store 768 dimensions, hand-built shapes are correctly excluded from
+memory, and undo demotes only AI builds.
+
+Local-model build quality is another matter: `qwen2.5:7b` returned 13 blocks for
+"a small oak cottage" and 4 for "a long wall". That is what
+`memory.min-successes-for-reduced-mode-builds` (default 20) exists to gate —
+lowering it trades build quality for getting the memory started.
+
 ## v0.8.4 (2026-08-31) — `/jarvis build` actually builds
 
 Field report: *"I tried `/jarvis build oak cottage` and it built the same fan

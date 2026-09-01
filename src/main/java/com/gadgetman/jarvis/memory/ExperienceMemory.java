@@ -140,6 +140,55 @@ public class ExperienceMemory {
     }
 
     /**
+     * Demote one specific experience to UNDONE.
+     *
+     * Preferred over {@link #markRecentBuildUndone}: it targets the build that
+     * was actually reverted rather than whichever success is newest, so undoing
+     * an older build out of order demotes the right row. Falls back to the
+     * by-player search when the id has not landed yet (the insert is async).
+     */
+    public void markUndone(BuildExperience experience) {
+        if (!enabled || experience == null) return;
+
+        long id = experience.getId();
+        if (id <= 0) {
+            markRecentBuildUndone(experience.getPlayerId());
+            return;
+        }
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (updateOutcome(id, BuildExperience.Outcome.UNDONE)) {
+                    experience.setOutcome(BuildExperience.Outcome.UNDONE);
+                    cache.removeIf(e -> e.getId() == id);
+                    if (experience.getPlayerId() != null) {
+                        long[] recent = lastSuccess.get(experience.getPlayerId());
+                        if (recent != null && recent[0] == id) {
+                            lastSuccess.remove(experience.getPlayerId());
+                        }
+                    }
+                    plugin.getLogger().fine("Experience " + id + " demoted to UNDONE.");
+                }
+            }
+        }.runTaskAsynchronously(plugin);
+    }
+
+    private boolean updateOutcome(long id, BuildExperience.Outcome outcome) {
+        try (Connection c = plugin.getDatabaseManager().getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "UPDATE build_experiences SET outcome = ?, outcome_signal = ? WHERE id = ?")) {
+            ps.setString(1, outcome.name());
+            ps.setDouble(2, outcome.signal());
+            ps.setLong(3, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException ex) {
+            plugin.getLogger().warning("Failed to update experience outcome: " + ex.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Demote this player's most recent success to UNDONE, if it happened inside
      * the negative-signal window. A player reverting a build minutes after it
      * finished is the clearest "that plan was wrong" signal available without

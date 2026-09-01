@@ -104,10 +104,18 @@ public class BuildingAssistant {
     private static class UndoEntry {
         final List<BuildAction> actions;
         final boolean aiGenerated;
+        /**
+         * The experience this batch produced, so undo demotes the row it
+         * actually reverted. Held by reference: the id is filled in by the
+         * async insert, and this sees it. Null for hand-built shapes and for
+         * builds that never got recorded.
+         */
+        final BuildExperience experience;
 
-        UndoEntry(List<BuildAction> actions, boolean aiGenerated) {
+        UndoEntry(List<BuildAction> actions, boolean aiGenerated, BuildExperience experience) {
             this.actions = actions;
             this.aiGenerated = aiGenerated;
+            this.experience = experience;
         }
     }
 
@@ -241,6 +249,10 @@ public class BuildingAssistant {
                 String materialStr = block.optString("material", "minecraft:stone")
                     .replace("minecraft:", "").toUpperCase();
 
+                // Only the NAME is validated here. Whether the material is
+                // actually placeable is checked in executeBuild: Material#isBlock
+                // resolves through the registry, and this runs off the main
+                // thread.
                 Material material;
                 try {
                     material = Material.valueOf(materialStr);
@@ -271,6 +283,29 @@ public class BuildingAssistant {
      */
     private BuildState executeBuild(Player player, String description,
                                     List<BlockPlacement> placements, boolean aiGenerated) {
+        // Drop anything that cannot actually be placed, on the main thread.
+        //
+        // Material.valueOf() only proves the name exists. A model asking for
+        // "minecraft:brick" resolves to Material.BRICK — the ITEM; the block is
+        // BRICKS — and setType() then throws "Provided material must be a block"
+        // part-way through, killing the build. Material#isBlock resolves through
+        // the registry, so this has to happen here rather than in the async
+        // parse.
+        Material fallback = Material.valueOf(fallbackMaterial);
+        int repaired = 0;
+        for (BlockPlacement bp : placements) {
+            if (!bp.material.isBlock()) {
+                plugin.getLogger().fine("Plan asked for non-block material "
+                        + bp.material + "; substituting " + fallback);
+                bp.material = fallback;
+                repaired++;
+            }
+        }
+        if (repaired > 0) {
+            plugin.getLogger().info("Build plan had " + repaired
+                    + " non-block material(s); substituted " + fallback + ".");
+        }
+
         BuildState state = new BuildState(player.getUniqueId(), description);
         state.queue.addAll(placements);
         state.totalBlocks = placements.size();
@@ -294,6 +329,7 @@ public class BuildingAssistant {
 
                 // Place blocks this tick
                 int placed = 0;
+                try {
                 while (!state.queue.isEmpty() && placed < blocksPerTick) {
                     BlockPlacement placement = state.queue.poll();
                     if (placement == null) break;
@@ -317,6 +353,13 @@ public class BuildingAssistant {
                     placed++;
                 }
 
+                } catch (Exception e) {
+                    // Never let a bad plan be remembered as a plan that worked.
+                    failBuild(player, state, e.getMessage());
+                    cancel();
+                    return;
+                }
+
                 // Progress update
                 if (state.placedBlocks % progressUpdateInterval == 0 && state.placedBlocks > 0) {
                     int percent = (state.placedBlocks * 100) / state.totalBlocks;
@@ -336,12 +379,65 @@ public class BuildingAssistant {
     }
 
     /**
+     * Abort a build that threw part-way through.
+     *
+     * Deliberately records FAILED rather than letting the plan reach
+     * completeBuild: a plan that crashes the placer is the clearest possible
+     * example of a plan that does not work, and recording it as a success would
+     * teach the memory to produce more like it.
+     */
+    private void failBuild(Player player, BuildState state, String reason) {
+        activeBuilds.remove(player.getUniqueId());
+        if (state.task != null) state.task.cancel();
+
+        plugin.getLogger().warning("Build failed after " + state.placedBlocks
+                + "/" + state.totalBlocks + " blocks: " + reason);
+        player.sendMessage(ChatColor.RED + "Jarvis: The design proved unbuildable, sir — "
+                + "I stopped after " + state.placedBlocks + " blocks.");
+        if (reason != null) player.sendMessage(ChatColor.GRAY + "  (" + reason + ")");
+
+        // Whatever did get placed still needs to be revertible.
+        if (enableUndo && !state.actions.isEmpty()) {
+            Deque<UndoEntry> history = undoHistory.computeIfAbsent(
+                player.getUniqueId(), k -> new ArrayDeque<>());
+            history.addLast(new UndoEntry(state.actions, state.aiGenerated, null));
+        }
+
+        if (state.aiGenerated && plugin.getExperienceMemory() != null) {
+            plugin.getExperienceMemory().record(BuildExperience.now(
+                player.getUniqueId(),
+                ExperienceMemory.TASK_BUILD_FREEFORM,
+                state.description,
+                state.situationJson,
+                state.planJson,
+                BuildExperience.Outcome.FAILED,
+                state.provider));
+        }
+    }
+
+    /**
      * Complete a build
      */
     private void completeBuild(Player player, BuildState state) {
         activeBuilds.remove(player.getUniqueId());
 
-        // Save to undo history
+        // Remember the plan that worked. The label is free: a build that ran to
+        // completion and was left alone is a success by definition.
+        BuildExperience experience = null;
+        if (state.aiGenerated && plugin.getExperienceMemory() != null) {
+            experience = BuildExperience.now(
+                player.getUniqueId(),
+                ExperienceMemory.TASK_BUILD_FREEFORM,
+                state.description,
+                state.situationJson,
+                state.planJson,
+                BuildExperience.Outcome.SUCCESS,
+                state.provider);
+            plugin.getExperienceMemory().record(experience);
+        }
+
+        // Save to undo history, carrying the experience so a later undo demotes
+        // this build rather than whichever success happens to be newest.
         if (enableUndo && !state.actions.isEmpty()) {
             Deque<UndoEntry> history = undoHistory.computeIfAbsent(
                 player.getUniqueId(), k -> new ArrayDeque<>());
@@ -350,20 +446,7 @@ public class BuildingAssistant {
             while (history.size() >= 10) {
                 history.removeFirst();
             }
-            history.addLast(new UndoEntry(state.actions, state.aiGenerated));
-        }
-
-        // Remember the plan that worked. The label is free: a build that ran to
-        // completion and was left alone is a success by definition.
-        if (state.aiGenerated && plugin.getExperienceMemory() != null) {
-            plugin.getExperienceMemory().record(BuildExperience.now(
-                player.getUniqueId(),
-                ExperienceMemory.TASK_BUILD_FREEFORM,
-                state.description,
-                state.situationJson,
-                state.planJson,
-                BuildExperience.Outcome.SUCCESS,
-                state.provider));
+            history.addLast(new UndoEntry(state.actions, state.aiGenerated, experience));
         }
 
         // Log to database
@@ -428,7 +511,7 @@ public class BuildingAssistant {
         if (enableUndo && !state.actions.isEmpty()) {
             Deque<UndoEntry> history = undoHistory.computeIfAbsent(
                 player.getUniqueId(), k -> new ArrayDeque<>());
-            history.addLast(new UndoEntry(state.actions, state.aiGenerated));
+            history.addLast(new UndoEntry(state.actions, state.aiGenerated, null));
         }
 
         if (playerInitiated && state.aiGenerated && plugin.getExperienceMemory() != null) {
@@ -481,7 +564,11 @@ public class BuildingAssistant {
         // "that plan was wrong" signal there is. Hand-built shapes share this
         // undo stack, so the flag matters.
         if (entry.aiGenerated && undone > 0 && plugin.getExperienceMemory() != null) {
-            plugin.getExperienceMemory().markRecentBuildUndone(player.getUniqueId());
+            if (entry.experience != null) {
+                plugin.getExperienceMemory().markUndone(entry.experience);
+            } else {
+                plugin.getExperienceMemory().markRecentBuildUndone(player.getUniqueId());
+            }
         }
     }
 
