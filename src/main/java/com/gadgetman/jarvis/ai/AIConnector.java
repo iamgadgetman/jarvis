@@ -321,8 +321,25 @@ public class AIConnector {
                     "Freeform build planning is disabled in Ollama-only mode. Use schematics instead.");
         }
 
-        String prompt = "Output ONLY valid JSON, no extra text. Generate a Minecraft structure as JSON: " +
-                "{\"dimensions\":{\"width\":int,\"height\":int,\"length\":int},\"blocks\":[{\"x\":int,\"y\":int,\"z\":int,\"material\":\"minecraft:stone\"},...]} for: " + description;
+        // The old one-line prompt ("Generate a Minecraft structure as JSON for: X")
+        // produced flat, corner-only shapes: a local 7B model returned a 14x8x3
+        // "cottage" against a declared 7x8x7, and a watchtower request ran past
+        // 180s without finishing. Spelling out what a structure IS fixes both --
+        // measured on qwen2.5:7b, declared dimensions then matched actual extents
+        // exactly (8x9x8, 8x13x8) and the watchtower came back in 61s.
+        String prompt = "Output ONLY valid JSON, no extra text. Design a complete Minecraft "
+                + "structure as JSON: {\"dimensions\":{\"width\":int,\"height\":int,\"length\":int},"
+                + "\"blocks\":[{\"x\":int,\"y\":int,\"z\":int,\"material\":\"minecraft:stone\"},...]}\n"
+                + "Requirements:\n"
+                + "- Unless the request clearly asks for something smaller, make it at least 8 blocks "
+                + "wide, 8 blocks long and 4 blocks tall.\n"
+                + "- List EVERY block explicitly. A wall is every block in it, not just its corners.\n"
+                + "- If it is a building, include four walls, a floor, a roof, a door gap and at least "
+                + "two windows.\n"
+                + "- Use only real placeable block ids (minecraft:oak_planks, minecraft:bricks, "
+                + "minecraft:glass). Never item ids such as minecraft:brick.\n"
+                + "- Coordinates are relative to 0,0,0 and y increases upward.\n"
+                + "Structure to design: " + description;
 
         if (memoryExamples != null && !memoryExamples.isBlank()) {
             prompt = memoryExamples + "\n" + prompt;

@@ -1,5 +1,52 @@
 # Jarvis Changelog
 
+## v0.8.6 (2026-09-01) — build plans that are actually buildings
+
+The plumbing was right by 0.8.5; the output was not. A local 7B returned 13
+blocks for "a small oak cottage". That turned out to be the prompt, not the
+model.
+
+### Changed
+
+- **The build-planning prompt now describes what a structure is.** It was one
+  line — *"Generate a Minecraft structure as JSON for: X"* — which produced flat,
+  corner-only shapes: a 14x8x3 "cottage" against a declared 7x8x7, and a
+  watchtower request that ran past 180s without finishing. It now specifies a
+  minimum footprint, that **every** block must be listed rather than just
+  corners, that a building needs walls/floor/roof/door/windows, that only real
+  placeable block ids are acceptable (never item ids such as `minecraft:brick`),
+  and that coordinates are relative with y upward.
+
+  Measured on `qwen2.5:7b`, the same model already in use:
+
+  | request | before | after |
+  |---|---|---|
+  | a small oak cottage | 14x8x3, declared 7x8x7 | 7x4x7, declared 8x4x8 |
+  | a stone watchtower | timed out past 180s | 4x13x6 in 92s |
+  | a storage shed | — | 8x5x5, 168 blocks |
+
+  Declared dimensions and actual extents now agree, which they never did before.
+  A request that genuinely asks for something small ("a tiny 3x3 pillar") is
+  still allowed to be small.
+
+- **`ai.ollama.timeout-seconds` default raised from 60 to 240.** Local build
+  planning measured 47-163s depending on how much the model decides to build, so
+  the old default was cutting plans off mid-generation. Build calls are async and
+  the player is told to wait.
+
+- **`ai.ollama.keep-alive` default raised from 5m to 30m.** Reloading a 7B costs
+  ~13s, so a short window meant the first build after any idle period stalled.
+
+### Not changed, deliberately
+
+`qwen2.5-coder:7b` was evaluated as a possible upgrade and is **worse** for this
+task — it produced flat single-plane walls in three of four runs (spans of
+`3x8x1`, `10x7x1`, `9x12x1`) and in one run emitted 16 item-only materials. It is
+a code model; spatial layout is not the same skill. Stay on `qwen2.5:7b`.
+
+Note that a 7B still varies run to run, including the occasional item id. That is
+what 0.8.5's `isBlock()` substitution is for.
+
 ## v0.8.5 (2026-09-01) — three fixes from the first real build
 
 v0.8.4 made the AI builder reachable for the first time. The first live build on

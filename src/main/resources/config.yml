@@ -77,8 +77,14 @@ ai:
   ollama:
     endpoint: "http://localhost:11434"
     model: mistral  # Options: mistral, llama3.2, neural-chat, etc.
-    keep-alive: "5m"  # Keep model loaded in memory
-    timeout-seconds: 60  # Local models may be slower
+    keep-alive: "30m" # Keep model loaded in memory. Reloading a 7B model costs
+                      # ~13s, so a short window means the first build after any
+                      # idle period stalls.
+    # Build planning on a local 7B measured 47-163s depending on how much the
+    # model decides to build. The old 60s default cut plans off mid-generation.
+    # Build calls are async and the player is told to wait, so a generous
+    # ceiling costs nothing except in the genuinely-hung case.
+    timeout-seconds: 240
 
 # ========== EXPERIENCE MEMORY ==========
 # Jarvis remembers how past builds turned out and shows the AI the plans that
