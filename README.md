@@ -1,6 +1,6 @@
 # Jarvis — AI-Powered Minecraft Butler Plugin
 
-**Version 0.7.0** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
+**Version 0.8.0** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
 
 Jarvis is a feature-rich AI companion plugin that spawns a Citizens NPC who follows you, fights for you, mines for you, builds for you — and understands natural language via OpenAI, Claude, Grok, Gemini, or a local Ollama model.
 
@@ -72,6 +72,21 @@ Supports multiple AI backends with **tiered, Ollama-first routing** (new in 0.3.
 ### Building Assistant
 - Describe a structure in natural language; Jarvis plans and builds it block by block
 - Paste WorldEdit schematics by name (fuzzy matching — no need for exact filenames)
+
+### Experience Memory (new in 0.8.0)
+Jarvis remembers how past builds turned out and shows the AI the plans that
+worked for similar requests.
+- Labels come from what you do, not a rating prompt: a build you let finish is a
+  success, one you cancel or undo is not
+- Retrieval matches your wording first, then re-ranks on where you are — the
+  same request underground and on the surface pulls up different examples
+- Embeddings run on your Ollama box and never fall back to a paid provider, so
+  the feature costs nothing to run. If Ollama is down it falls back to keyword
+  matching rather than failing
+- **Ollama-only servers:** freeform build planning is normally disabled, but it
+  unlocks itself once 20 successful builds are remembered — the examples carry
+  the load the block was there to avoid
+- `/jarvis debug` shows how many builds are stored and whether the unlock has fired
 
 ### Inventory Management
 - Jarvis has his own NPC inventory
@@ -168,6 +183,9 @@ can I get some food please
 - [Citizens 2 on spigot](https://www.spigotmc.org/resources/citizens.13811/) or [Citizens 2 Jenkins build](https://ci.citizensnpcs.co/job/citizens2/)
 - [WorldEdit](https://enginehub.org/worldedit/) (optional — for schematic pasting)
 - At least one AI API key (or local Ollama)
+- An embedding model for experience memory (optional but recommended):
+  `ollama pull nomic-embed-text` — without it memory still works, but on the
+  weaker keyword-matching path
 
 ### Steps
 1. Download **`Jarvis-<version>.jar`** from the
@@ -197,20 +215,31 @@ Then just talk to him in chat: `jarvis start mining`.
 # plugins/Jarvis/config.yml
 
 ai:
-  provider: openai          # openai | claude | grok | gemini | ollama
-  openai-api-key: "sk-..."
-  claude-api-key: "sk-ant-..."
-  grok-api-key: "..."
-  gemini-api-key: "..."
-  ollama-url: "http://localhost:11434"
-  ollama-model: "llama3"
-  model: "gpt-4o"           # model name for primary provider
-  fallback-order:           # auto-failover order
-    - openai
+  provider: auto            # openai | claude | grok | gemini | ollama | auto
+  provider-priority:        # auto-failover order; ollama first is free and local
+    - ollama
     - claude
+    - openai
     - grok
     - gemini
-    - ollama
+  claude:
+    api-key: ""
+    model: claude-haiku-4-5
+  openai:
+    api-key: ""
+    model: gpt-5.6-terra
+  ollama:
+    endpoint: "http://localhost:11434"
+    model: mistral
+
+memory:                     # experience memory (0.8.0)
+  enabled: true
+  embedding-model: "nomic-embed-text"   # ollama pull nomic-embed-text
+  max-examples-in-prompt: 3
+  # Ollama-only servers unlock freeform builds after this many successes
+  min-successes-for-reduced-mode-builds: 20
+  # Undoing a build within this window marks its plan as failed
+  negative-signal-window-minutes: 10
 
 npc:
   name: "Jarvis"
