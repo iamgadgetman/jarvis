@@ -177,6 +177,82 @@ public class SchematicManager {
      * Find a schematic by fuzzy name matching.
      * Tries: exact → contains → word-by-word → suggestion fallback.
      */
+    /**
+     * Score how well a schematic name answers a query, 0 (no match) to 100.
+     *
+     * Replaces the old "return the first map entry whose key contains the
+     * query" walk, which was order-dependent: a short query like "a" is a
+     * substring of nearly every name, so it returned whatever HashMap
+     * iteration happened to yield first — the same schematic every time,
+     * regardless of what was asked for.
+     */
+    static int scoreMatch(String key, String query) {
+        if (key == null || query == null) return 0;
+        if (key.equals(query)) return 100;
+
+        Set<String> qt = meaningfulWords(query);
+        Set<String> kt = meaningfulWords(key);
+        if (qt.isEmpty() || kt.isEmpty()) return 0;
+
+        int overlap = 0;
+        for (String q : qt) {
+            for (String k : kt) {
+                if (k.equals(q) || k.contains(q) || q.contains(k)) { overlap++; break; }
+            }
+        }
+        if (overlap == 0) return 0;
+
+        // Fraction of what was ASKED for that the name accounts for. Keying on
+        // the query, not the name, stops a long name matching everything.
+        int score = (int) Math.round(90.0 * overlap / qt.size());
+        if (key.contains(query)) score += 9;
+        return Math.min(99, score);
+    }
+
+    private static Set<String> meaningfulWords(String text) {
+        Set<String> out = new java.util.HashSet<>();
+        for (String w : text.toLowerCase().split("[^a-z0-9]+")) {
+            if (w.length() >= 3 && !SCHEMATIC_STOPWORDS.contains(w)) out.add(w);
+        }
+        return out;
+    }
+
+    private static final Set<String> SCHEMATIC_STOPWORDS = Set.of(
+            "the", "and", "for", "with", "build", "make", "create", "please", "one");
+
+    /** Best-scoring schematic for a query, or null if nothing scores at all. */
+    private Map.Entry<String, SchematicInfo> bestMatch(String query) {
+        String lower = query.toLowerCase().trim();
+        Map.Entry<String, SchematicInfo> best = null;
+        int bestScore = 0;
+        for (Map.Entry<String, SchematicInfo> e : availableSchematics.entrySet()) {
+            int sc = scoreMatch(e.getKey(), lower);
+            // Tie-break toward the shorter (more specific) name.
+            if (sc > bestScore || (sc == bestScore && sc > 0 && best != null
+                    && e.getKey().length() < best.getKey().length())) {
+                bestScore = sc;
+                best = e;
+            }
+        }
+        return bestScore > 0 ? best : null;
+    }
+
+    /** Score of the best match, 0 if none. */
+    public int bestMatchScore(String query) {
+        String lower = query.toLowerCase().trim();
+        int bestScore = 0;
+        for (String key : availableSchematics.keySet()) {
+            bestScore = Math.max(bestScore, scoreMatch(key, lower));
+        }
+        return bestScore;
+    }
+
+    /** Name of the best match, or null. */
+    public String bestMatchName(String query) {
+        Map.Entry<String, SchematicInfo> e = bestMatch(query);
+        return e == null ? null : e.getKey();
+    }
+
     private SchematicInfo findSchematic(String name) {
         String lower = name.toLowerCase().trim();
 
@@ -189,30 +265,9 @@ public class SchematicManager {
         info = availableSchematics.get(lower);
         if (info != null) return info;
 
-        // 2. Schematic name contains the query  (e.g. "castle" matches "gadgets_castle_v2")
-        for (Map.Entry<String, SchematicInfo> entry : availableSchematics.entrySet()) {
-            if (entry.getKey().contains(lower)) return entry.getValue();
-        }
-
-        // 3. Query contains the schematic name  (e.g. "build a castle" matches "castle")
-        for (Map.Entry<String, SchematicInfo> entry : availableSchematics.entrySet()) {
-            if (lower.contains(entry.getKey())) return entry.getValue();
-        }
-
-        // 4. Word-by-word — any meaningful word in query matches any word in schematic name
-        String[] queryWords = lower.split("[_\\s]+");
-        for (Map.Entry<String, SchematicInfo> entry : availableSchematics.entrySet()) {
-            String[] nameWords = entry.getKey().split("[_\\s]+");
-            for (String qw : queryWords) {
-                if (qw.length() < 3) continue;
-                for (String nw : nameWords) {
-                    if (nw.length() < 3) continue;
-                    if (nw.contains(qw) || qw.contains(nw)) return entry.getValue();
-                }
-            }
-        }
-
-        return null;
+        // 2. Best scoring match, rather than the first arbitrary containment hit
+        Map.Entry<String, SchematicInfo> best = bestMatch(lower);
+        return best == null ? null : best.getValue();
     }
 
     /**

@@ -94,6 +94,12 @@ memory:
   # Pull it first:  ollama pull nomic-embed-text
   # Uses ai.ollama.endpoint above -- one box, one setting.
   embedding-model: "nomic-embed-text"
+
+  # Where the embedding model lives. Blank = use ai.ollama.endpoint above.
+  # Set this only if your embedder is on a different host than your chat model
+  # -- the embedder is 274 MB and need not sit on the box running a large chat
+  # model.
+  embedding-endpoint: ""
   # Measured against a reference Ollama box: 14.3s to load the model cold, 16ms once
   # warm. Keeping it resident avoids that stall on the first build after an idle
   # period; the model is only 274 MB.

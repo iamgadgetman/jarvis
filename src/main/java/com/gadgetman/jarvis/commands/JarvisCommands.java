@@ -3,6 +3,7 @@ package com.gadgetman.jarvis.commands;
 import com.gadgetman.jarvis.ConfirmationManager;
 import com.gadgetman.jarvis.JarvisActionExecutor;
 import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.building.BuildingAssistant;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -17,6 +18,13 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.json.JSONObject;
 
 public class JarvisCommands implements CommandExecutor {
+
+    /** Library match at or above this score answers the request directly. */
+    private static final int SCHEMATIC_MATCH_THRESHOLD = 50;
+
+    private static final java.util.Set<String> SIMPLE_SHAPES =
+            java.util.Set.of("wall", "floor", "pillar", "cube");
+
 
     private final Jarvis plugin;
 
@@ -143,24 +151,83 @@ public class JarvisCommands implements CommandExecutor {
                 }
 
                 if (args.length < 2) {
-                    player.sendMessage(ChatColor.RED + "Usage: /jarvis build <schematic_name>");
-                    player.sendMessage(ChatColor.GRAY + "Example: /jarvis build castle");
+                    player.sendMessage(ChatColor.RED + "Usage: /jarvis build <what you want>");
+                    player.sendMessage(ChatColor.GRAY + "Examples: /jarvis build castle");
+                    player.sendMessage(ChatColor.GRAY + "          /jarvis build a small oak cottage");
+                    player.sendMessage(ChatColor.GRAY + "          /jarvis build undo  |  /jarvis build cancel");
                     player.sendMessage(ChatColor.GRAY + "Use /jarvis schematic list to see available schematics");
                     return true;
                 }
 
-                String schematicName = args[1];
+                String first = args[1].toLowerCase();
+                boolean isBuild = sub.equals("build");
+                BuildingAssistant assistant = plugin.getBuildingAssistant();
 
-                // Check for rotation argument
+                // /jarvis build undo | cancel — previously unreachable, even though
+                // a finished build tells the player to run "/jarvis build undo".
+                if (isBuild && (first.equals("undo") || first.equals("cancel"))) {
+                    if (assistant == null) {
+                        player.sendMessage(ChatColor.RED + "Building assistant not available");
+                        return true;
+                    }
+                    if (first.equals("undo")) assistant.undoLastBuild(player);
+                    else assistant.cancelBuild(player);
+                    return true;
+                }
+
+                // /jarvis build wall|floor|pillar|cube [size] — simple shapes, no AI
+                if (isBuild && SIMPLE_SHAPES.contains(first)) {
+                    if (assistant == null) {
+                        player.sendMessage(ChatColor.RED + "Building assistant not available");
+                        return true;
+                    }
+                    int size = 5;
+                    if (args.length > 2) {
+                        try { size = Integer.parseInt(args[2]); } catch (NumberFormatException ignored) {}
+                    }
+                    assistant.buildSimpleStructure(player, first, Math.max(1, Math.min(64, size)));
+                    return true;
+                }
+
+                // Explicit rotation form: /jarvis paste <name> rotate <degrees>
                 if (args.length >= 4 && args[2].equalsIgnoreCase("rotate")) {
                     try {
                         int degrees = Integer.parseInt(args[3]);
-                        plugin.getSchematicManager().rotateAndPaste(player, schematicName, degrees);
+                        plugin.getSchematicManager().rotateAndPaste(player, args[1], degrees);
                     } catch (NumberFormatException e) {
                         player.sendMessage(ChatColor.RED + "Invalid rotation. Use: 90, 180, or 270");
                     }
+                    return true;
+                }
+
+                // Everything after the subcommand is the request. Reading only
+                // args[1] meant "/jarvis build a panic shelter" looked up a
+                // schematic called "a".
+                String request = String.join(" ",
+                        java.util.Arrays.copyOfRange(args, 1, args.length));
+
+                // /jarvis paste stays literal: name in, schematic out, no AI.
+                if (!isBuild) {
+                    plugin.getSchematicManager().pasteSchematic(player, request);
+                    return true;
+                }
+
+                // /jarvis build: use the library when it genuinely matches the
+                // request, otherwise hand off to the AI builder. Without this
+                // fall-through the AI builder was reachable only from chat.
+                String match = plugin.getSchematicManager().bestMatchName(request);
+                int score = plugin.getSchematicManager().bestMatchScore(request);
+
+                if (match != null && score >= SCHEMATIC_MATCH_THRESHOLD) {
+                    player.sendMessage(ChatColor.AQUA + "Jarvis: " + ChatColor.WHITE
+                            + "The '" + match + "' schematic should serve nicely, sir.");
+                    plugin.getSchematicManager().pasteSchematic(player, match);
+                } else if (assistant != null) {
+                    player.sendMessage(ChatColor.GRAY + "Jarvis: Nothing suitable in the library"
+                            + " — improvising a design, sir.");
+                    assistant.startBuild(player, request);
                 } else {
-                    plugin.getSchematicManager().pasteSchematic(player, schematicName);
+                    player.sendMessage(ChatColor.RED + "Building assistant not available");
                 }
             }
 

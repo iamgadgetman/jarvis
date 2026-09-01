@@ -1,5 +1,62 @@
 # Jarvis Changelog
 
+## v0.8.4 (2026-08-31) — `/jarvis build` actually builds
+
+Field report: *"I tried `/jarvis build oak cottage` and it built the same fan
+each time, no matter what I asked for, even when I asked for a panic shelter."*
+
+Four separate defects, and the AI builder was reachable from almost nowhere.
+
+### Fixed
+
+- **`/jarvis build` read only the first word.** It took `args[1]` and discarded
+  the rest, so `/jarvis build a panic shelter` searched the library for a
+  schematic called **`"a"`** — and `/jarvis build oak cottage` searched for
+  `"oak"`.
+
+- **Schematic matching returned the first arbitrary hit, not the best one.**
+  `findSchematic` walked the map and returned the first entry whose name merely
+  *contained* the query. A one-character query is a substring of nearly every
+  name, so it returned whatever `HashMap` iteration yielded first — the same
+  schematic every time, whatever was asked for. That is the fan.
+
+  Matching is now scored: exact name wins outright, otherwise the score is the
+  fraction of the *requested* words the name accounts for, with ties broken
+  toward the shorter, more specific name. Keying on the request rather than the
+  name stops a long schematic name matching everything.
+
+- **`/jarvis build` never reached the AI builder.** It was a schematic-paste
+  command; `BuildingAssistant.startBuild` was called from exactly one place,
+  `ChatListener`, and only when the library returned no match at all. With a
+  library of any size that branch effectively never fired, which made experience
+  memory unreachable in practice. `/jarvis build <description>` now uses the
+  library when it genuinely matches (score ≥ 50) and hands off to the AI builder
+  when it does not.
+
+- **`/jarvis build undo` did not exist**, even though a finished build prints
+  "Use /jarvis build undo to revert". `undoLastBuild` and `buildSimpleStructure`
+  had **no callers at all**. Now wired: `/jarvis build undo`, `/jarvis build
+  cancel`, and `/jarvis build wall|floor|pillar|cube [size]`. Undo being
+  unreachable also meant the memory's undo signal could never fire.
+
+`/jarvis paste <name>` stays literal — name in, schematic out, no AI — so exact
+schematic use is unchanged, as is `/jarvis paste <name> rotate <degrees>`.
+
+### Added
+
+- **`memory.embedding-endpoint`** — the embedding model no longer has to live on
+  the same host as the chat model. Blank keeps the old behaviour of following
+  `ai.ollama.endpoint`. A 274 MB embedder need not be pulled onto the box
+  running a large chat model.
+
+### Verified against a real library
+
+Scored against the 68 schematics on a live server: `castle`, `mansion`,
+`redstone door` and `fan` still resolve exactly as before; `a panic shelter` now
+finds the `panic shelter` schematic it was always meant to (score 90, previously
+unreachable); and `oak cottage` and `somewhere to store my loot` score 0 and go
+to the AI builder.
+
 ## v0.8.3 (2026-08-31) — the Lamplighter merge
 
 Merges a line of work that was built outside this repository on 2026-08-29 and

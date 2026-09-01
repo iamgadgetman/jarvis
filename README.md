@@ -1,6 +1,6 @@
 # Jarvis — AI-Powered Minecraft Butler Plugin
 
-**Version 0.8.3** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
+**Version 0.8.4** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
 
 Jarvis is a feature-rich AI companion plugin that spawns a Citizens NPC who follows you, fights for you, mines for you, builds for you — and understands natural language via OpenAI, Claude, Grok, Gemini, or a local Ollama model.
 
@@ -155,7 +155,11 @@ Players can ask Jarvis for items ("Jarvis, can I get 64 iron ingots?"). Jarvis q
 | `/jarvis feed` | Feed yourself | `jarvis.use` |
 | `/jarvis time <day\|night>` | Set time | `jarvis.admin` |
 | `/jarvis weather <clear\|rain\|storm>` | Set weather | `jarvis.admin` |
-| `/jarvis build <description>` | Start a build | `jarvis.use` |
+| `/jarvis build <description>` | Build it — pastes a matching schematic, or has the AI design one | `jarvis.use` |
+| `/jarvis build undo` | Revert the last build | `jarvis.use` |
+| `/jarvis build cancel` | Stop the build in progress | `jarvis.use` |
+| `/jarvis build wall\|floor\|pillar\|cube [size]` | Simple shapes, no AI | `jarvis.use` |
+| `/jarvis paste <name>` | Paste a schematic by name, no AI | `jarvis.use` |
 | `/jarvis requests` | List pending player requests | `jarvis.admin` |
 | `/jarvis approve <id>` | Approve a player item request | `jarvis.admin` |
 | `/jarvis deny <id>` | Deny a player item request | `jarvis.admin` |

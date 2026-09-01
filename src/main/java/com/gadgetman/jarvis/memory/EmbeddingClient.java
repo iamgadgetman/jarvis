@@ -48,8 +48,14 @@ public class EmbeddingClient {
     }
 
     public void reloadConfig() {
-        // Reuse the AI connector's Ollama endpoint — one box, one setting.
-        this.endpoint = plugin.getConfig().getString("ai.ollama.endpoint", "http://localhost:11434");
+        // Defaults to the AI connector's Ollama endpoint — one box, one setting.
+        // Overridable because the chat model and the embedding model need not
+        // live on the same host: a big chat model on one box and a 274 MB
+        // embedder on another is a reasonable split, and without this the
+        // embedder had to be pulled onto whichever host served chat.
+        String shared = plugin.getConfig().getString("ai.ollama.endpoint", "http://localhost:11434");
+        String override = plugin.getConfig().getString("memory.embedding-endpoint", "");
+        this.endpoint = (override == null || override.isBlank()) ? shared : override;
         this.model = plugin.getConfig().getString("memory.embedding-model", "nomic-embed-text");
         // Measured against a reference Ollama box: 14.3 s cold, 16 ms warm. Without a
         // keep_alive the model unloads on Ollama's default timer and the first
