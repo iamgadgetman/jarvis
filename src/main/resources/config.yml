@@ -94,7 +94,11 @@ memory:
   # Pull it first:  ollama pull nomic-embed-text
   # Uses ai.ollama.endpoint above -- one box, one setting.
   embedding-model: "nomic-embed-text"
-  embedding-timeout-seconds: 20
+  # Measured against a reference Ollama box: 14.3s to load the model cold, 16ms once
+  # warm. Keeping it resident avoids that stall on the first build after an idle
+  # period; the model is only 274 MB.
+  embedding-keep-alive: "30m"
+  embedding-timeout-seconds: 30
 
   # How many past plans to show the model.
   max-examples-in-prompt: 3
@@ -107,9 +111,21 @@ memory:
   # Undoing a build within this many minutes marks its plan as failed.
   negative-signal-window-minutes: 10
 
-  # Combined score floor (0-1) for an example to be worth injecting, and how
-  # much of a stored plan to show before truncating.
-  min-relevance: 0.25
+  # How similar a past request must be before its plan is worth showing.
+  #
+  # This is checked against the REQUEST-similarity score on its own, before the
+  # situation match is blended in -- the situation term is a big constant offset
+  # and would rescue irrelevant matches if the floor were applied after it.
+  #
+  # Scales differ per path, so there are two. Measured on nomic-embed-text
+  # against "build me a cozy oak cottage": a near-identical request scores 0.86,
+  # a loosely related one 0.58, and completely unrelated text still scores
+  # 0.34-0.42 -- the model has a high baseline, so this floor must sit well above
+  # zero to mean anything.
+  min-text-relevance: 0.55      # embedding path (cosine)
+  min-keyword-relevance: 0.15   # fallback path when Ollama is down (Jaccard)
+
+  # How much of a stored plan to show before truncating.
   max-plan-chars: 1200
 
 # ========== MINING CONFIGURATION ==========

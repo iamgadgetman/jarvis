@@ -55,7 +55,8 @@ public class ExperienceMemory {
     private int maxExamples = 3;
     private int minSuccessesForReducedMode = 20;
     private int negativeWindowMinutes = 10;
-    private double minRelevance = 0.25;
+    private double minTextRelevance = 0.55;
+    private double minKeywordRelevance = 0.15;
     private int maxPlanChars = 1200;
 
     public ExperienceMemory(Jarvis plugin) {
@@ -77,7 +78,8 @@ public class ExperienceMemory {
                 plugin.getConfig().getInt("memory.min-successes-for-reduced-mode-builds", 20);
         this.negativeWindowMinutes =
                 plugin.getConfig().getInt("memory.negative-signal-window-minutes", 10);
-        this.minRelevance = plugin.getConfig().getDouble("memory.min-relevance", 0.25);
+        this.minTextRelevance = plugin.getConfig().getDouble("memory.min-text-relevance", 0.55);
+        this.minKeywordRelevance = plugin.getConfig().getDouble("memory.min-keyword-relevance", 0.15);
         this.maxPlanChars = plugin.getConfig().getInt("memory.max-plan-chars", 1200);
     }
 
@@ -182,18 +184,29 @@ public class ExperienceMemory {
         List<Scored> scored = new ArrayList<>();
         for (BuildExperience e : cache) {
             double textScore;
+            double gate;
+
             if (queryVec != null && e.hasEmbedding()) {
                 textScore = EmbeddingClient.cosine(queryVec, e.getEmbedding());
+                gate = minTextRelevance;
             } else {
-                // Ollama down, or a row predating embeddings.
+                // Ollama down, or a row predating embeddings. Jaccard is on a
+                // completely different scale, so it needs its own threshold.
                 textScore = jaccard(queryTokens != null ? queryTokens : tokenize(requestText),
                         tokenize(e.getRequestText()));
+                gate = minKeywordRelevance;
             }
+
+            // Gate on the text score ALONE, before blending. The situation term
+            // is a large constant offset — with a same-situation match it adds a
+            // flat 0.3 — so a floor applied to the blended score cannot reject
+            // anything. Measured on nomic-embed-text, unrelated text scores
+            // 0.34-0.42 and a genuinely similar request scores ~0.86, so the
+            // discrimination has to happen here or not at all.
+            if (textScore < gate) continue;
+
             double situationScore = SituationSnapshot.similarity(situationJson, e.getSituation());
-            double total = (textScore * 0.7) + (situationScore * 0.3);
-            if (total >= minRelevance) {
-                scored.add(new Scored(e, total));
-            }
+            scored.add(new Scored(e, (textScore * 0.7) + (situationScore * 0.3)));
         }
 
         if (scored.isEmpty()) return "";

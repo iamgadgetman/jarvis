@@ -1,5 +1,43 @@
 # Jarvis Changelog
 
+## v0.8.0.1 (2026-08-31)
+
+Two defects in v0.8.0's experience memory, both found by running it against a
+real Ollama box rather than a mock. Neither breaks anything outright — memory
+records and retrieves either way — but the first made retrieval close to noise,
+which is the whole point of the feature.
+
+### Fixed
+
+- **The relevance floor could never reject anything.** `nomic-embed-text` has a
+  high similarity baseline: measured against *"build me a cozy oak cottage"*, a
+  near-identical request scores 0.86, but completely unrelated text
+  (*"kubernetes ingress controller config"*) still scores 0.34, and *"a nether
+  portal out of obsidian"* scores 0.35. The floor was 0.25 applied to
+  `0.7 x text + 0.3 x situation`, so for any same-situation match the minimum
+  possible score was 0.54 — double the floor. Every stored build passed, and a
+  strip-mine plan could be injected as a "similar example" for a cottage.
+
+  The floor is now checked against the **request-similarity score alone, before
+  the situation match is blended in**, because the situation term is a large
+  constant offset that would otherwise rescue irrelevant matches. The two
+  retrieval paths are on different scales and now have their own thresholds:
+  `memory.min-text-relevance` (0.55, cosine) and `memory.min-keyword-relevance`
+  (0.15, Jaccard fallback). `memory.min-relevance` is gone.
+
+- **Cold-start stall on the first build after an idle period.** The embedding
+  client never sent `keep_alive`, so Ollama unloaded the model on its default
+  timer. Measured: **14.3 s cold, 16 ms warm** — the 20 s read timeout survived
+  it only barely. It now sends `memory.embedding-keep-alive` (default `30m`;
+  the model is 274 MB, so keeping it resident is cheap) and the default timeout
+  is raised to 30 s for headroom.
+
+### Setup
+
+Unchanged from v0.8.0 — `ollama pull nomic-embed-text`. If you wrote a
+`memory:` block by hand for v0.8.0, replace `min-relevance` with the two new
+keys; the built-in defaults apply if you do nothing.
+
 ## v0.8.0 (2026-08-31) — Experience Memory
 
 Jarvis now remembers how builds turned out and shows the AI the plans that

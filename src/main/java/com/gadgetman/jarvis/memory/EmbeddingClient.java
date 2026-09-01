@@ -32,7 +32,8 @@ public class EmbeddingClient {
 
     private String endpoint = "http://localhost:11434";
     private String model = "nomic-embed-text";
-    private int timeoutSeconds = 20;
+    private String keepAlive = "30m";
+    private int timeoutSeconds = 30;
 
     private static final int FAILURES_BEFORE_COOLDOWN = 3;
     private static final long COOLDOWN_MS = 300_000L; // 5 minutes
@@ -50,7 +51,12 @@ public class EmbeddingClient {
         // Reuse the AI connector's Ollama endpoint — one box, one setting.
         this.endpoint = plugin.getConfig().getString("ai.ollama.endpoint", "http://localhost:11434");
         this.model = plugin.getConfig().getString("memory.embedding-model", "nomic-embed-text");
-        this.timeoutSeconds = plugin.getConfig().getInt("memory.embedding-timeout-seconds", 20);
+        // Measured against a reference Ollama box: 14.3 s cold, 16 ms warm. Without a
+        // keep_alive the model unloads on Ollama's default timer and the first
+        // build after any idle period eats the full reload. The model is 274 MB,
+        // so keeping it resident is cheap.
+        this.keepAlive = plugin.getConfig().getString("memory.embedding-keep-alive", "30m");
+        this.timeoutSeconds = plugin.getConfig().getInt("memory.embedding-timeout-seconds", 30);
         this.consecutiveFailures = 0;
         this.cooldownUntil = 0;
     }
@@ -89,7 +95,8 @@ public class EmbeddingClient {
 
             JSONObject payload = new JSONObject()
                     .put("model", model)
-                    .put("prompt", text);
+                    .put("prompt", text)
+                    .put("keep_alive", keepAlive);
 
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
