@@ -95,6 +95,36 @@ public class DatabaseManager {
             ps.executeUpdate();
         }
 
+        // Experience memory (v0.9.0) — see com.gadgetman.jarvis.memory
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS build_experiences (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "player_id VARCHAR(36), " +
+                "task_type VARCHAR(50) NOT NULL, " +
+                "request_text TEXT NOT NULL, " +
+                "situation TEXT, " +
+                "plan TEXT, " +
+                "outcome VARCHAR(20) NOT NULL, " +
+                "outcome_signal REAL NOT NULL, " +
+                "provider VARCHAR(50), " +
+                "embedding TEXT, " +
+                "created_at BIGINT NOT NULL)")) {
+            ps.executeUpdate();
+        }
+
+        // Retrieval reads positives newest-first and undo looks up one player's
+        // recent successes; both are covered here.
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE INDEX IF NOT EXISTS idx_experiences_outcome " +
+                "ON build_experiences (outcome, created_at)")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE INDEX IF NOT EXISTS idx_experiences_player " +
+                "ON build_experiences (player_id, created_at)")) {
+            ps.executeUpdate();
+        }
+
         plugin.getLogger().info("Database tables initialized successfully");
     }
 

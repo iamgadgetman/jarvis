@@ -1,5 +1,60 @@
 # Jarvis Changelog
 
+## v0.8.0 (2026-08-31) — Experience Memory
+
+Jarvis now remembers how builds turned out and shows the AI the plans that
+worked for similar requests. The labels are free: a build you let finish is a
+success, one you cancel or undo inside the negative-signal window is not — no
+rating prompt, no extra command.
+
+### Added
+
+- **`com.gadgetman.jarvis.memory`** — `BuildExperience`, `SituationSnapshot`,
+  `EmbeddingClient`, `ExperienceMemory`, and a `build_experiences` table.
+- **Two-stage retrieval.** Requests are matched on embedding similarity, then
+  re-ranked on how much the world matched. "Build me a house" underground at
+  y=12 and the same words on a plains surface retrieve different examples.
+- **Embeddings are local-only.** `EmbeddingClient` talks to Ollama directly and
+  deliberately does *not* route through `AIConnector`, so a call made on every
+  build request can never fail over to a paid provider. If Ollama is down,
+  retrieval degrades to keyword matching instead of failing. Requires
+  `ollama pull nomic-embed-text`.
+- **Reduced-mode unlock.** Ollama-only servers have freeform build planning
+  disabled. Once `memory.min-successes-for-reduced-mode-builds` successes are
+  stored (20 by default), the retrieved examples carry enough of the load and
+  it turns on by itself.
+- **`/jarvis debug`** now reports the stored success count, whether the
+  reduced-mode unlock has fired, and embedding health.
+- A `memory:` section in `config.yml`. As always, an existing
+  `plugins/Jarvis/config.yml` is **not** overwritten — add the block by hand or
+  the built-in defaults apply.
+
+### Fixed
+
+- **The plugin reported the wrong version.** `Jarvis.VERSION` was a hardcoded
+  constant left at `0.7.0`, so every v0.7.x release announced itself as v0.7.0
+  in the server log and in `/jarvis debug`. It now reads from plugin.yml, which
+  already takes its value from the pom, so it cannot drift again.
+- **`databases.yml` was never written to the data folder.** `onEnable` called
+  only `saveDefaultConfig()`, which covers `config.yml` alone, so on a fresh
+  install `DatabaseManager` loaded a file that did not exist, registered no data
+  source, and every `getConnection()` threw *"No data source found with name:
+  sqlite"*. Servers that have been running a while are unaffected — the file is
+  already sitting in their data folder — so this bites new installs only, which
+  is why it went unnoticed. It would have taken experience memory down with it.
+  `onEnable` now calls `saveResource("databases.yml", false)`.
+
+### Notes on what is *not* recorded
+
+Two cases look like negative signals but are not, and recording them would
+poison retrieval:
+
+- A build aborted because the NPC despawned or the player logged out. That is
+  infrastructure, not a bad plan, so it is dropped rather than stored.
+- Undoing a hand-built shape. `/jarvis build wall|floor|pillar|cube` shares the
+  undo stack with AI builds, so undo entries are tagged and only AI-planned
+  builds can ever be recorded or demoted.
+
 ## v0.7.4 (2026-08-27)
 
 ### Changed

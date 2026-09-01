@@ -13,6 +13,7 @@ import com.gadgetman.jarvis.commands.JarvisCommands;
 import com.gadgetman.jarvis.ui.UIManager;
 import com.gadgetman.jarvis.DatabaseManager;
 import com.gadgetman.jarvis.building.BuildingAssistant;
+import com.gadgetman.jarvis.memory.ExperienceMemory;
 import com.gadgetman.jarvis.schematics.SchematicManager;
 import com.gadgetman.jarvis.listeners.ChatListener;
 import com.gadgetman.jarvis.steward.DutyScheduler;
@@ -29,7 +30,12 @@ import org.bukkit.command.CommandSender;
  */
 public class Jarvis extends JavaPlugin {
 
-    private static final String VERSION = "0.7.0";
+    /**
+     * Read from plugin.yml, which takes its value from the pom. A hardcoded
+     * constant here drifted: every v0.7.x release reported itself as v0.7.0
+     * in the log and in /jarvis debug.
+     */
+    private String version = "unknown";
 
     private AIConnector aiConnector;
     private JarvisNPC jarvisNPC;
@@ -42,17 +48,27 @@ public class Jarvis extends JavaPlugin {
     private PlayerRequestManager playerRequestManager;
     private DutyScheduler dutyScheduler;
     private MorningReport morningReport;
+    private ExperienceMemory experienceMemory;
 
     @Override
     public void onEnable() {
-        getLogger().info("Jarvis AI Companion v" + VERSION + " enabling...");
+        version = getPluginMeta().getVersion();
+
+        getLogger().info("Jarvis AI Companion v" + version + " enabling...");
 
         saveDefaultConfig();
 
         aiConnector = new AIConnector(this);
 
+        // databases.yml is not covered by saveDefaultConfig(), which only writes
+        // config.yml. Without this the data folder has no databases.yml, no data
+        // source is ever registered, and every getConnection() throws.
+        saveResource("databases.yml", false);
+
         databaseManager = new DatabaseManager(this);
         databaseManager.initializeDatabaseConnections();
+
+        experienceMemory = new ExperienceMemory(this);
 
         if (getServer().getPluginManager().getPlugin("Citizens") != null) {
             jarvisNPC = new JarvisNPC(this);
@@ -99,7 +115,7 @@ public class Jarvis extends JavaPlugin {
             }
         }, 1200L, 1200L); // every 60 seconds
 
-        getLogger().info("Jarvis AI Companion v" + VERSION + " enabled successfully!");
+        getLogger().info("Jarvis AI Companion v" + version + " enabled successfully!");
         getLogger().info("NPC, mining, building, and steward systems are at your service.");
     }
 
@@ -111,7 +127,7 @@ public class Jarvis extends JavaPlugin {
         if (databaseManager != null) {
             databaseManager.closeDatabases();
         }
-        getLogger().info("Jarvis AI Companion v" + VERSION + " disabled.");
+        getLogger().info("Jarvis AI Companion v" + version + " disabled.");
     }
 
     public void reload() {
@@ -119,7 +135,10 @@ public class Jarvis extends JavaPlugin {
         if (aiConnector != null) {
             aiConnector.reloadConfig();
         }
-        getLogger().info("Jarvis v" + VERSION + " reloaded!");
+        if (experienceMemory != null) {
+            experienceMemory.reload();
+        }
+        getLogger().info("Jarvis v" + version + " reloaded!");
     }
 
     // ========== GETTERS ==========
@@ -164,15 +183,19 @@ public class Jarvis extends JavaPlugin {
         return morningReport;
     }
 
+    public ExperienceMemory getExperienceMemory() {
+        return experienceMemory;
+    }
+
     public String getVersion() {
-        return VERSION;
+        return version;
     }
 
     // ========== DEBUG ==========
 
     public void printDebug(CommandSender requester) {
-        getLogger().info("==== Jarvis Debug Info v" + VERSION + " ====");
-        requester.sendMessage("==== Jarvis Debug Info v" + VERSION + " ====");
+        getLogger().info("==== Jarvis Debug Info v" + version + " ====");
+        requester.sendMessage("==== Jarvis Debug Info v" + version + " ====");
 
         if (aiConnector == null) {
             getLogger().warning("AI connector not initialized");
@@ -221,6 +244,19 @@ public class Jarvis extends JavaPlugin {
         } else {
             getLogger().info("Database connections initialized");
             requester.sendMessage("§aDatabase connections initialized");
+        }
+
+        if (experienceMemory == null || !experienceMemory.isEnabled()) {
+            requester.sendMessage("§7Experience memory: disabled");
+        } else {
+            int successes = experienceMemory.getSuccessCount();
+            boolean unlocked = experienceMemory.isReducedModeBuildUnlocked();
+            requester.sendMessage("§aExperience memory: §f" + successes + " successful builds"
+                    + (unlocked ? " §2(reduced-mode freeform builds unlocked)"
+                                : " §7(reduced-mode freeform builds still locked)"));
+            var embedder = experienceMemory.getEmbeddingClient();
+            requester.sendMessage("§7  embeddings: " + embedder.getModel() + " — "
+                    + (embedder.isAvailable() ? "§aok" : "§ccooling down: " + embedder.getLastError()));
         }
 
         // Show systems status

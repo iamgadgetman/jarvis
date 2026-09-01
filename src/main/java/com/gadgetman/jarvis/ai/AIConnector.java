@@ -299,15 +299,35 @@ public class AIConnector {
     // ==================== PUBLIC API METHODS ====================
 
     /**
-     * Query AI for a Minecraft build plan
+     * Query AI for a Minecraft build plan, with no retrieved examples.
      */
     public String queryBuildPlan(String description) throws Exception {
-        if (reducedMode) {
+        return queryBuildPlan(description, "", false);
+    }
+
+    /**
+     * Query AI for a Minecraft build plan, optionally primed with plans that
+     * worked for similar requests on this server.
+     *
+     * @param memoryExamples            formatted few-shot examples, or blank for none
+     * @param memoryUnlocksReducedMode  when true, freeform planning is allowed even
+     *                                  in Ollama-only mode — enough retrieved examples
+     *                                  close the gap that the block was there to avoid
+     */
+    public String queryBuildPlan(String description, String memoryExamples,
+                                 boolean memoryUnlocksReducedMode) throws Exception {
+        if (reducedMode && !memoryUnlocksReducedMode) {
             throw new ReducedModeException(
                     "Freeform build planning is disabled in Ollama-only mode. Use schematics instead.");
         }
+
         String prompt = "Output ONLY valid JSON, no extra text. Generate a Minecraft structure as JSON: " +
                 "{\"dimensions\":{\"width\":int,\"height\":int,\"length\":int},\"blocks\":[{\"x\":int,\"y\":int,\"z\":int,\"material\":\"minecraft:stone\"},...]} for: " + description;
+
+        if (memoryExamples != null && !memoryExamples.isBlank()) {
+            prompt = memoryExamples + "\n" + prompt;
+        }
+
         return sendTiered(Tier.HEAVY, prompt, "You are a Minecraft build planner. Output ONLY valid JSON.", true);
     }
 

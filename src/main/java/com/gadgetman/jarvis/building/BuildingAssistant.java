@@ -1,6 +1,9 @@
 package com.gadgetman.jarvis.building;
 
 import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.memory.BuildExperience;
+import com.gadgetman.jarvis.memory.ExperienceMemory;
+import com.gadgetman.jarvis.memory.SituationSnapshot;
 import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -25,7 +28,7 @@ public class BuildingAssistant {
 
     private final Jarvis plugin;
     private final Map<UUID, BuildState> activeBuilds = new ConcurrentHashMap<>();
-    private final Map<UUID, Deque<List<BuildAction>>> undoHistory = new ConcurrentHashMap<>();
+    private final Map<UUID, Deque<UndoEntry>> undoHistory = new ConcurrentHashMap<>();
 
     // Configuration
     private int blocksPerTick = 50;
@@ -65,6 +68,14 @@ public class BuildingAssistant {
         long startTime;
         List<BuildAction> actions; // For undo
 
+        // Experience memory. Only AI-planned builds are remembered — a hand-built
+        // wall says nothing about plan quality, so it must never be recorded or
+        // demoted alongside one.
+        boolean aiGenerated;
+        String situationJson;
+        String planJson;
+        String provider;
+
         BuildState(UUID playerId, String description) {
             this.playerId = playerId;
             this.description = description;
@@ -83,6 +94,20 @@ public class BuildingAssistant {
         BlockPlacement(Location location, Material material) {
             this.location = location;
             this.material = material;
+        }
+    }
+
+    /**
+     * One undoable batch. Carries whether the build was AI-planned so undoing a
+     * hand-built shape cannot demote an unrelated AI build in memory.
+     */
+    private static class UndoEntry {
+        final List<BuildAction> actions;
+        final boolean aiGenerated;
+
+        UndoEntry(List<BuildAction> actions, boolean aiGenerated) {
+            this.actions = actions;
+            this.aiGenerated = aiGenerated;
         }
     }
 
@@ -120,15 +145,38 @@ public class BuildingAssistant {
         player.sendMessage(ChatColor.YELLOW + "Jarvis is planning your build: " + ChatColor.WHITE + description);
         player.sendMessage(ChatColor.GRAY + "Please wait while the AI generates the structure...");
 
+        // Capture the world state before going async — every getter in
+        // SituationSnapshot touches the world and is main-thread only.
+        final Location origin = player.getLocation();
+        final String situationJson = SituationSnapshot.capture(origin);
+        final ExperienceMemory memory = plugin.getExperienceMemory();
+
         // Generate build asynchronously
         new BukkitRunnable() {
             @Override
             public void run() {
                 try {
-                    String response = plugin.getAIConnector().queryBuildPlan(description);
-                    List<BlockPlacement> placements = parseBuildPlan(response, player.getLocation());
+                    String examples = "";
+                    boolean unlocksReducedMode = false;
+                    if (memory != null && memory.isEnabled()) {
+                        examples = memory.retrieveExamples(description, situationJson);
+                        unlocksReducedMode = memory.isReducedModeBuildUnlocked();
+                    }
+
+                    String response = plugin.getAIConnector()
+                            .queryBuildPlan(description, examples, unlocksReducedMode);
+                    final String provider = plugin.getAIConnector().getProvider();
+                    List<BlockPlacement> placements = parseBuildPlan(response, origin);
 
                     if (placements == null || placements.isEmpty()) {
+                        // A plan that produced no blocks is a bad plan, not a bad
+                        // connection — worth remembering as such.
+                        if (memory != null) {
+                            memory.record(BuildExperience.now(player.getUniqueId(),
+                                    ExperienceMemory.TASK_BUILD_FREEFORM, description,
+                                    situationJson, response,
+                                    BuildExperience.Outcome.FAILED, provider));
+                        }
                         new BukkitRunnable() {
                             @Override
                             public void run() {
@@ -147,7 +195,12 @@ public class BuildingAssistant {
                     new BukkitRunnable() {
                         @Override
                         public void run() {
-                            executeBuild(player, description, finalPlacements);
+                            BuildState state = executeBuild(player, description, finalPlacements, true);
+                            if (state != null) {
+                                state.situationJson = situationJson;
+                                state.planJson = response;
+                                state.provider = provider;
+                            }
                         }
                     }.runTask(plugin);
 
@@ -211,12 +264,17 @@ public class BuildingAssistant {
     }
 
     /**
-     * Execute the build with the NPC
+     * Execute the build with the NPC.
+     *
+     * @param aiGenerated whether an AI planned this — only those are remembered
+     * @return the live build state, so the caller can attach memory context
      */
-    private void executeBuild(Player player, String description, List<BlockPlacement> placements) {
+    private BuildState executeBuild(Player player, String description,
+                                    List<BlockPlacement> placements, boolean aiGenerated) {
         BuildState state = new BuildState(player.getUniqueId(), description);
         state.queue.addAll(placements);
         state.totalBlocks = placements.size();
+        state.aiGenerated = aiGenerated;
 
         activeBuilds.put(player.getUniqueId(), state);
 
@@ -229,7 +287,7 @@ public class BuildingAssistant {
             public void run() {
                 NPC npc = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
                 if (npc == null || !npc.isSpawned() || !player.isOnline()) {
-                    cancelBuildInternal(player, "NPC or player unavailable");
+                    cancelBuildInternal(player, "NPC or player unavailable", false);
                     cancel();
                     return;
                 }
@@ -273,6 +331,8 @@ public class BuildingAssistant {
                 }
             }
         }.runTaskTimer(plugin, 1L, 1L);
+
+        return state;
     }
 
     /**
@@ -283,14 +343,27 @@ public class BuildingAssistant {
 
         // Save to undo history
         if (enableUndo && !state.actions.isEmpty()) {
-            Deque<List<BuildAction>> history = undoHistory.computeIfAbsent(
+            Deque<UndoEntry> history = undoHistory.computeIfAbsent(
                 player.getUniqueId(), k -> new ArrayDeque<>());
 
             // Limit undo history size
             while (history.size() >= 10) {
                 history.removeFirst();
             }
-            history.addLast(state.actions);
+            history.addLast(new UndoEntry(state.actions, state.aiGenerated));
+        }
+
+        // Remember the plan that worked. The label is free: a build that ran to
+        // completion and was left alone is a success by definition.
+        if (state.aiGenerated && plugin.getExperienceMemory() != null) {
+            plugin.getExperienceMemory().record(BuildExperience.now(
+                player.getUniqueId(),
+                ExperienceMemory.TASK_BUILD_FREEFORM,
+                state.description,
+                state.situationJson,
+                state.planJson,
+                BuildExperience.Outcome.SUCCESS,
+                state.provider));
         }
 
         // Log to database
@@ -328,10 +401,16 @@ public class BuildingAssistant {
      * Cancel an active build
      */
     public void cancelBuild(Player player) {
-        cancelBuildInternal(player, "Cancelled by player");
+        cancelBuildInternal(player, "Cancelled by player", true);
     }
 
-    private void cancelBuildInternal(Player player, String reason) {
+    /**
+     * @param playerInitiated true only when the player chose to stop the build.
+     *        A build aborted because the NPC despawned or the player logged out
+     *        says nothing about the quality of the plan, so it must not be
+     *        recorded as a negative signal.
+     */
+    private void cancelBuildInternal(Player player, String reason, boolean playerInitiated) {
         BuildState state = activeBuilds.remove(player.getUniqueId());
         if (state == null) {
             player.sendMessage(ChatColor.GRAY + "No active build to cancel.");
@@ -347,9 +426,20 @@ public class BuildingAssistant {
 
         // Still allow undo of partial build
         if (enableUndo && !state.actions.isEmpty()) {
-            Deque<List<BuildAction>> history = undoHistory.computeIfAbsent(
+            Deque<UndoEntry> history = undoHistory.computeIfAbsent(
                 player.getUniqueId(), k -> new ArrayDeque<>());
-            history.addLast(state.actions);
+            history.addLast(new UndoEntry(state.actions, state.aiGenerated));
+        }
+
+        if (playerInitiated && state.aiGenerated && plugin.getExperienceMemory() != null) {
+            plugin.getExperienceMemory().record(BuildExperience.now(
+                player.getUniqueId(),
+                ExperienceMemory.TASK_BUILD_FREEFORM,
+                state.description,
+                state.situationJson,
+                state.planJson,
+                BuildExperience.Outcome.CANCELLED,
+                state.provider));
         }
     }
 
@@ -362,13 +452,14 @@ public class BuildingAssistant {
             return;
         }
 
-        Deque<List<BuildAction>> history = undoHistory.get(player.getUniqueId());
+        Deque<UndoEntry> history = undoHistory.get(player.getUniqueId());
         if (history == null || history.isEmpty()) {
             player.sendMessage(ChatColor.GRAY + "No builds to undo.");
             return;
         }
 
-        List<BuildAction> actions = history.removeLast();
+        UndoEntry entry = history.removeLast();
+        List<BuildAction> actions = entry.actions;
         player.sendMessage(ChatColor.YELLOW + "Undoing " + actions.size() + " blocks...");
 
         // Undo in reverse order
@@ -385,6 +476,13 @@ public class BuildingAssistant {
         }
 
         player.sendMessage(ChatColor.GREEN + "Reverted " + undone + " blocks.");
+
+        // Reverting an AI build shortly after it finished is the clearest
+        // "that plan was wrong" signal there is. Hand-built shapes share this
+        // undo stack, so the flag matters.
+        if (entry.aiGenerated && undone > 0 && plugin.getExperienceMemory() != null) {
+            plugin.getExperienceMemory().markRecentBuildUndone(player.getUniqueId());
+        }
     }
 
     /**
@@ -458,7 +556,7 @@ public class BuildingAssistant {
         }
 
         if (!placements.isEmpty()) {
-            executeBuild(player, type + " (" + size + "x)", placements);
+            executeBuild(player, type + " (" + size + "x)", placements, false);
         }
     }
 

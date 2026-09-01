@@ -80,6 +80,38 @@ ai:
     keep-alive: "5m"  # Keep model loaded in memory
     timeout-seconds: 60  # Local models may be slower
 
+# ========== EXPERIENCE MEMORY ==========
+# Jarvis remembers how past builds turned out and shows the AI the plans that
+# worked for similar requests. Labels come from behaviour, not a rating prompt:
+# a build you let finish is a success, one you cancel or undo is not.
+#
+# Embeddings are computed by Ollama and never fall back to a paid provider, so
+# this feature costs nothing to run. If Ollama is down, retrieval degrades to
+# keyword matching rather than failing.
+memory:
+  enabled: true
+
+  # Pull it first:  ollama pull nomic-embed-text
+  # Uses ai.ollama.endpoint above -- one box, one setting.
+  embedding-model: "nomic-embed-text"
+  embedding-timeout-seconds: 20
+
+  # How many past plans to show the model.
+  max-examples-in-prompt: 3
+
+  # Ollama-only servers have freeform build planning disabled by default.
+  # Once this many successful builds are remembered, the retrieved examples
+  # carry enough of the load to unlock it. Set very high to keep it off.
+  min-successes-for-reduced-mode-builds: 20
+
+  # Undoing a build within this many minutes marks its plan as failed.
+  negative-signal-window-minutes: 10
+
+  # Combined score floor (0-1) for an example to be worth injecting, and how
+  # much of a stored plan to show before truncating.
+  min-relevance: 0.25
+  max-plan-chars: 1200
+
 # ========== MINING CONFIGURATION ==========
 mining:
   # Search and movement
