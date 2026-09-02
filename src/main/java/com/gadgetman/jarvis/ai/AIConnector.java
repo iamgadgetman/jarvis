@@ -71,6 +71,14 @@ public class AIConnector {
     private boolean reducedMode = false;
     private boolean ollamaConfigured = false;
     private int lightTimeoutSeconds = 5;
+    /**
+     * Heavy-tier read timeout. Deliberately far above the per-provider default:
+     * a build script is thousands of output tokens and takes tens of seconds,
+     * where the 30s that suits chat cuts it off mid-generation. Measured live on
+     * Jarvis01 -- a cottage script at claude-sonnet-5 timed out at 30s and the
+     * same prompt offline returned 7,074 output tokens.
+     */
+    private int heavyTimeoutSeconds = 240;
     private final Map<Tier, String> lastServed = new ConcurrentHashMap<>();
 
     // Rate limiting
@@ -203,6 +211,7 @@ public class AIConnector {
         // ---- v0.3.0 tiered routing ----
         this.ollamaConfigured = ai.isConfigurationSection("ollama");
         this.lightTimeoutSeconds = ai.getInt("light-timeout-seconds", 5);
+        this.heavyTimeoutSeconds = ai.getInt("heavy-timeout-seconds", 240);
 
         List<String> cloud = new ArrayList<>();
         for (String p : providerPriority) {
@@ -639,7 +648,7 @@ public class AIConnector {
             throw new RuntimeException("No AI providers configured. Set an API key or an ollama section in config.yml.");
         }
 
-        int timeoutOverride = tier == Tier.LIGHT ? lightTimeoutSeconds : 0;
+        int timeoutOverride = tier == Tier.LIGHT ? lightTimeoutSeconds : heavyTimeoutSeconds;
         Exception lastException = null;
         List<String> triedProviders = new ArrayList<>();
 

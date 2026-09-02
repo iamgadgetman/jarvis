@@ -14,6 +14,10 @@ ai:
   #   light: [ollama, claude]
   #   heavy: [claude, ollama]
   light-timeout-seconds: 5       # Light-tier timeout; slow local box -> fall through
+  # Heavy-tier timeout, for build planning. Much larger than the per-provider
+  # default on purpose: a build script runs to thousands of output tokens and
+  # takes tens of seconds. The 30s that suits chat times out mid-generation.
+  heavy-timeout-seconds: 240
   reduced-mode:
     allow-risky-actions: false   # Ollama-only mode: allow console/permission actions
 

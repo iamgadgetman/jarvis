@@ -79,13 +79,49 @@ needs a cloud model.** A 7B writes bad JavaScript, and 0.8.6 already measured
 `qwen2.5-coder:7b` as *worse* than `qwen2.5:7b` at spatial layout — there is no
 local model here worth falling back to.
 
-### Not yet verified
+### Fixed during first live run
 
-The guardrails, the fill geometry and the script extraction are covered by
-standalone tests against the compiled classes. **The prompt itself has not been
-run against a live model**, and the plugin has not been loaded on a real server —
-in particular, whether Paper's library loader resolves GraalJS cleanly is
-untested. Both need a server with a configured key.
+- **`ai.heavy-timeout-seconds` (default 240), new.** The first live build failed
+  with `AI provider claude failed (HEAVY tier): Read timed out`. Not a key or
+  network fault: `claude.timeout-seconds` is 30, and a cottage script measured
+  7,074 output tokens — the model was still writing when the socket gave up.
+
+  Raising the per-provider timeout would have been wrong; 30s is right for chat,
+  and a global bump leaves a hung banter call blocking for four minutes. This
+  mirrors `light-timeout-seconds` on the other side of the split:
+
+  ```java
+  int timeoutOverride = tier == Tier.LIGHT ? lightTimeoutSeconds : heavyTimeoutSeconds;
+  ```
+
+  Same shape as 0.8.6 raising `ollama.timeout-seconds` 60 -> 240 for build
+  planning. Code generation is simply a long call.
+
+### Verified live on Purpur 26.2 / Java 25
+
+Paper's `libraries:` loader resolved **all 12 GraalJS artifacts** on first start
+(via a Google Cloud mirror, so the Maven Central rate-limit concern is moot).
+The shaded 60 MB jar is unnecessary; `-Pshade-graaljs` stays as a fallback only.
+
+Five builds, **all first-attempt — no repair retries, no material
+substitutions, no failures**:
+
+| request | blocks | calls |
+|---|---:|---:|
+| a small oak cottage | 403 | 48 |
+| a jungle tree house | 597 | 271 |
+| a 50 block tall statue of a villager | 3,644 | 19 |
+| a cherry wood cabin with a bed and full glass windows | 242 | 40 |
+| a small village | 1,941 | 244 |
+
+v0.8.6's best measured JSON plan was **168 blocks**. The statue is the clearest
+case for the approach: 3,644 blocks from 19 calls, which as an explicit block
+list would have been roughly 90,000 output tokens and is simply not reachable.
+
+Offline, the same cottage prompt through the real `extractScript` and
+`ScriptBuildPlanner` gave 238 blocks across 9 block types — walls, a door with a
+wall torch over it, symmetric glass-pane windows, a bed and crafting table
+inside, a stepped gabled roof, and a cobblestone chimney.
 
 ## v0.8.6 (2026-09-01) — build plans that are actually buildings
 
