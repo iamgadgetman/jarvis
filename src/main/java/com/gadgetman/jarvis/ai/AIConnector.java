@@ -412,28 +412,47 @@ public class AIConnector {
                   function buildCreation(x, y, z) { }
                       x, y, z are the build origin.
 
-                y is the first empty space above the ground -- the level a player standing
-                there occupies. So the floor you walk on goes at y, and the interior, the
-                walls and the furniture start at y+1. Lay exactly ONE floor layer: a second
-                course on top of the first is the single most common mistake, and it shows
-                as a doubled floor. Do not add a foundation under it unless asked.
+                y is the empty space a player standing at the origin occupies, and the
+                ground they are standing on is the block at y-1.
+
+                So the floor goes at y-1, replacing that ground, and EVERYTHING else --
+                interior, walls, door, furniture -- starts at y. Do not put a floor at y:
+                that is the air the player is standing in, and filling it buries them and
+                lifts the whole building a block off the ground. Lay exactly one floor
+                layer, and add no foundation beneath it unless asked.
 
                 Block ids may carry states, exactly as the /setblock command accepts them:
                   "oak_planks", "minecraft:stone_bricks", "oak_stairs[facing=north,half=bottom]",
                   "oak_log[axis=y]", "oak_slab[type=top]", "glass_pane", "air"
                 Use real placeable block ids. Never item ids -- "bricks" is the block, "brick" is an item.
 
-                Roofs. A stair's `facing` points DOWN the slope -- the tall half of the block
-                is on the side away from `facing`. So a roof surface that descends toward the
-                north is built from stairs with facing=north, and the south side of the same
-                roof uses facing=south. Getting this backwards leaves the roof inside out,
-                with the steps facing the sky and gaps between the courses.
+                Roofs are where builds most often go wrong, so follow this exactly.
 
-                Build each slope as a continuous run: every course sits one block higher and
-                one block in from the course below, the lowest course rests directly on top of
-                the wall, and the two slopes meet at a ridge you cap with a solid block or a
-                slab. Courses that skip a level do not touch, and the roof reads as floating
-                slats.
+                A stair's `facing` points DOWN the slope; the tall half of the block is on the
+                side away from `facing`. A roof surface descending toward the north is built
+                from stairs with facing=north, and the opposite slope uses facing=south.
+
+                Each course must be a full-length `fill` along the ridge axis, one block higher
+                and one block inward from the course below. The FIRST course sits directly on
+                top of the wall, at the wall's own line -- not outside it. Starting the roof
+                beyond the wall leaves a hole between wall and roof, and placing courses
+                individually leaves them standing apart like fins. This is a correct gable:
+
+                  const mid = Math.floor((d - 1) / 2);           // d = depth in z
+                  for (let i = 0; i < mid; i++) {
+                    const yy = wallTop + 1 + i;
+                    fill(x-1, yy, z+i,       x+w, yy, z+i,       "oak_stairs[facing=north]");
+                    fill(x-1, yy, z+d-1-i,   x+w, yy, z+d-1-i,   "oak_stairs[facing=south]");
+                  }
+                  fill(x-1, wallTop+1+mid, z+mid, x+w, wallTop+1+mid, z+mid, "oak_planks");
+
+                which gives this profile, walls to ridge with nothing floating:
+
+                  y=7  . . . # . . .
+                  y=6  . . n . s . .
+                  y=5  . n . . . s .
+                  y=4  n . . . . . s     <- resting on the wall tops
+                  y=3  #           #
 
                 Windows. Cut the opening in the wall and put the glass in it. A single
                 glass_pane in a one-block hole is fine -- it is joined up to the wall around it
