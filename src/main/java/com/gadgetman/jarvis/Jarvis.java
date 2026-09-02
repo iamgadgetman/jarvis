@@ -124,6 +124,9 @@ public class Jarvis extends JavaPlugin {
         if (jarvisNPC != null) {
             jarvisNPC.dismissAll();
         }
+        if (buildingAssistant != null) {
+            buildingAssistant.shutdown();
+        }
         if (databaseManager != null) {
             databaseManager.closeDatabases();
         }

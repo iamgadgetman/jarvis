@@ -1,5 +1,126 @@
 # Jarvis Changelog
 
+## v0.9.0 (2026-09-01) — the builder writes code
+
+Freeform building worked, in the sense that it ran. What it produced was a
+flat oak footprint with a few wall stubs and glass scattered on the ground.
+Three releases of prompt work had got the block-list planner to 168 blocks,
+and that is the ceiling: asked for a list of every block, a model spends its
+whole output budget enumerating coordinates and never reaches the walls.
+
+So it no longer lists blocks. It writes a program.
+
+### The change
+
+The model implements `buildCreation(x, y, z)` against two functions:
+
+```javascript
+fill(x1, y1, z1, x2, y2, z2, block, mode)   // solid | walls | hollow | outline
+setBlock(x, y, z, block)                     // "oak_stairs[facing=north]"
+```
+
+A wall is one call rather than four hundred coordinates, so the reasoning goes
+into the shape instead of the arithmetic. The contract is adapted from
+[MC-Bench](https://mcbench.ai/), the public LLM build-off, keeping the two
+details that carry it: address the model as an architect, and make it describe
+the design in prose before writing any code.
+
+Live builds, all first-attempt:
+
+| request | blocks | calls |
+|---|---:|---:|
+| a small oak cottage | 403 | 48 |
+| a cherry wood cabin with a bed and full glass windows | 242 | 40 |
+| a jungle tree house | 597 | 271 |
+| a small village | 1,941 | 244 |
+| a 50 block tall statue of a villager | 3,644 | 19 |
+| a death star, at least 100 blocks tall | 38,159 | 38,161 |
+
+The statue is the clearest case: 3,644 blocks from 19 calls. As an explicit
+block list that is roughly 90,000 output tokens — not reachable at any prompt
+quality. Note too that the model picks its own strategy: the statue is
+fill-dominated for sculpted mass, the tree house inverts it for organic
+detail, and the death star is pure `setBlock` because a sphere has no boxes in
+it.
+
+### Safety
+
+The script never touches the world. `fill` and `setBlock` only append to a map,
+so a plan stays a pure function from text to a block list, and placement
+throttling, undo, material repair and experience memory are all unchanged. The
+sandbox surface is two functions that put entries in a LinkedHashMap, not a
+Bukkit handle.
+
+Verified against GraalJS 25.3.4.1 Community on a stock JDK 25:
+
+| Guard | Behaviour |
+|---|---|
+| `allowAllAccess(false)` | `Java.type` is undefined; no host class reachable |
+| Block budget | Throwing from a binding unwinds the script |
+| Watchdog `close(true)` | Cancels `while(true){}` from another thread |
+| Bounds / fill volume | A fill cannot span the world |
+| Last write wins | Fill a wall, then set air to carve a doorway |
+
+GraalJS is fetched at start through Paper's `libraries:` loader — all 12
+artifacts resolved on a live Purpur 26.2 server — which keeps the jar at ~1 MB
+instead of ~60 MB. `mvn -Pshade-graaljs package` bundles it for a host with no
+outbound access, and the plugin falls back to the JSON planner rather than
+failing to load if it is missing.
+
+### Repairing what the model gets wrong
+
+A script that will not run goes back to the model with the error attached.
+That recovers an invented block id or an over-budget design in one round.
+Where the error alone was not enough it now suggests the nearest real ids —
+`dark_oak_bed` failed twice in a row before the message learned to answer
+*"did you mean red_bed, pink_bed…"*.
+
+Five classes of mistake are repaired outright rather than described, because a
+model that can get a detail wrong eventually will:
+
+- **Invented block ids** are checked against the server registry. Previously
+  they fell through to the fallback material in silence: one build came out
+  186 of 347 blocks DIRT, walls and roof included, because `blackstone_bricks`
+  is not a real block.
+- **Glass panes, bars, fences and walls** are joined to their neighbours after
+  placement. Placement runs with physics off so a build does not set off
+  cascading updates, and a block never recomputes its own shape — it only tells
+  neighbours to recompute theirs — so a pane walled in by solid blocks was
+  never told anything and rendered as a floating shard.
+- **Bed halves** are made to agree. A script asking for `facing=east` while
+  offsetting the halves along z renders with one end turned the wrong way; the
+  geometry it laid out is taken as the intent and both facings rewritten. A
+  half with no partner is dropped, since alone it pops off as an item.
+- **Torches, buttons, levers, signs and ladders** that would overwrite a block
+  already in the plan are moved one block along their facing, which is exactly
+  where their support ends up. Written at the wall's own coordinate they
+  deleted the wall and left a hole through to the sky.
+- **`fill(..., "walls")`** is new, because vanilla has no mode for what a
+  building needs. Models reach for `hollow` to mean walls — one script
+  commented a hollow fill as *"Walls (hollow box)"* — but hollow is a full
+  shell, so its bottom face paved the floor the player stands on. That is what
+  put every floor and door a block too high.
+
+### Also
+
+- **`ai.heavy-timeout-seconds` (default 240), new.** The first live build hit
+  `Read timed out`: a cottage script is ~7,000 output tokens and
+  `claude.timeout-seconds` is 30. Raising the per-provider timeout would leave
+  a hung chat call blocking for four minutes, so this mirrors
+  `light-timeout-seconds` on the other side of the tier split.
+- **`max_tokens` is per-call**, was hardcoded 2000. Build scripts get 16000;
+  2000 truncates one mid-function, which reaches the parser as a syntax error
+  rather than as "ran out of room".
+- **Block states survive** placement and undo, so `oak_stairs[facing=north]`
+  and `oak_log[axis=y]` land oriented instead of collapsing to a default.
+
+### Requires
+
+A cloud model. A local 7B does not write usable JavaScript — 0.8.6 already
+measured `qwen2.5-coder:7b` as *worse* than `qwen2.5:7b` at spatial layout, so
+there is no local fallback worth having. Ollama-only servers keep the JSON
+planner, which stays as `build.planner: json` and as the automatic fallback.
+
 ## v0.8.6 (2026-09-01) — build plans that are actually buildings
 
 The plumbing was right by 0.8.5; the output was not. A local 7B returned 13

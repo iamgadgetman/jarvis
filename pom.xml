@@ -5,7 +5,7 @@
 
     <groupId>com.gadgetman</groupId>
     <artifactId>jarvis</artifactId>
-    <version>0.8.6</version>
+    <version>0.9.0</version>
     <packaging>jar</packaging>
 
     <name>Jarvis</name>
@@ -16,6 +16,12 @@
         <!-- Server API compiled against by default: Purpur 26.2 (primary target).
              The legacy-check profile swaps in the 1.21.8 API as a floor check. -->
         <server.api.version>26.2.build.2622-stable</server.api.version>
+        <!-- GraalJS runs the model-written build scripts. Supplied at runtime by
+             Paper's libraries: loader (see plugin.yml), so the scope is provided
+             and the jar stays ~1 MB instead of ~60 MB. The shade-graaljs profile
+             bundles it instead, for a server that cannot resolve it at start. -->
+        <graaljs.version>25.3.4.1</graaljs.version>
+        <graaljs.scope>provided</graaljs.scope>
     </properties>
 
     <repositories>
@@ -53,6 +59,24 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
+            <groupId>org.graalvm.polyglot</groupId>
+            <artifactId>polyglot</artifactId>
+            <version>${graaljs.version}</version>
+            <scope>${graaljs.scope}</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.js</groupId>
+            <artifactId>js-language</artifactId>
+            <version>${graaljs.version}</version>
+            <scope>${graaljs.scope}</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.truffle</groupId>
+            <artifactId>truffle-runtime</artifactId>
+            <version>${graaljs.version}</version>
+            <scope>${graaljs.scope}</scope>
+        </dependency>
+        <dependency>
             <groupId>org.json</groupId>
             <artifactId>json</artifactId>
             <version>20231013</version>
@@ -70,6 +94,16 @@
     </dependencies>
 
     <profiles>
+        <!-- mvn -Pshade-graaljs clean package : bundles GraalJS into the jar
+             instead of resolving it at runtime. Produces a ~60 MB jar. Use this
+             if Paper's library loader cannot reach Maven Central on your host. -->
+        <profile>
+            <id>shade-graaljs</id>
+            <properties>
+                <graaljs.scope>compile</graaljs.scope>
+            </properties>
+        </profile>
+
         <!-- mvn -Plegacy-check clean compile : verifies the code also compiles
              against the oldest supported server API (1.21.x floor). -->
         <profile>

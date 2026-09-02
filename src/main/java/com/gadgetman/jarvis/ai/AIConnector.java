@@ -41,6 +41,16 @@ public class AIConnector {
     /** Workload tier: decides which provider chain serves the request. */
     public enum Tier { LIGHT, HEAVY }
 
+    /** Output ceiling for chat, intent parsing and JSON block plans. */
+    private static final int DEFAULT_MAX_TOKENS = 2000;
+
+    /**
+     * Output ceiling for build scripts. A script is prose reasoning plus code,
+     * and 2000 tokens truncates one mid-function -- which reads to the parser
+     * as a syntax error rather than as "ran out of room".
+     */
+    private static final int BUILD_SCRIPT_MAX_TOKENS = 16000;
+
     private final Jarvis plugin;
 
     // Current provider settings
@@ -61,6 +71,14 @@ public class AIConnector {
     private boolean reducedMode = false;
     private boolean ollamaConfigured = false;
     private int lightTimeoutSeconds = 5;
+    /**
+     * Heavy-tier read timeout. Deliberately far above the per-provider default:
+     * a build script is thousands of output tokens and takes tens of seconds,
+     * where the 30s that suits chat cuts it off mid-generation. Measured live on
+     * Jarvis01 -- a cottage script at claude-sonnet-5 timed out at 30s and the
+     * same prompt offline returned 7,074 output tokens.
+     */
+    private int heavyTimeoutSeconds = 240;
     private final Map<Tier, String> lastServed = new ConcurrentHashMap<>();
 
     // Rate limiting
@@ -193,6 +211,7 @@ public class AIConnector {
         // ---- v0.3.0 tiered routing ----
         this.ollamaConfigured = ai.isConfigurationSection("ollama");
         this.lightTimeoutSeconds = ai.getInt("light-timeout-seconds", 5);
+        this.heavyTimeoutSeconds = ai.getInt("heavy-timeout-seconds", 240);
 
         List<String> cloud = new ArrayList<>();
         for (String p : providerPriority) {
@@ -346,6 +365,195 @@ public class AIConnector {
         }
 
         return sendTiered(Tier.HEAVY, prompt, "You are a Minecraft build planner. Output ONLY valid JSON.", true);
+    }
+
+    /**
+     * Ask the AI for a JavaScript build script.
+     *
+     * <p>This is the freeform build path as of v0.9.0. It replaces asking for a
+     * list of every block, which does not work: a model spends its whole output
+     * budget enumerating coordinates and runs out somewhere around the floor.
+     * v0.8.6's best measured plan was 168 blocks -- a footprint with no walls.
+     * The same cottage as {@code fill} calls is roughly a dozen lines, because
+     * a wall is one call rather than four hundred coordinates.
+     *
+     * <p>The contract is adapted from MC-Bench, the public LLM build-off
+     * benchmark, which is the strongest evidence available for what actually
+     * makes models build well. Two details there are load-bearing and are kept
+     * here: the model is addressed as an architect and told to weigh accents,
+     * symmetry and material variety, and it must describe the design in prose
+     * <em>before</em> writing code.
+     *
+     * @param memoryExamples formatted few-shot examples, or blank for none
+     * @param previousScript a script that failed, or null on the first attempt
+     * @param previousError  why it failed, fed back verbatim so the model can repair it
+     */
+    public String queryBuildScript(String description, String memoryExamples,
+                                   String previousScript, String previousError) throws Exception {
+        if (reducedMode) {
+            // A 7B writes bad JavaScript. v0.8.6 measured qwen2.5-coder:7b as
+            // worse than qwen2.5:7b at spatial layout, so there is no local
+            // model here worth falling back to -- the JSON planner is the
+            // honest reduced-mode answer.
+            throw new ReducedModeException(
+                    "Script building needs a cloud model. Set build.planner to json, or use schematics.");
+        }
+
+        String system = """
+                You are an expert Minecraft architect and builder.
+
+                You control a builder through two functions. Implement buildCreation; do not call it yourself.
+
+                  fill(x1, y1, z1, x2, y2, z2, block, mode)
+                      Fills the box between the two corners, inclusive. mode is optional:
+                        "solid"   (default) every block in the box
+                        "walls"   the four upright sides only -- no floor, no ceiling
+                        "hollow"  the whole shell, INCLUDING its floor and ceiling faces
+                        "outline" the twelve edges only
+                      For a room, use "walls". "hollow" would pave the floor you stand on
+                      and cap the room with a ceiling.
+                  setBlock(x, y, z, block)
+                      Places one block.
+                  function buildCreation(x, y, z) { }
+                      x, y, z are the build origin.
+
+                y is the empty space a player standing at the origin occupies, and the
+                ground they are standing on is the block at y-1.
+
+                So the floor goes at y-1, replacing that ground, and EVERYTHING else --
+                interior, walls, door, furniture -- starts at y. Do not put a floor at y:
+                that is the air the player is standing in, and filling it buries them and
+                lifts the whole building a block off the ground. Lay exactly one floor
+                layer, and add no foundation beneath it unless asked.
+
+                This means the walls of a room are `fill(..., "walls")` from y up, over a
+                floor laid at y-1. Nothing else may write to the y level inside the room.
+
+                Block ids may carry states, exactly as the /setblock command accepts them:
+                  "oak_planks", "minecraft:stone_bricks", "oak_stairs[facing=north,half=bottom]",
+                  "oak_log[axis=y]", "oak_slab[type=top]", "glass_pane", "air"
+                Use real placeable block ids. Never item ids -- "bricks" is the block, "brick" is an item.
+
+                Roofs are where builds most often go wrong, so follow this exactly.
+
+                A stair's `facing` points UP the slope, toward the ridge -- the tall half of
+                the block is on the side named by `facing`. So the slope that descends toward
+                the north is built from stairs with facing=south, and the slope opposite it
+                uses facing=north. Point them down-slope instead and the whole roof is
+                inside out.
+
+                Each course must be a full-length `fill` along the ridge axis, one block higher
+                and one block inward from the course below. The FIRST course sits directly on
+                top of the wall, at the wall's own line -- not outside it. Starting the roof
+                beyond the wall leaves a hole between wall and roof, and placing courses
+                individually leaves them standing apart like fins. This is a correct gable:
+
+                  const mid = Math.floor((d - 1) / 2);           // d = depth in z
+                  for (let i = 0; i < mid; i++) {
+                    const yy = wallTop + 1 + i;
+                    // close the gable triangle at each end, or the roof space is open to the sky
+                    for (const ex of [x, x+w-1]) {
+                      fill(ex, yy, z+i+1, ex, yy, z+d-2-i, "oak_planks");
+                    }
+                    // z+i descends toward north, so it faces south, back up to the ridge
+                    fill(x-1, yy, z+i,       x+w, yy, z+i,       "oak_stairs[facing=south]");
+                    fill(x-1, yy, z+d-1-i,   x+w, yy, z+d-1-i,   "oak_stairs[facing=north]");
+                  }
+                  fill(x-1, wallTop+1+mid, z+mid, x+w, wallTop+1+mid, z+mid, "oak_planks");
+
+                The two ends of a pitched roof are open triangles until you fill them. Skip
+                that and the room is open to the sky along both gables.
+
+                which gives this profile, walls to ridge with nothing floating:
+
+                  y=7  . . . # . . .
+                  y=6  . . s . n . .
+                  y=5  . s . . . n .
+                  y=4  s . . . . . n     <- resting on the wall tops
+                  y=3  #           #
+
+                Blocks that hang on something. A torch, button, lever, sign or ladder is
+                supported by a neighbouring block and must go in the empty space NEXT to it,
+                never at the wall's own coordinate -- writing it there deletes the wall and
+                leaves a hole. A wall torch is held up by the block behind it, opposite its
+                facing: to light a north wall from inside a room, put a
+                wall_torch[facing=south] one block SOUTH of that wall.
+
+                Blocks that occupy two spaces. A bed is a foot and a head, and the head sits
+                one block from the foot in the direction of `facing` -- facing=east means the
+                head is one block EAST, not one block north. A door is two blocks stacked,
+                half=lower then half=upper directly above it. Place both halves and make the
+                offset agree with `facing`, or the two halves face different ways.
+
+                Windows. Cut the opening in the wall and put the glass in it. A single
+                glass_pane in a one-block hole is fine -- it is joined up to the wall around it
+                after the build. Use `glass` rather than `glass_pane` when you want a flush,
+                solid-looking window.
+
+                Put windows at y+1. A player standing on the floor has their eyes at about
+                y+1.6, so y+1 is the height you actually look through; y+2 sits above eye line
+                and reads as a gap under the eaves. Hang wall torches at y+2, above the
+                windows, so the two do not compete for the same band of wall.
+
+                Rules:
+                - Later writes win, so fill a wall and then set air over it to carve a doorway.
+                - Coordinates are relative to the origin and must stay within a few dozen blocks of it.
+                - Every block id must be one that really exists. Guessing by pattern is where
+                  builds go wrong: it is `polished_blackstone_bricks`, not `blackstone_bricks`;
+                  `bricks`, not `brick`; `stone_bricks`, not `stone_brick`. If you are unsure of
+                  a decorative variant, use the plain block rather than inventing a name.
+                - Ordinary JavaScript is available: loops, math, arrays, functions. Use them.
+                  There is no DOM, no require, no host access, and no console.
+
+                Write two short paragraphs first -- your influences, then how the finished build looks --
+                and then the code in a single ```javascript block.
+                """;
+
+        String prompt;
+        if (previousScript != null && previousError != null) {
+            // Repairing beats regenerating: the design reasoning in the failed
+            // attempt is usually sound and only the code broke.
+            prompt = "Your previous script for \"" + description + "\" failed.\n\n"
+                    + "```javascript\n" + previousScript + "\n```\n\n"
+                    + "The error was:\n" + previousError + "\n\n"
+                    + "Fix it and return the complete corrected script. Keep the design; "
+                    + "change only what the error requires.";
+        } else {
+            prompt = "Build: " + description;
+            if (memoryExamples != null && !memoryExamples.isBlank()) {
+                prompt = memoryExamples + "\n" + prompt;
+            }
+        }
+
+        return sendTiered(Tier.HEAVY, prompt, system, false, BUILD_SCRIPT_MAX_TOKENS);
+    }
+
+    /**
+     * Pulls the JavaScript out of a model reply.
+     *
+     * <p>The prompt asks for prose and then a fenced block, so the prose has to
+     * come off before the script reaches the engine. A model that skips the
+     * fence still usually produces something starting at a function keyword,
+     * which is worth salvaging rather than failing on.
+     */
+    public static String extractScript(String response) {
+        if (response == null) return null;
+
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("```(?:javascript|js)?\\s*\\n(.*?)```", java.util.regex.Pattern.DOTALL)
+                .matcher(response);
+        String best = null;
+        while (m.find()) {
+            String block = m.group(1);
+            // Take the largest fenced block: a reply sometimes shows a short
+            // illustrative snippet before the real implementation.
+            if (best == null || block.length() > best.length()) best = block;
+        }
+        if (best != null) return best.strip();
+
+        int fn = response.indexOf("function buildCreation");
+        if (fn < 0) fn = response.indexOf("async function buildCreation");
+        return fn >= 0 ? response.substring(fn).strip() : null;
     }
 
     /** Thrown when a capability is unavailable in Ollama-only reduced mode. */
@@ -504,6 +712,17 @@ public class AIConnector {
      * health cooldowns are shared across tiers.
      */
     private String sendTiered(Tier tier, String userContent, String systemContent, boolean jsonMode) throws Exception {
+        return sendTiered(tier, userContent, systemContent, jsonMode, DEFAULT_MAX_TOKENS);
+    }
+
+    /**
+     * @param maxTokens output ceiling for providers that require one. Chat and
+     *                  intent parsing fit in the default; a build script does
+     *                  not, and silently truncating one produces a script that
+     *                  will not parse.
+     */
+    private String sendTiered(Tier tier, String userContent, String systemContent, boolean jsonMode,
+                              int maxTokens) throws Exception {
         enforceRateLimit();
 
         List<String> route = tier == Tier.LIGHT ? lightRoute : heavyRoute;
@@ -511,7 +730,7 @@ public class AIConnector {
             throw new RuntimeException("No AI providers configured. Set an API key or an ollama section in config.yml.");
         }
 
-        int timeoutOverride = tier == Tier.LIGHT ? lightTimeoutSeconds : 0;
+        int timeoutOverride = tier == Tier.LIGHT ? lightTimeoutSeconds : heavyTimeoutSeconds;
         Exception lastException = null;
         List<String> triedProviders = new ArrayList<>();
 
@@ -526,7 +745,8 @@ public class AIConnector {
             triedProviders.add(tryProvider);
 
             try {
-                String result = sendRequestForProvider(tryProvider, userContent, systemContent, jsonMode, timeoutOverride);
+                String result = sendRequestForProvider(tryProvider, userContent, systemContent, jsonMode,
+                        timeoutOverride, maxTokens);
                 health.recordSuccess();
                 lastServed.put(tier, tryProvider);
 
@@ -551,7 +771,8 @@ public class AIConnector {
     }
 
     private String sendRequestForProvider(String providerName, String userContent, String systemContent,
-                                          boolean jsonMode, int timeoutOverrideSeconds) throws Exception {
+                                          boolean jsonMode, int timeoutOverrideSeconds,
+                                          int maxTokens) throws Exception {
         ProviderConfig config = providerConfigs.get(providerName);
         if (config == null) {
             throw new RuntimeException("Unknown provider: " + providerName);
@@ -559,10 +780,10 @@ public class AIConnector {
         int readTimeoutMs = (timeoutOverrideSeconds > 0 ? timeoutOverrideSeconds : config.timeoutSeconds) * 1000;
 
         return switch (providerName) {
-            case "claude" -> sendClaudeRequest(userContent, systemContent, config, readTimeoutMs);
+            case "claude" -> sendClaudeRequest(userContent, systemContent, config, readTimeoutMs, maxTokens);
             case "gemini" -> sendGeminiRequest(userContent, systemContent, config, readTimeoutMs);
             case "ollama" -> sendOllamaRequest(userContent, systemContent, config, jsonMode, readTimeoutMs);
-            default -> sendOpenAIStyleRequest(userContent, systemContent, config, readTimeoutMs);
+            default -> sendOpenAIStyleRequest(userContent, systemContent, config, readTimeoutMs, maxTokens);
         };
     }
 
@@ -627,7 +848,7 @@ public class AIConnector {
     }
 
     private String sendClaudeRequest(String userContent, String systemContent, ProviderConfig config,
-                                     int readTimeoutMs) throws Exception {
+                                     int readTimeoutMs, int maxTokens) throws Exception {
         URL url = new URL(config.endpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -640,7 +861,7 @@ public class AIConnector {
 
         JSONObject payload = new JSONObject();
         payload.put("model", config.model);
-        payload.put("max_tokens", 2000);
+        payload.put("max_tokens", maxTokens);
         payload.put("system", systemContent);
 
         JSONArray messages = new JSONArray();
@@ -685,7 +906,7 @@ public class AIConnector {
     }
 
     private String sendOpenAIStyleRequest(String userContent, String systemContent, ProviderConfig config,
-                                          int readTimeoutMs) throws Exception {
+                                          int readTimeoutMs, int maxTokens) throws Exception {
         URL url = new URL(config.endpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -697,7 +918,7 @@ public class AIConnector {
 
         JSONObject payload = new JSONObject();
         payload.put("model", config.model);
-        payload.put("max_tokens", 2000);
+        payload.put("max_tokens", maxTokens);
 
         JSONArray messages = new JSONArray();
         messages.put(new JSONObject().put("role", "system").put("content", systemContent));

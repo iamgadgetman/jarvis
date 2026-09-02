@@ -5,10 +5,16 @@ import com.gadgetman.jarvis.memory.BuildExperience;
 import com.gadgetman.jarvis.memory.ExperienceMemory;
 import com.gadgetman.jarvis.memory.SituationSnapshot;
 import net.citizensnpcs.api.npc.NPC;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.MultipleFacing;
+import org.bukkit.block.data.type.Bed;
+import org.bukkit.block.data.type.Wall;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
@@ -39,6 +45,21 @@ public class BuildingAssistant {
     private int maxAiBlocks = 5000;
     private String fallbackMaterial = "DIRT";
 
+    // Script planner (v0.9.0)
+    private String planner = "script";
+    private int scriptMaxBlocks = 50000;
+    private int scriptTimeoutMs = 5000;
+    private int scriptMaxHorizontal = 128;
+    private int scriptMaxVertical = 128;
+    private int scriptMaxFillVolume = 200000;
+    private int scriptRepairAttempts = 1;
+
+    /** Null when GraalJS is not on the classpath, which forces the JSON planner. */
+    private ScriptBuildPlanner scriptPlanner;
+
+    /** Every placeable block id, for validating scripts off the main thread. */
+    private Set<String> validBlockNames;
+
     public BuildingAssistant(Jarvis plugin) {
         this.plugin = plugin;
         loadConfig();
@@ -54,6 +75,44 @@ public class BuildingAssistant {
         maxAiBlocks = plugin.getConfig().getInt("build.max-ai-blocks", 5000);
         fallbackMaterial = plugin.getConfig().getString("build.fallback-material", "minecraft:dirt")
             .replace("minecraft:", "").toUpperCase();
+
+        planner = plugin.getConfig().getString("build.planner", "script").toLowerCase();
+        scriptMaxBlocks = plugin.getConfig().getInt("build.script.max-blocks", 50000);
+        scriptTimeoutMs = plugin.getConfig().getInt("build.script.timeout-ms", 5000);
+        scriptMaxHorizontal = plugin.getConfig().getInt("build.script.max-horizontal", 128);
+        scriptMaxVertical = plugin.getConfig().getInt("build.script.max-vertical", 128);
+        scriptMaxFillVolume = plugin.getConfig().getInt("build.script.max-fill-volume", 200000);
+        scriptRepairAttempts = plugin.getConfig().getInt("build.script.repair-attempts", 1);
+
+        if ("script".equals(planner)) {
+            // GraalJS comes from Paper's libraries: loader, so it can genuinely
+            // be absent -- an offline first start, or a resolver failure. That
+            // must not stop the plugin loading, so probe and fall back rather
+            // than letting a NoClassDefFoundError escape on first build.
+            if (ScriptBuildPlanner.isAvailable()) {
+                // Snapshot the registry here, on the main thread, so the planner
+                // can reject a bad block id while running async.
+                validBlockNames = new HashSet<>();
+                for (Material m : Material.values()) {
+                    if (m.isBlock() && !m.isLegacy()) {
+                        validBlockNames.add(m.getKey().getKey());
+                    }
+                }
+                scriptPlanner = new ScriptBuildPlanner(plugin.getLogger(), scriptMaxBlocks,
+                        scriptTimeoutMs, scriptMaxHorizontal, scriptMaxVertical, scriptMaxFillVolume,
+                        validBlockNames);
+            } else {
+                plugin.getLogger().warning("build.planner is 'script' but GraalJS is not on the "
+                        + "classpath -- falling back to the JSON planner. Check that the server "
+                        + "could download the libraries listed in plugin.yml.");
+                planner = "json";
+            }
+        }
+    }
+
+    /** Releases the script engine. Called from plugin shutdown. */
+    public void shutdown() {
+        if (scriptPlanner != null) scriptPlanner.shutdown();
     }
 
     // ==================== DATA STRUCTURES ====================
@@ -71,6 +130,14 @@ public class BuildingAssistant {
         // Experience memory. Only AI-planned builds are remembered — a hand-built
         // wall says nothing about plan quality, so it must never be recorded or
         // demoted alongside one.
+        /**
+         * Blocks whose look depends on their neighbours -- glass panes, iron
+         * bars, fences, walls. Filled during placement and resolved afterwards,
+         * because a pane placed before the wall beside it cannot know it will
+         * be enclosed.
+         */
+        Queue<Block> connectQueue = new LinkedList<>();
+
         boolean aiGenerated;
         String situationJson;
         String planJson;
@@ -90,10 +157,27 @@ public class BuildingAssistant {
     private static class BlockPlacement {
         Location location;
         Material material;
+        /**
+         * Full block spec from a script plan, e.g. {@code oak_stairs[facing=north]}.
+         * Null for JSON plans, which only ever carried a material.
+         *
+         * <p>Kept as a string rather than resolved BlockData because parsing one
+         * goes through Paper's registry, and plans are built off the main
+         * thread. It is resolved in executeBuild alongside the isBlock check,
+         * for exactly the reason that check lives there.
+         */
+        String spec;
+        /** Resolved from {@link #spec} on the main thread. Null when the plan had no states. */
+        BlockData blockData;
 
         BlockPlacement(Location location, Material material) {
             this.location = location;
             this.material = material;
+        }
+
+        BlockPlacement(Location location, String spec) {
+            this.location = location;
+            this.spec = spec;
         }
     }
 
@@ -123,11 +207,18 @@ public class BuildingAssistant {
         Location location;
         Material originalMaterial;
         Material newMaterial;
+        /**
+         * The block that was there before, states and all. Restoring only the
+         * material would turn a staircase the build covered into a stack of
+         * default-facing stairs on undo.
+         */
+        BlockData originalData;
 
-        BuildAction(Location location, Material original, Material newMat) {
+        BuildAction(Location location, Material original, Material newMat, BlockData originalData) {
             this.location = location;
             this.originalMaterial = original;
             this.newMaterial = newMat;
+            this.originalData = originalData;
         }
     }
 
@@ -171,10 +262,22 @@ public class BuildingAssistant {
                         unlocksReducedMode = memory.isReducedModeBuildUnlocked();
                     }
 
-                    String response = plugin.getAIConnector()
-                            .queryBuildPlan(description, examples, unlocksReducedMode);
+                    // The plan text is kept whichever planner ran, because it is
+                    // what gets stored as the experience. For a script build that
+                    // text is the script itself, which makes a far better few-shot
+                    // example than a list of coordinates ever did.
+                    String response;
+                    List<BlockPlacement> placements;
+                    if (scriptPlanner != null) {
+                        ScriptPlan plan = planWithScript(description, examples, origin);
+                        response = plan.script;
+                        placements = plan.placements;
+                    } else {
+                        response = plugin.getAIConnector()
+                                .queryBuildPlan(description, examples, unlocksReducedMode);
+                        placements = parseBuildPlan(response, origin);
+                    }
                     final String provider = plugin.getAIConnector().getProvider();
-                    List<BlockPlacement> placements = parseBuildPlan(response, origin);
 
                     if (placements == null || placements.isEmpty()) {
                         // A plan that produced no blocks is a bad plan, not a bad
@@ -223,6 +326,74 @@ public class BuildingAssistant {
                 }
             }
         }.runTaskAsynchronously(plugin);
+    }
+
+    /** A script and the blocks it produced. Null placements mean the script never ran. */
+    private static class ScriptPlan {
+        final String script;
+        final List<BlockPlacement> placements;
+
+        ScriptPlan(String script, List<BlockPlacement> placements) {
+            this.script = script;
+            this.placements = placements;
+        }
+    }
+
+    /**
+     * Ask the AI for a build script, run it, and turn what it drew into blocks.
+     *
+     * <p>A script that will not run is retried with the error attached rather
+     * than abandoned. Almost every failure here is mechanical -- a typo, a block
+     * id that does not exist, a fill that overran the budget -- and the design
+     * reasoning in the failed attempt is usually fine. Regenerating from scratch
+     * would throw that away and cost a second full-price call for a worse
+     * result.
+     *
+     * <p>Runs off the main thread.
+     */
+    private ScriptPlan planWithScript(String description, String examples, Location origin)
+            throws Exception {
+        String script = null;
+        String error = null;
+
+        for (int attempt = 0; attempt <= scriptRepairAttempts; attempt++) {
+            String response = plugin.getAIConnector()
+                    .queryBuildScript(description, examples, script, error);
+            script = com.gadgetman.jarvis.ai.AIConnector.extractScript(response);
+
+            if (script == null || script.isBlank()) {
+                error = "No JavaScript was found in your reply. "
+                        + "Return the script in a ```javascript block.";
+                script = null;
+                continue;
+            }
+
+            try {
+                ScriptBuildPlanner.Result result = scriptPlanner.run(script);
+                plugin.getLogger().info("Script plan for \"" + description + "\": "
+                        + result.blocks.size() + " blocks from " + result.fillCalls
+                        + " fill and " + result.setBlockCalls + " setBlock calls"
+                        + (attempt > 0 ? " (after " + attempt + " repair)" : ""));
+
+                List<BlockPlacement> placements = new ArrayList<>(result.blocks.size());
+                for (ScriptBuildPlanner.PlannedBlock b : result.blocks) {
+                    placements.add(new BlockPlacement(
+                            origin.clone().add(b.dx, b.dy, b.dz), b.spec));
+                }
+                // Bottom-up, so a half-finished build still reads as a building.
+                placements.sort(Comparator.comparingDouble(pl -> pl.location.getY()));
+                return new ScriptPlan(script, placements);
+
+            } catch (ScriptBuildPlanner.ScriptException e) {
+                error = e.getMessage();
+                plugin.getLogger().warning("Build script attempt " + (attempt + 1)
+                        + " failed: " + error);
+            }
+        }
+
+        plugin.getLogger().warning("Build script failed after "
+                + (scriptRepairAttempts + 1) + " attempts: " + error);
+        return new ScriptPlan(script, null);
     }
 
     /**
@@ -294,6 +465,24 @@ public class BuildingAssistant {
         Material fallback = Material.valueOf(fallbackMaterial);
         int repaired = 0;
         for (BlockPlacement bp : placements) {
+            // Script plans arrive as raw specs ("oak_stairs[facing=north]").
+            // Resolving one parses block states through the registry, so like
+            // the isBlock check below it has to happen here rather than in the
+            // async planner. A spec the server does not recognise degrades to
+            // the fallback instead of killing the build.
+            if (bp.spec != null && bp.blockData == null) {
+                try {
+                    bp.blockData = Bukkit.createBlockData(
+                            bp.spec.startsWith("minecraft:") ? bp.spec : "minecraft:" + bp.spec);
+                    bp.material = bp.blockData.getMaterial();
+                } catch (IllegalArgumentException e) {
+                    plugin.getLogger().fine("Script asked for unknown block '" + bp.spec
+                            + "'; substituting " + fallback);
+                    bp.material = fallback;
+                    bp.blockData = null;
+                    repaired++;
+                }
+            }
             if (!bp.material.isBlock()) {
                 plugin.getLogger().fine("Plan asked for non-block material "
                         + bp.material + "; substituting " + fallback);
@@ -305,6 +494,10 @@ public class BuildingAssistant {
             plugin.getLogger().info("Build plan had " + repaired
                     + " non-block material(s); substituted " + fallback + ".");
         }
+
+        // Beds are two blocks that have to agree with each other, so this runs
+        // once the specs are resolved and before anything is queued.
+        normaliseBeds(placements);
 
         BuildState state = new BuildState(player.getUniqueId(), description);
         state.queue.addAll(placements);
@@ -336,19 +529,33 @@ public class BuildingAssistant {
 
                     Block block = placement.location.getBlock();
                     Material original = block.getType();
+                    BlockData originalData = block.getBlockData();
 
-                    // Skip if same material
-                    if (original == placement.material) {
+                    // Skip only when the block is already exactly right. A
+                    // material-only comparison would skip re-orienting stairs
+                    // that happen to share a material with what is there.
+                    if (placement.blockData != null
+                            ? originalData.matches(placement.blockData)
+                            : original == placement.material) {
                         continue;
                     }
 
                     // Record for undo
                     if (enableUndo) {
-                        state.actions.add(new BuildAction(placement.location, original, placement.material));
+                        state.actions.add(new BuildAction(placement.location, original,
+                                placement.material, originalData));
                     }
 
-                    // Place the block
-                    block.setType(placement.material);
+                    // Place the block, keeping states when the plan supplied them.
+                    if (placement.blockData != null) {
+                        block.setBlockData(placement.blockData, false);
+                        if (placement.blockData instanceof MultipleFacing
+                                || placement.blockData instanceof Wall) {
+                            state.connectQueue.add(block);
+                        }
+                    } else {
+                        block.setType(placement.material);
+                    }
                     state.placedBlocks++;
                     placed++;
                 }
@@ -369,13 +576,141 @@ public class BuildingAssistant {
 
                 // Check completion
                 if (state.queue.isEmpty()) {
-                    completeBuild(player, state);
-                    cancel();
+                    // Resolve connections in the same throttled loop rather than
+                    // all at once -- a village build can carry hundreds of panes.
+                    int connected = 0;
+                    while (!state.connectQueue.isEmpty() && connected < blocksPerTick) {
+                        connectToNeighbours(state.connectQueue.poll());
+                        connected++;
+                    }
+                    if (state.connectQueue.isEmpty()) {
+                        completeBuild(player, state);
+                        cancel();
+                    }
                 }
             }
         }.runTaskTimer(plugin, 1L, 1L);
 
         return state;
+    }
+
+    /**
+     * Make each bed's two halves agree, and drop any half left on its own.
+     *
+     * <p>A bed is a foot and a head, and the head must sit one block from the
+     * foot in the direction of {@code facing}. Models get the axis wrong: one
+     * live script asked for {@code facing=east} while offsetting the halves
+     * along z, which renders as a bed with one end turned the wrong way.
+     *
+     * <p>Rather than trust the stated facing, this takes the geometry the
+     * script actually laid out as the intent -- foot here, head there -- and
+     * rewrites both facings to the direction between them. A half with no
+     * partner is dropped: placing one alone leaves an invalid block that pops
+     * off as an item the moment anything updates it.
+     */
+    private void normaliseBeds(List<BlockPlacement> placements) {
+        Map<Long, BlockPlacement> beds = new HashMap<>();
+        for (BlockPlacement p : placements) {
+            if (p.blockData instanceof Bed) beds.put(blockKey(p.location), p);
+        }
+        if (beds.isEmpty()) return;
+
+        Set<BlockPlacement> paired = new HashSet<>();
+        for (BlockPlacement foot : beds.values()) {
+            if (((Bed) foot.blockData).getPart() != Bed.Part.FOOT) continue;
+            for (BlockFace side : SIDES) {
+                BlockPlacement head = beds.get(blockKey(foot.location.clone().add(
+                        side.getModX(), side.getModY(), side.getModZ())));
+                if (head == null || ((Bed) head.blockData).getPart() != Bed.Part.HEAD) continue;
+
+                Bed footData = (Bed) foot.blockData;
+                Bed headData = (Bed) head.blockData;
+                if (footData.getFacing() != side) {
+                    footData.setFacing(side);
+                    headData.setFacing(side);
+                    plugin.getLogger().fine("Bed facing corrected to " + side
+                            + " to match where the halves were placed.");
+                }
+                paired.add(foot);
+                paired.add(head);
+                break;
+            }
+        }
+
+        int orphans = 0;
+        for (BlockPlacement p : beds.values()) {
+            if (!paired.contains(p)) {
+                placements.remove(p);
+                orphans++;
+            }
+        }
+        if (orphans > 0) {
+            plugin.getLogger().info("Dropped " + orphans
+                    + " bed half/halves with no matching partner.");
+        }
+    }
+
+    /** Packs a world block position into one long, for placement lookups. */
+    private static long blockKey(Location loc) {
+        return ((long) loc.getBlockX() << 38) ^ ((long) loc.getBlockY() << 26) ^ loc.getBlockZ();
+    }
+
+    /** The four horizontal faces a pane, bar, fence or wall can connect along. */
+    private static final BlockFace[] SIDES = {
+        BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST
+    };
+
+    /**
+     * Point a pane, bar, fence or wall at whatever ended up beside it.
+     *
+     * <p>Without this a window reads as a floating shard. Placement runs with
+     * physics off -- deliberately, so a build does not set off cascading
+     * updates, falling gravel and popping torches while it goes up -- but that
+     * also means a glass pane keeps the disconnected shape it was placed with.
+     * Re-placing it with physics on does not help either: a block does not
+     * recompute its own shape, it only tells its neighbours to recompute
+     * theirs, so a pane walled in by solid blocks is never told anything.
+     *
+     * <p>So the connections are worked out directly. A face connects when the
+     * neighbour is a solid block, or is another pane, bar, fence or wall.
+     */
+    private void connectToNeighbours(Block block) {
+        BlockData data = block.getBlockData();
+
+        if (data instanceof MultipleFacing facing) {
+            boolean changed = false;
+            for (BlockFace side : SIDES) {
+                if (!facing.getAllowedFaces().contains(side)) continue;
+                boolean connect = connectsTo(block.getRelative(side));
+                if (facing.hasFace(side) != connect) {
+                    facing.setFace(side, connect);
+                    changed = true;
+                }
+            }
+            if (changed) block.setBlockData(facing, false);
+
+        } else if (data instanceof Wall wall) {
+            boolean changed = false;
+            for (BlockFace side : SIDES) {
+                Wall.Height want = connectsTo(block.getRelative(side))
+                        ? Wall.Height.LOW : Wall.Height.NONE;
+                if (wall.getHeight(side) != want) {
+                    wall.setHeight(side, want);
+                    changed = true;
+                }
+            }
+            // A wall with no side connections shows its centre post, which is
+            // the right look for a free-standing post and wrong for a run.
+            if (changed) block.setBlockData(wall, false);
+        }
+    }
+
+    /** True when a neighbour is something a pane or wall should attach to. */
+    private boolean connectsTo(Block neighbour) {
+        BlockData data = neighbour.getBlockData();
+        if (data instanceof MultipleFacing || data instanceof Wall) return true;
+        Material m = neighbour.getType();
+        return m.isSolid() && m.isOccluding();
     }
 
     /**
@@ -553,7 +888,11 @@ public class BuildingAssistant {
 
             // Only undo if block hasn't been modified by someone else
             if (block.getType() == action.newMaterial) {
-                block.setType(action.originalMaterial);
+                if (action.originalData != null) {
+                    block.setBlockData(action.originalData, false);
+                } else {
+                    block.setType(action.originalMaterial);
+                }
                 undone++;
             }
         }
