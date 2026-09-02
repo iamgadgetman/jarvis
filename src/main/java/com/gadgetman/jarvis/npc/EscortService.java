@@ -1,7 +1,7 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
+import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
@@ -21,6 +21,7 @@ public class EscortService {
 
     private final Jarvis plugin;
     private final JarvisNPC host;
+    private final INPCProvider provider;
     private final DepositManager data;
 
     private static final double ARRIVE_DISTANCE = 4.0;
@@ -32,6 +33,7 @@ public class EscortService {
     public EscortService(Jarvis plugin, JarvisNPC host, DepositManager data) {
         this.plugin = plugin;
         this.host = host;
+        this.provider = host.getProvider();
         this.data = data;
     }
 
@@ -41,8 +43,7 @@ public class EscortService {
     }
 
     public void takeHome(Player player) {
-        NPC npc = host.getNPC(player);
-        if (npc == null) {
+        if (!provider.isSpawned(player)) {
             host.say(player, "Summon me first, sir — /jarvis summon.");
             return;
         }
@@ -51,14 +52,14 @@ public class EscortService {
             host.say(player, "No home on record, sir. Stand where you'd like it and say '/jarvis home set'.");
             return;
         }
-        Location npcLoc = host.getCurrentLocation(npc);
+        Location npcLoc = host.getCurrentLocation(player);
         if (home.getWorld() != npcLoc.getWorld()) {
             host.say(player, "Home is in another world, sir — a portal is required first.");
             return;
         }
 
         host.stopTask(player);
-        host.applyNavigatorDefaults(npc, null);
+        host.applyNavigatorDefaults(player, null);
         host.say(player, "This way, sir. Stay close — I'll light the road.");
 
         BukkitRunnable task = new BukkitRunnable() {
@@ -69,15 +70,15 @@ public class EscortService {
 
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline()) {
+                if (!provider.isSpawned(player) || !player.isOnline()) {
                     cancel();
                     host.taskDone(player, this);
                     return;
                 }
 
-                Location loc = host.getCurrentLocation(npc);
+                Location loc = host.getCurrentLocation(player);
                 Location playerLoc = player.getLocation();
-                host.pickupNearbyItems(npc, loc);
+                host.pickupNearbyItems(player, loc);
 
                 if (playerLoc.getWorld() != loc.getWorld()) {
                     cancel();
@@ -89,7 +90,7 @@ public class EscortService {
                 if (playerLoc.distance(home) <= ARRIVE_DISTANCE + 2) {
                     cancel();
                     host.taskDone(player, this);
-                    npc.getNavigator().cancelNavigation();
+                    provider.cancelNavigation(player);
                     host.say(player, "Home, sir. No casualties — I do like a quiet walk.");
                     return;
                 }
@@ -99,7 +100,7 @@ public class EscortService {
                 if (playerGap > WAIT_FOR_PLAYER_DISTANCE) {
                     if (!waiting) {
                         waiting = true;
-                        npc.getNavigator().cancelNavigation();
+                        provider.cancelNavigation(player);
                         if (!nagged) {
                             nagged = true;
                             host.say(player, "Do keep up, sir.");
@@ -113,18 +114,18 @@ public class EscortService {
                 lightHere(loc);
 
                 // Lead: aim for a point toward home, at most LEAD_DISTANCE ahead of the player
-                if (!npc.getNavigator().isNavigating() && loc.distance(home) > ARRIVE_DISTANCE) {
-                    npc.getNavigator().setTarget(home);
+                if (!provider.isNavigating(player) && loc.distance(home) > ARRIVE_DISTANCE) {
+                    provider.navigateTo(player, home);
                 }
-                if (loc.distance(playerLoc) > LEAD_DISTANCE && npc.getNavigator().isNavigating()) {
-                    npc.getNavigator().setPaused(true);
-                } else if (npc.getNavigator().isPaused()) {
-                    npc.getNavigator().setPaused(false);
+                if (loc.distance(playerLoc) > LEAD_DISTANCE && provider.isNavigating(player)) {
+                    provider.setNavigationPaused(player, true);
+                } else if (provider.isNavigationPaused(player)) {
+                    provider.setNavigationPaused(player, false);
                 }
 
                 // Stall watchdog
                 if (lastPos != null && loc.distance(lastPos) < 0.2 && !waiting
-                        && !npc.getNavigator().isPaused()) {
+                        && !provider.isNavigationPaused(player)) {
                     stalled++;
                 } else {
                     stalled = 0;
@@ -132,9 +133,9 @@ public class EscortService {
                 lastPos = loc.clone();
 
                 if (stalled > STALL_HOP_TICKS) {
-                    npc.getNavigator().cancelNavigation();
+                    provider.cancelNavigation(player);
                     Location near = host.findSafeNear(playerLoc);
-                    npc.teleport(near, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                    provider.teleport(player, near);
                     stalled = 0;
                 }
             }

@@ -1,7 +1,7 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
+import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Particle;
@@ -50,31 +50,31 @@ class Fisherman {
     private final Jarvis plugin;
     private final JarvisNPC host;
     private final Player player;
-    private final NPC npc;
+    private final INPCProvider provider;
     private final DepositManager deposits;
 
     private Location waterSpot = null;    // The block of water he's fishing in
     private int catches = 0;
     private int waitTicks = 0;            // Countdown to the next bite (20-tick loop units)
 
-    Fisherman(JarvisNPC host, Player player, NPC npc, DepositManager deposits) {
+    Fisherman(JarvisNPC host, Player player, DepositManager deposits) {
         this.host = host;
         this.plugin = host.getPlugin();
         this.player = player;
-        this.npc = npc;
+        this.provider = host.getProvider();
         this.deposits = deposits;
     }
 
     void start() {
-        Location npcLoc = host.getCurrentLocation(npc);
+        Location npcLoc = host.getCurrentLocation(player);
         Location edge = findWaterEdge(npcLoc);
         if (edge == null) {
             host.say(player, "No fishable water nearby, sir. A pond would be a start.");
             return;
         }
 
-        host.applyNavigatorDefaults(npc, null);
-        host.equipTool(npc, Material.FISHING_ROD);
+        host.applyNavigatorDefaults(player, null);
+        host.equipTool(player, Material.FISHING_ROD);
         host.say(player, "A spot of fishing, sir. Excellent choice — I find it centres one.");
 
         BukkitRunnable task = new BukkitRunnable() {
@@ -84,22 +84,22 @@ class Fisherman {
 
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline()) {
+                if (!provider.isSpawned(player) || !player.isOnline()) {
                     cancel();
                     host.taskDone(player, this);
                     return;
                 }
-                Location loc = host.getCurrentLocation(npc);
-                host.pickupNearbyItems(npc, loc);
+                Location loc = host.getCurrentLocation(player);
+                host.pickupNearbyItems(player, loc);
 
                 // Bags full — deliver and stop (fishing is leisure, not a shift)
-                if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
+                if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
                     cancel();
                     host.taskDone(player, this);
                     host.say(player, "The bags are full of fish, sir — " + catches
                             + " catches. A fine session.");
                     if (deposits.hasChest(player)) {
-                        deposits.startDepositRun(player, npc, deposits.getChest(player), () -> {});
+                        deposits.startDepositRun(player, deposits.getChest(player), () -> {});
                     }
                     return;
                 }
@@ -109,20 +109,19 @@ class Fisherman {
                     double dist = loc.distance(edge.clone().add(0.5, 0, 0.5));
                     if (dist <= 1.5) {
                         inPosition = true;
-                        npc.getNavigator().cancelNavigation();
+                        provider.cancelNavigation(player);
                         cast(loc);
                         return;
                     }
-                    if (!npc.getNavigator().isNavigating()) {
-                        npc.getNavigator().setTarget(edge.clone().add(0.5, 1, 0.5));
+                    if (!provider.isNavigating(player)) {
+                        provider.navigateTo(player, edge.clone().add(0.5, 1, 0.5));
                     }
                     if (lastPos != null && loc.distance(lastPos) < 0.15) stalled++;
                     else stalled = 0;
                     lastPos = loc.clone();
                     if (stalled > 6) {
-                        npc.getNavigator().cancelNavigation();
-                        npc.teleport(host.findSafeNear(edge.clone().add(0.5, 1, 0.5)),
-                                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                        provider.cancelNavigation(player);
+                        provider.teleport(player, host.findSafeNear(edge.clone().add(0.5, 1, 0.5)));
                         stalled = 0;
                     }
                     return;
@@ -156,15 +155,15 @@ class Fisherman {
             return;
         }
 
-        npc.faceLocation(waterSpot.clone().add(0.5, 1, 0.5));
-        if (npc.getEntity() instanceof LivingEntity le) le.swingMainHand();
+        provider.lookAt(player, waterSpot.clone().add(0.5, 1, 0.5));
+        if (provider.getEntity(player) instanceof LivingEntity le) le.swingMainHand();
         npcLoc.getWorld().playSound(npcLoc, Sound.ENTITY_FISHING_BOBBER_THROW, 0.8f, 1.0f);
 
         waitTicks = 10 + RANDOM.nextInt(16); // 10–25 seconds at the 20-tick loop
     }
 
     private void reelIn() {
-        if (waterSpot == null || !npc.isSpawned()) return;
+        if (waterSpot == null || !provider.isSpawned(player)) return;
         World world = waterSpot.getWorld();
         Location splash = waterSpot.clone().add(0.5, 1.0, 0.5);
 
@@ -181,16 +180,16 @@ class Fisherman {
 
         // The catch arcs out of the water toward him
         Item item = world.dropItem(splash, new ItemStack(caught, 1));
-        Vector toNpc = host.getCurrentLocation(npc).toVector().subtract(splash.toVector());
+        Vector toNpc = host.getCurrentLocation(player).toVector().subtract(splash.toVector());
         item.setVelocity(toNpc.normalize().multiply(0.3).setY(0.35));
 
         catches++;
-        if (npc.getEntity() instanceof LivingEntity le) le.swingMainHand();
+        if (provider.getEntity(player) instanceof LivingEntity le) le.swingMainHand();
 
         if (treasure) {
             host.say(player, "Well now — a " + caught.name().toLowerCase().replace('_', ' ')
                     + " from the depths, sir. The lake provides.");
-            Entertainer.celebrate(host, player, npc);
+            Entertainer.celebrate(host, player);
         } else if (catches % 10 == 0) {
             host.sayQuiet(player, catches + " catches and counting.");
         }

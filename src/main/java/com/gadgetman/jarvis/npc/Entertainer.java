@@ -1,7 +1,7 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
+import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
@@ -36,55 +36,58 @@ class Entertainer {
     };
 
     /** The full number: ~6 seconds of choreography. Registers as the active task. */
-    static void dance(JarvisNPC host, Player player, NPC npc) {
+    static void dance(JarvisNPC host, Player player) {
+        INPCProvider provider = host.getProvider();
         host.stopTask(player);
         host.say(player, "Very well, sir. Observe.");
-        perform(host, player, npc, 6 * 20, true);
+        perform(host, player, 6 * 20, true);
     }
 
     /** Milestone bop: short, does not interrupt narration or claim the active task. */
-    static void celebrate(JarvisNPC host, Player player, NPC npc) {
+    static void celebrate(JarvisNPC host, Player player) {
+        INPCProvider provider = host.getProvider();
         if (!host.getPlugin().getConfig().getBoolean("steward.celebrations", true)) return;
-        if (npc == null || !npc.isSpawned()) return;
-        perform(host, player, npc, 2 * 20, false);
+        if (!provider.isSpawned(player)) return;
+        perform(host, player, 2 * 20, false);
     }
 
-    private static void perform(JarvisNPC host, Player player, NPC npc, int durationTicks, boolean bow) {
+    private static void perform(JarvisNPC host, Player player, int durationTicks, boolean bow) {
+        INPCProvider provider = host.getProvider();
         Jarvis plugin = host.getPlugin();
 
         BukkitRunnable routine = new BukkitRunnable() {
             int tick = 0;
-            float baseYaw = npc.isSpawned() ? npc.getEntity().getLocation().getYaw() : 0f;
+            float baseYaw = provider.isSpawned(player) ? provider.getEntity(player).getLocation().getYaw() : 0f;
 
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline() || tick >= durationTicks) {
+                if (!provider.isSpawned(player) || !player.isOnline() || tick >= durationTicks) {
                     cancel();
                     if (bow) host.taskDone(player, this);
-                    if (npc.isSpawned() && bow) {
+                    if (provider.isSpawned(player) && bow) {
                         // Face the audience, one last swing (a bow, in spirit)
-                        npc.faceLocation(player.getLocation());
-                        if (npc.getEntity() instanceof LivingEntity le) le.swingMainHand();
+                        provider.lookAt(player, player.getLocation());
+                        if (provider.getEntity(player) instanceof LivingEntity le) le.swingMainHand();
                         host.say(player, AFTER_DANCE[RANDOM.nextInt(AFTER_DANCE.length)]);
                     }
                     return;
                 }
 
-                Location loc = npc.getEntity().getLocation();
+                Location loc = provider.getEntity(player).getLocation();
 
                 // Spin: quarter-ish turns on a beat
                 if (tick % 4 == 0) {
                     float yaw = baseYaw + (tick * 37f) % 360f;
-                    npc.getEntity().setRotation(yaw, RANDOM.nextBoolean() ? -10f : 10f);
+                    provider.getEntity(player).setRotation(yaw, RANDOM.nextBoolean() ? -10f : 10f);
                 }
 
                 // Hop on the off-beat
-                if (tick % 10 == 6 && npc.getEntity().isOnGround()) {
-                    npc.getEntity().setVelocity(new Vector(0, 0.32, 0));
+                if (tick % 10 == 6 && provider.getEntity(player).isOnGround()) {
+                    provider.getEntity(player).setVelocity(new Vector(0, 0.32, 0));
                 }
 
                 // Arm swings, alternating
-                if (tick % 6 == 0 && npc.getEntity() instanceof LivingEntity le) {
+                if (tick % 6 == 0 && provider.getEntity(player) instanceof LivingEntity le) {
                     if ((tick / 6) % 2 == 0) le.swingMainHand();
                     else le.swingOffHand();
                 }
