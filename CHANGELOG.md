@@ -1,5 +1,33 @@
 # Jarvis Changelog
 
+## v0.9.2 (2026-09-02) — builds stay inside the world
+
+A bug 0.9.0 shipped. Every limit on a build script is measured from the
+origin, which says nothing about whether the result fits in the world: a
+tower asked for on a mountain at y=250 stays well inside `max-vertical` and
+still runs off the top of the world, where the blocks simply never place.
+Lamplighter, BranchMiner and JarvisNPC all consult the world's build height;
+the build path was the one place that did not.
+
+```
+100-tall tower at y=64   -> 2525 blocks
+100-tall tower at y=250  -> ERR world y=320, outside -64 to 319
+30-deep cellar at y=64   -> 775 blocks
+30-deep cellar at y=-50  -> ERR world y=-80, outside -64 to 319
+```
+
+The failure feeds the repair retry, so the model shortens the build itself
+rather than the request dying.
+
+Bounds travel with the request as a `WorldBounds` record rather than sitting
+on the planner, because the planner is shared and two players can be planning
+at once. They are read on the main thread alongside the origin, being a world
+lookup.
+
+Found in a parallel branch of work: its `PlanValidator` checked plans against
+`worldMinY`/`worldMaxY`, which was the one check the script planner did not
+already cover.
+
 ## v0.9.1 (2026-09-02) — the NPC backend goes behind an interface
 
 No behaviour change. This is the `npc-provider-abstraction` branch finally
