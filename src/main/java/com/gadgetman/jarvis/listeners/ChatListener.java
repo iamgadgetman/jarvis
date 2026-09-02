@@ -218,6 +218,8 @@ public class ChatListener implements Listener {
             case "return", "come"          -> plugin.getJarvisNPC().returnToPlayer(player);
             case "follow"                  -> plugin.getJarvisNPC().follow(player);
             case "mine_here", "branch_mine"-> plugin.getJarvisNPC().startBranchMining(player);
+            case "dig_down" -> plugin.getJarvisNPC().digDown(player,
+                    parameters.optInt("depth", 0));
             case "deposit"                 -> plugin.getJarvisNPC().getDepositManager().deposit(player);
             case "set_chest"               -> plugin.getJarvisNPC().getDepositManager().setChest(player);
             case "attack", "fight"         -> plugin.getJarvisNPC().guard(player, "aggressive");

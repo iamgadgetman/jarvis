@@ -393,6 +393,7 @@ public class AIConnector {
             Map.entry("stand down", "stand_down"), Map.entry("at ease", "stand_down"),
             Map.entry("mine", "mine"), Map.entry("start mining", "mine"),
             Map.entry("mine here", "mine_here"), Map.entry("branch mine", "mine_here"),
+            Map.entry("dig down", "dig_down"), Map.entry("dig a shaft", "dig_down"),
             Map.entry("stop", "stop"), Map.entry("halt", "stop"),
             Map.entry("stop it", "stop"), Map.entry("cancel", "stop"),
             Map.entry("clearloot", "clearloot"), Map.entry("drop loot", "clearloot"),
@@ -423,6 +424,7 @@ public class AIConnector {
             Map.entry("stand_down", new String[]{"Standing down. Reluctantly.", "At ease, then."}),
             Map.entry("mine",       new String[]{"Manual labour. How delightfully medieval.", "Digging. Because you asked nicely."}),
             Map.entry("mine_here",  new String[]{"A proper mine, then. Mind the drop.", "Sinking a shaft. Do keep clear."}),
+            Map.entry("dig_down",   new String[]{"Straight down it is, sir.", "Digging. Do stand back from the edge."}),
             Map.entry("stop",       new String[]{"Stopping. Second thoughts already?", "Halted.", "As you wish. Again."}),
             Map.entry("clearloot",  new String[]{"Dropping everything. Literally.", "Your hoard, unhoarded."}),
             Map.entry("deposit",    new String[]{"Off to the chest with it.", "Unloading. The bags were getting heavy."}),
@@ -441,6 +443,10 @@ public class AIConnector {
 
     /** Token usage from the last provider call, for ai.log-usage. */
     private volatile String lastUsage;
+
+    /** "dig down 20 blocks" and friends, so a depth costs no model call. */
+    private static final java.util.regex.Pattern DIG_DEPTH = java.util.regex.Pattern.compile(
+            "dig (?:down |a shaft )?(\\d{1,3})(?: blocks?)?(?: (?:down|deep))?");
 
     private final java.util.concurrent.atomic.AtomicInteger quipCounter =
             new java.util.concurrent.atomic.AtomicInteger();
@@ -464,6 +470,16 @@ public class AIConnector {
 
         String action = FAST_ACTIONS.get(m);
         JSONObject parameters = new JSONObject();
+
+        // "dig down 20", "dig a shaft 30 blocks" -- reading one number does not
+        // need a model call.
+        if (action == null) {
+            java.util.regex.Matcher dd = DIG_DEPTH.matcher(m);
+            if (dd.matches()) {
+                action = "dig_down";
+                parameters.put("depth", Integer.parseInt(dd.group(1)));
+            }
+        }
 
         // "mine diamond" / "mine ancient debris" -- the one parameterised form.
         if (action == null && m.startsWith("mine ")) {
@@ -726,7 +742,12 @@ public class AIConnector {
                 "  attack - weapons free (aggressive guard)\n" +
                 "  stand_down - stop fighting, observe only\n" +
                 "  mine - hunt nearby exposed ores\n" +
-                "  mine_here - dig a full torch-lit branch mine at the current spot\n" +
+                "  mine_here - dig a full torch-lit branch mine at the current spot: it descends to\n" +
+                "              diamond level and then tunnels SIDEWAYS. Below that depth it has\n" +
+                "              nothing to descend to.\n" +
+                "  dig_down - sink a vertical shaft straight down from where he stands, ladder-lined\n" +
+                "             and lit. params: {depth (optional): blocks, default 20}\n" +
+                "             Use for \"dig down\", \"dig a shaft\", \"dig down 20 blocks\".\n" +
                 "  deposit - carry collected loot to the player's registered chest\n" +
                 "  set_chest - register the chest the player is looking at for deposits\n" +
                 "  stop - stop current task\n" +

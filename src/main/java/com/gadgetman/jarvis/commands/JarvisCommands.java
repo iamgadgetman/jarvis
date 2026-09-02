@@ -79,6 +79,19 @@ public class JarvisCommands implements CommandExecutor {
             case "attack" -> plugin.getJarvisNPC().attack(player);
             case "guard" -> plugin.getJarvisNPC().guard(player, args.length > 1 ? args[1] : null);
             case "watch", "sentry" -> plugin.getJarvisNPC().watch(player, args.length > 1 ? args[1] : null);
+            case "dig" -> {
+                // "/jarvis dig [depth]" -> vertical shaft, default from config
+                int depth = 0;
+                if (args.length > 1) {
+                    try {
+                        depth = Integer.parseInt(args[1]);
+                    } catch (NumberFormatException e) {
+                        player.sendMessage(ChatColor.RED + "Usage: /jarvis dig [depth]");
+                        return true;
+                    }
+                }
+                plugin.getJarvisNPC().digDown(player, depth);
+            }
             case "mine" -> {
                 // "/jarvis mine here" -> branch mine at current spot
                 if (args.length > 1 && (args[1].equalsIgnoreCase("here") || args[1].equalsIgnoreCase("branch"))) {

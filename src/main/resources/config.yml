@@ -150,6 +150,14 @@ memory:
 
 # ========== MINING CONFIGURATION ==========
 mining:
+  # /jarvis dig [depth] — a vertical shaft, ladder-lined and torch-lit. Distinct
+  # from branch mining, which descends to target-y and then tunnels sideways.
+  shaft:
+    default-depth: 20            # When no depth is given
+    place-ladders: true          # Line one wall so you can climb back out
+    place-torches: true
+    torch-interval: 6            # Blocks between wall torches
+
   # Search and movement
   search-radius: 16           # How far to look for ores (blocks)
   move-speed: 0.25            # Movement speed (0.1-0.5)

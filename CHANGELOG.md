@@ -1,5 +1,45 @@
 # Jarvis Changelog
 
+## v0.10.0 (2026-09-02) — dig down
+
+"Dig down twenty blocks" had nowhere to go. Anything containing "mine" or
+"dig" routed to ore-hunting or the branch miner, and the branch miner's whole
+job is to reach `mining.branch.target-y` (default **-54**) and then tunnel
+sideways. Asked from y=-54 it was already at target, so it skipped the
+staircase and went straight to galleries — which reads exactly like being
+ignored, but was the feature working as designed. There was simply no
+vertical-shaft action to route to.
+
+### Added
+
+- **`/jarvis dig [depth]`**, and `dig_down` in chat — a vertical shaft from
+  where he stands. Ladder-lined one wall the whole way and torch-lit every 6
+  blocks, because a twenty-block hole you cannot climb out of is a trap rather
+  than a feature.
+- Stops 5 blocks clear of bedrock, the same margin the branch miner uses, and
+  says so up front rather than silently digging less than asked:
+  *"Bedrock will stop us at 9 rather than 20, sir. Proceeding regardless."*
+- Fluids are sealed with cobblestone **before** the block beside them is
+  opened — the same order the branch miner uses, because opening first is how
+  you meet lava. More than four pockets against one block and it stops.
+- Depth is parsed locally: `dig down 20`, `dig 30 blocks`, `dig a shaft 15`
+  all resolve with no model call at all. Reading one number should not cost an
+  API round trip.
+- `mine_here` in the intent vocabulary now says what it actually does —
+  descends to diamond level and tunnels *sideways* — so the model stops
+  reaching for it when someone wants a hole.
+
+### Config
+
+```yaml
+mining:
+  shaft:
+    default-depth: 20
+    place-ladders: true
+    place-torches: true
+    torch-interval: 6
+```
+
 ## v0.9.2 (2026-09-02) — builds stay inside the world
 
 A bug 0.9.0 shipped. Every limit on a build script is measured from the

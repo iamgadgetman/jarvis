@@ -1363,6 +1363,23 @@ public class JarvisNPC implements Listener {
         new BranchMiner(this, player, depositManager).start();
     }
 
+    /**
+     * Sink a vertical shaft. Distinct from branch mining, which heads for a
+     * target depth and then tunnels sideways -- asked from below that depth it
+     * has nothing to descend to and goes straight to galleries.
+     *
+     * @param depth blocks down, or 0 for the configured default
+     */
+    public void digDown(Player player, int depth) {
+        if (getNPC(player) == null) {
+            say(player, "Summon me first, sir — /jarvis summon.");
+            return;
+        }
+        stopTask(player);
+        miningStates.remove(player.getUniqueId());
+        new ShaftDigger(plugin, this, player, depth).start();
+    }
+
     /** v0.2.0: follow mode — trail the player, carry the loot. */
     public void follow(Player player) {
         NPC npc = getNPC(player);
