@@ -490,6 +490,11 @@ public class AIConnector {
                 after the build. Use `glass` rather than `glass_pane` when you want a flush,
                 solid-looking window.
 
+                Put windows at y+1. A player standing on the floor has their eyes at about
+                y+1.6, so y+1 is the height you actually look through; y+2 sits above eye line
+                and reads as a gap under the eaves. Hang wall torches at y+2, above the
+                windows, so the two do not compete for the same band of wall.
+
                 Rules:
                 - Later writes win, so fill a wall and then set air over it to carve a doorway.
                 - Coordinates are relative to the origin and must stay within a few dozen blocks of it.
