@@ -129,6 +129,18 @@ lumberjack, lamplighter and steward, so it covered a fraction of what can be
 asked for. It now carries 25 actions, every one checked against ChatListener's
 dispatcher.
 
+**`ai.log-usage`** also ported, off by default. It logs token counts per call
+tagged with tier and provider, so build spend and chat spend are separable:
+
+```
+AI usage [HEAVY/claude] in=1834 out=7074 cache_write=0 cache_read=0
+AI usage [LIGHT/ollama] in=291 out=48 cache_write=0 cache_read=0
+```
+
+`dev` logged this inline in the Claude parser; here the usage is stashed and
+logged from `sendTiered`, because the tier is what makes the number worth
+reading — a build is ~7,000 output tokens, a chat reply a couple of hundred.
+
 `cache_control` was **not** ported, deliberately. Measured on this workload it is
 not worth the change: a build is ~1,800 input tokens against ~7,000 output, so
 input is about 5% of the cost and caching it saves roughly 4% of a build — some

@@ -18,6 +18,10 @@ ai:
   # default on purpose: a build script runs to thousands of output tokens and
   # takes tens of seconds. The 30s that suits chat times out mid-generation.
   heavy-timeout-seconds: 240
+  # Log token counts per call, tagged with tier and provider, e.g.
+  #   AI usage [HEAVY/claude] in=1834 out=7074 cache_write=0 cache_read=0
+  # Off by default; turn it on to see what builds actually cost.
+  log-usage: false
   reduced-mode:
     allow-risky-actions: false   # Ollama-only mode: allow console/permission actions
 

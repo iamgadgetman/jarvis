@@ -439,6 +439,9 @@ public class AIConnector {
             Map.entry("set_home",   new String[]{"Noted as home.", "This spot is now home. Ambitious."}),
             Map.entry("light",      new String[]{"Let there be light. Grudgingly.", "Lighting the place up."}));
 
+    /** Token usage from the last provider call, for ai.log-usage. */
+    private volatile String lastUsage;
+
     private final java.util.concurrent.atomic.AtomicInteger quipCounter =
             new java.util.concurrent.atomic.AtomicInteger();
 
@@ -874,9 +877,14 @@ public class AIConnector {
             triedProviders.add(tryProvider);
 
             try {
+                lastUsage = null;
                 String result = sendRequestForProvider(tryProvider, userContent, systemContent, jsonMode,
                         timeoutOverride, maxTokens);
                 health.recordSuccess();
+
+                if (lastUsage != null && plugin.getConfig().getBoolean("ai.log-usage", false)) {
+                    plugin.getLogger().info("AI usage [" + tier + "/" + tryProvider + "] " + lastUsage);
+                }
                 lastServed.put(tier, tryProvider);
 
                 // Keep the debug getters pointing at whoever answered last
@@ -1015,6 +1023,18 @@ public class AIConnector {
             while ((line = br.readLine()) != null) response.append(line);
 
             JSONObject json = new JSONObject(response.toString());
+
+            // Stashed rather than logged here: the tier is what makes the
+            // number useful (a build is ~7k output tokens, a chat reply a
+            // couple of hundred), and only sendTiered knows which one ran.
+            JSONObject usage = json.optJSONObject("usage");
+            lastUsage = usage == null ? null : String.format(
+                    "in=%d out=%d cache_write=%d cache_read=%d",
+                    usage.optInt("input_tokens"),
+                    usage.optInt("output_tokens"),
+                    usage.optInt("cache_creation_input_tokens"),
+                    usage.optInt("cache_read_input_tokens"));
+
             JSONArray content = json.optJSONArray("content");
 
             if (content == null || content.isEmpty()) {
