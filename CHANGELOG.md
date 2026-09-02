@@ -114,6 +114,27 @@ model that can get a detail wrong eventually will:
 - **Block states survive** placement and undo, so `oak_stairs[facing=north]`
   and `oak_log[axis=y]` land oriented instead of collapsing to a default.
 
+### Also ported
+
+**`tryFastPath()`** from the `dev` branch, where it had been stranded since that
+branch was deleted. Literal commands — `summon`, `follow me`, `stop`, `mine
+diamond` — resolve locally and never reach a model. The saving is latency, not
+money: the light tier goes to Ollama first, which is free but takes a second or
+two, so these now answer instantly.
+
+Adapted rather than copied. `dev`'s map emitted `quest_status`, an action from a
+quests package this branch does not have, which would have produced a command
+the dispatcher cannot route; and the original predated the farmer, fisherman,
+lumberjack, lamplighter and steward, so it covered a fraction of what can be
+asked for. It now carries 25 actions, every one checked against ChatListener's
+dispatcher.
+
+`cache_control` was **not** ported, deliberately. Measured on this workload it is
+not worth the change: a build is ~1,800 input tokens against ~7,000 output, so
+input is about 5% of the cost and caching it saves roughly 4% of a build — some
+30c across a hundred builds. `JARVIS_PERSONALITY` is 324 tokens, under Sonnet 5's
+1,024-token minimum cacheable prefix, so it would not cache for chat at all.
+
 ### Requires
 
 A cloud model. A local 7B does not write usable JavaScript — 0.8.6 already
