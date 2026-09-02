@@ -204,7 +204,7 @@ class BranchMiner {
                 host.say(player, "Bags are full, sir — running a delivery. Back shortly.");
                 resumeCell = npcLoc.getBlock().getLocation();
                 self.cancel();
-                deposits.startDepositRun(player, npc, deposits.getChest(player), () -> {
+                deposits.startDepositRun(player, deposits.getChest(player), () -> {
                     // v0.8.0: if the chest couldn't take it, don't loop forever
                     if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
                         mode = Mode.DONE;
@@ -473,7 +473,7 @@ class BranchMiner {
                 + oresMined + " ores recovered." + seals + " It's lit and walkable whenever you care to visit.");
         Entertainer.celebrate(host, player, npc);
         if (autoDeposit && deposits.hasChest(player) && host.lootSlotsUsed(npc) > 0) {
-            deposits.startDepositRun(player, npc, deposits.getChest(player), () -> {});
+            deposits.startDepositRun(player, deposits.getChest(player), () -> {});
         }
     }
 

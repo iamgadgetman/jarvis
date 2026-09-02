@@ -106,7 +106,7 @@ class Lumberjack {
         if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2 && deposits.hasChest(player)) {
             host.say(player, "Bags full of timber, sir — one delivery and I'll resume.");
             self.cancel();
-            deposits.startDepositRun(player, npc, deposits.getChest(player), () -> {
+            deposits.startDepositRun(player, deposits.getChest(player), () -> {
                 // v0.8.0: if the chest couldn't take it, don't loop forever
                 if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
                     host.say(player, "The chest is full and so are my bags, sir. "
@@ -294,7 +294,7 @@ class Lumberjack {
         }
         if (deposits.hasChest(player) && host.lootSlotsUsed(npc) > 0
                 && plugin.getConfig().getBoolean("mining.auto-deposit", true)) {
-            deposits.startDepositRun(player, npc, deposits.getChest(player), () -> {});
+            deposits.startDepositRun(player, deposits.getChest(player), () -> {});
         }
     }
 }

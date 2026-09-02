@@ -1,8 +1,7 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
-import net.citizensnpcs.api.trait.trait.Inventory;
+import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
@@ -120,38 +119,38 @@ public class DepositManager {
      * cancels whatever else Jarvis was doing.
      */
     public void deposit(Player player) {
-        NPC npc = host.getNPC(player);
-        if (npc == null) {
+        if (!host.getProvider().isSpawned(player)) {
             host.say(player, "Summon me first, sir — /jarvis summon.");
             return;
         }
 
         Location chest = getChest(player);
         if (chest == null) {
-            chest = findNearbyContainer(host.getCurrentLocation(npc), 8);
+            chest = findNearbyContainer(host.getCurrentLocation(player), 8);
         }
         if (chest == null) {
             host.say(player, "I have no chest on record, sir. Look at one and say '/jarvis chest'.");
             return;
         }
-        if (host.lootSlotsUsed(npc) == 0) {
+        if (host.lootSlotsUsed(player) == 0) {
             host.say(player, "My bags are already empty, sir.");
             return;
         }
 
         host.stopTask(player);
         host.say(player, "Delivering the goods, sir.");
-        startDepositRun(player, npc, chest, () -> {});
+        startDepositRun(player, chest, () -> {});
     }
 
     /**
      * The walking + dumping routine. Calls onComplete afterwards (used by
      * the branch miner to resume digging after an auto-deposit).
      */
-    void startDepositRun(Player player, NPC npc, Location chest, Runnable onComplete) {
+    void startDepositRun(Player player, Location chest, Runnable onComplete) {
+        INPCProvider provider = host.getProvider();
         final Location chestLoc = chest;
-        host.applyNavigatorDefaults(npc, null);
-        host.navigateTo(npc, chestLoc.clone().add(0.5, 1, 0.5), null);
+        host.applyNavigatorDefaults(player, null);
+        host.navigateTo(player, chestLoc.clone().add(0.5, 1, 0.5), null);
 
         BukkitRunnable task = new BukkitRunnable() {
             int stalled = 0;
@@ -159,19 +158,19 @@ public class DepositManager {
 
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline()) {
+                if (!provider.isSpawned(player) || !player.isOnline()) {
                     cancel();
                     host.taskDone(player, this);
                     return;
                 }
 
-                Location npcLoc = host.getCurrentLocation(npc);
+                Location npcLoc = host.getCurrentLocation(player);
                 double dist = npcLoc.distance(chestLoc.clone().add(0.5, 0.5, 0.5));
 
                 if (dist <= CHEST_REACH) {
                     cancel();
                     host.taskDone(player, this);
-                    dumpInto(player, npc, chestLoc);
+                    dumpInto(player, chestLoc);
                     onComplete.run();
                     return;
                 }
@@ -192,16 +191,16 @@ public class DepositManager {
                 }
                 lastPos = npcLoc.clone();
 
-                if (!npc.getNavigator().isNavigating()) {
-                    host.navigateTo(npc, chestLoc.clone().add(0.5, 1, 0.5), null);
+                if (!provider.isNavigating(player)) {
+                    host.navigateTo(player, chestLoc.clone().add(0.5, 1, 0.5), null);
                 }
 
                 if (stalled > WALK_NUDGE_TICKS) {
                     // Last resort within butler rules: short-range teleport
-                    npc.getNavigator().cancelNavigation();
+                    provider.cancelNavigation(player);
                     Location safe = chestLoc.clone().add(0.5, 1, 0.5);
                     safe.setYaw(npcLoc.getYaw());
-                    npc.teleport(safe, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                    provider.teleport(player, safe);
                     stalled = 0;
                 }
             }
@@ -212,14 +211,14 @@ public class DepositManager {
     }
 
     /** Move everything in the loot slots (1..35) into the container. */
-    private void dumpInto(Player player, NPC npc, Location chestLoc) {
+    private void dumpInto(Player player, Location chestLoc) {
         if (!(chestLoc.getBlock().getState() instanceof Container container)) {
             host.say(player, "The chest appears to have vanished, sir.");
             return;
         }
 
-        Inventory invTrait = npc.getOrAddTrait(Inventory.class);
-        ItemStack[] contents = invTrait.getContents();
+        INPCProvider provider = host.getProvider();
+        ItemStack[] contents = provider.getInventoryContents(player);
         int moved = 0, leftBehind = 0;
 
         // v0.8.0: slots 1+ all go in the chest — even diamond tools; only
@@ -240,7 +239,7 @@ public class DepositManager {
             }
         }
 
-        invTrait.setContents(contents);
+        provider.setInventoryContents(player, contents);
 
         World world = chestLoc.getWorld();
         if (world != null) {

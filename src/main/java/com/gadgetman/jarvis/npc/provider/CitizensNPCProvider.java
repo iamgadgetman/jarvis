@@ -409,6 +409,55 @@ public class CitizensNPCProvider implements INPCProvider {
         if (task != null) task.cancel();
     }
 
+    /**
+     * The plugin's navigator defaults, moved here from JarvisNPC.
+     *
+     * <p>All of this is backend policy -- Citizens' A*, its repath rate, its
+     * stuck action, its examiners -- so it belongs behind the interface rather
+     * than in the class that decides where the butler should walk. Most
+     * important is replacing Citizens' TeleportStuckAction default, which is
+     * the teleport-hopping 0.1.0 removed.
+     */
+    @Override
+    public void applyNavigationDefaults(Player owner, Runnable onStuck) {
+        NPC npc = playerNPCs.get(owner.getUniqueId());
+        if (npc == null) return;
+
+        boolean useAsync = plugin.getConfig().getBoolean("mining.use-async-pathfinder", true);
+        double navRange = plugin.getConfig().getDouble("mining.navigator-range", 64.0);
+
+        NavigatorParameters params = npc.getNavigator().getDefaultParameters();
+        params.useNewPathfinder(true);            // Citizens A*
+        if (useAsync) {
+            params.pathfinderType(net.citizensnpcs.api.ai.PathfinderType.CITIZENS_ASYNC);
+        }
+        params.range((float) navRange);
+        params.stationaryTicks(60);               // 3s without movement = stuck
+        params.updatePathRate(40);                // repath at most every 2s
+        params.distanceMargin(2.0);
+        params.pathDistanceMargin(1.0);
+        params.baseSpeed(1.0f);
+        params.speedModifier(1.1f);
+        params.stuckAction(onStuck == null ? NO_TELEPORT : (n, nav) -> { onStuck.run(); return false; });
+        // v0.8.2: let the A* route THROUGH water (swim paths) instead of
+        // treating ponds as walls he then blunders into and wedges under.
+        if (!params.hasExaminer(net.citizensnpcs.api.astar.pathfinder.SwimmingExaminer.class)) {
+            params.examiner(new net.citizensnpcs.api.astar.pathfinder.SwimmingExaminer());
+        }
+    }
+
+    /** Set a target ONCE. Callers watch progress; no per-tick re-targeting. */
+    @Override
+    public void navigateTo(Player owner, Location target, Runnable onStuck) {
+        NPC npc = playerNPCs.get(owner.getUniqueId());
+        if (npc == null || !npc.isSpawned()) return;
+        Navigator nav = npc.getNavigator();
+        if (nav.isNavigating()) nav.cancelNavigation();
+        nav.setTarget(target);
+        nav.getLocalParameters().stuckAction(
+                onStuck == null ? NO_TELEPORT : (n, navigator) -> { onStuck.run(); return false; });
+    }
+
     @Override
     public void setNavigationPaused(Player owner, boolean paused) {
         NPC npc = playerNPCs.get(owner.getUniqueId());
@@ -453,6 +502,23 @@ public class CitizensNPCProvider implements INPCProvider {
     public UUID getNPCUUID(Player owner) {
         NPC npc = playerNPCs.get(owner.getUniqueId());
         return npc != null ? npc.getUniqueId() : null;
+    }
+
+    /**
+     * The live NPC registry, shared rather than copied.
+     *
+     * <p>JarvisNPC held its own {@code Map<UUID, NPC>} before the provider
+     * existed. Two maps tracking the same NPCs is the kind of split that works
+     * until one of them misses a despawn on chunk unload, so JarvisNPC now
+     * points at this one. Same object, one source of truth.
+     */
+    public Map<UUID, NPC> registry() {
+        return playerNPCs;
+    }
+
+    /** Look up by owner id, for callers that only have a UUID. */
+    public NPC getCitizensNPC(UUID ownerId) {
+        return playerNPCs.get(ownerId);
     }
 
     /**

@@ -138,7 +138,7 @@ class Farmer {
         if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2 && deposits.hasChest(player)) {
             host.say(player, "Bags full, sir — delivering the produce. Back shortly.");
             self.cancel();
-            deposits.startDepositRun(player, npc, deposits.getChest(player), () -> {
+            deposits.startDepositRun(player, deposits.getChest(player), () -> {
                 // v0.8.0: if the chest couldn't take it, don't loop forever
                 if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
                     host.say(player, "The chest is full and so are my bags, sir. "
@@ -308,7 +308,7 @@ class Farmer {
         }
         if (plugin.getConfig().getBoolean("mining.auto-deposit", true)
                 && deposits.hasChest(player) && host.lootSlotsUsed(npc) > 0) {
-            deposits.startDepositRun(player, npc, deposits.getChest(player), () -> {});
+            deposits.startDepositRun(player, deposits.getChest(player), () -> {});
         }
     }
 }

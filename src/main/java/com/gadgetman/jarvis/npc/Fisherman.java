@@ -99,7 +99,7 @@ class Fisherman {
                     host.say(player, "The bags are full of fish, sir — " + catches
                             + " catches. A fine session.");
                     if (deposits.hasChest(player)) {
-                        deposits.startDepositRun(player, npc, deposits.getChest(player), () -> {});
+                        deposits.startDepositRun(player, deposits.getChest(player), () -> {});
                     }
                     return;
                 }

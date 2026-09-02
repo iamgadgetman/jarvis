@@ -95,6 +95,18 @@ public interface INPCProvider {
      */
     void setNavigationParams(Player owner, float speed, double range);
 
+    /**
+     * Apply this plugin's navigation defaults to the NPC.
+     *
+     * <p>Backend tuning -- pathfinder choice, repath rate, stuck policy,
+     * whether water is walkable -- expressed as one call so callers do not
+     * need to know any of it. {@code onStuck} null means never teleport out.
+     */
+    void applyNavigationDefaults(Player owner, Runnable onStuck);
+
+    /** Navigate to a point, installing a stuck handler for this trip. */
+    void navigateTo(Player owner, Location target, Runnable onStuck);
+
     /** Pause or resume navigation without losing the current target. */
     void setNavigationPaused(Player owner, boolean paused);
 

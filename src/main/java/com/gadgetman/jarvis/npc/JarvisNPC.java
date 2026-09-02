@@ -8,6 +8,8 @@ import net.citizensnpcs.api.ai.StuckAction;
 import net.citizensnpcs.api.ai.tree.BehaviorStatus;
 import net.citizensnpcs.api.astar.pathfinder.SwimmingExaminer;
 import net.citizensnpcs.api.npc.BlockBreaker;
+import com.gadgetman.jarvis.npc.provider.CitizensNPCProvider;
+import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import net.citizensnpcs.api.npc.NPC;
 import net.citizensnpcs.api.trait.trait.Equipment;
 import net.citizensnpcs.api.trait.trait.Inventory;
@@ -65,7 +67,21 @@ import java.util.function.Consumer;
 public class JarvisNPC implements Listener {
 
     private final Jarvis plugin;
-    private final Map<UUID, NPC> playerNPCs = new ConcurrentHashMap<>();
+    /**
+     * The NPC registry. Owned by the provider, not by this class -- see
+     * CitizensNPCProvider#registry(). Held here as a field so the sixteen
+     * sites that touch it directly are unchanged; it is the same map object,
+     * so provider and host can never disagree about who is spawned.
+     */
+    private final Map<UUID, NPC> playerNPCs;
+
+    /**
+     * The NPC backend. Declared concrete because this is the one class that
+     * still reaches past the interface -- it configures Citizens pathfinding
+     * and holds Citizens NPC objects directly. Everything else goes through
+     * {@link #getProvider()} and never names Citizens at all.
+     */
+    private final CitizensNPCProvider provider;
     private DepositManager depositManager;
     private RecoveryService recoveryService;
     private EscortService escortService;
@@ -216,6 +232,8 @@ public class JarvisNPC implements Listener {
 
     public JarvisNPC(Jarvis plugin) {
         this.plugin = plugin;
+        this.provider = new CitizensNPCProvider(plugin);
+        this.playerNPCs = provider.registry();
         this.debugMode = plugin.getConfig().getBoolean("mining.debug", false);
         this.searchRadius = plugin.getConfig().getInt("mining.search-radius", 24);
         this.navRange = plugin.getConfig().getDouble("mining.navigator-range", 64.0);
@@ -332,36 +350,37 @@ public class JarvisNPC implements Listener {
      * most importantly TeleportStuckAction (the teleport-hopping culprit).
      */
     void applyNavigatorDefaults(NPC npc, Runnable onStuck) {
-        NavigatorParameters params = npc.getNavigator().getDefaultParameters();
-        params.useNewPathfinder(true);            // Citizens A*
-        if (useAsyncPathfinder) {
-            params.pathfinderType(net.citizensnpcs.api.ai.PathfinderType.CITIZENS_ASYNC);
-        }
-        params.range((float) navRange);
-        params.stationaryTicks(60);               // 3s without movement = stuck
-        params.updatePathRate(40);                // repath at most every 2s
-        params.distanceMargin(2.0);
-        params.pathDistanceMargin(1.0);
-        params.baseSpeed(1.0f);
-        params.speedModifier(1.1f);
-        params.stuckAction(onStuck != null ? new ButlerStuckAction(onStuck) : NO_TELEPORT);
-        // v0.8.2: let the A* route THROUGH water (swim paths) instead of
-        // treating ponds as walls he then blunders into and wedges under.
-        if (!params.hasExaminer(SwimmingExaminer.class)) {
-            params.examiner(new SwimmingExaminer());
-        }
+        Player owner = ownerOf(npc);
+        if (owner != null) provider.applyNavigationDefaults(owner, onStuck);
     }
+
+    /** Player-keyed form, for callers that never hold a Citizens NPC. */
+    public void applyNavigatorDefaults(Player owner, Runnable onStuck) {
+        provider.applyNavigationDefaults(owner, onStuck);
+    }
+
 
     /** Set a navigation target ONCE. The tick loop watches progress; no per-tick re-targeting. */
     void navigateTo(NPC npc, Location dest, Runnable onStuck) {
-        Navigator nav = npc.getNavigator();
-        if (nav.isNavigating()) {
-            nav.cancelNavigation();
-        }
-        nav.setTarget(dest);
-        nav.getLocalParameters().stuckAction(onStuck != null ? new ButlerStuckAction(onStuck) : NO_TELEPORT);
+        Player owner = ownerOf(npc);
+        if (owner != null) provider.navigateTo(owner, dest, onStuck);
         debug("Navigating to " + formatLoc(dest));
     }
+
+    /** Player-keyed form, for callers that never hold a Citizens NPC. */
+    public void navigateTo(Player owner, Location dest, Runnable onStuck) {
+        provider.navigateTo(owner, dest, onStuck);
+    }
+
+    /** Reverse lookup from NPC back to the player it belongs to. */
+    private Player ownerOf(NPC npc) {
+        if (npc == null) return null;
+        for (Map.Entry<UUID, NPC> e : playerNPCs.entrySet()) {
+            if (e.getValue().equals(npc)) return plugin.getServer().getPlayer(e.getKey());
+        }
+        return null;
+    }
+
 
     // ==================== BLOCK BREAKING ====================
 
@@ -504,7 +523,7 @@ public class JarvisNPC implements Listener {
                     miningStates.remove(player.getUniqueId());
                     say(player, "My bags are full, sir. " + state.oresMined + " ores this trip.");
                     if (depositManager != null && depositManager.hasChest(player)) {
-                        depositManager.startDepositRun(player, npc,
+                        depositManager.startDepositRun(player,
                                 depositManager.getChest(player), () -> {});
                     }
                     return;
@@ -1628,6 +1647,74 @@ public class JarvisNPC implements Listener {
 
     public int getActiveTaskCount() {
         return activeTasks.size();
+    }
+
+    // ==================== PLAYER-KEYED OVERLOADS ====================
+    //
+    // The helper classes (Farmer, Fisherman, Defender, ...) used to be handed a
+    // Citizens NPC and call these directly. These thin forms let them work from
+    // the player alone, so nothing outside this class and the provider names a
+    // Citizens type. The NPC-taking originals stay for this class's own use.
+
+    void breakBlockProperly(Player player, Block block, Consumer<Boolean> onDone) {
+        NPC npc = getNPC(player);
+        if (npc == null) { onDone.accept(false); return; }
+        breakBlockProperly(npc, block, onDone);
+    }
+
+    void pickupNearbyItems(Player player, Location npcLoc) {
+        NPC npc = getNPC(player);
+        if (npc != null) pickupNearbyItems(npc, npcLoc);
+    }
+
+    void pickupNearbyItems(Player player, Location npcLoc, boolean includeJunk) {
+        NPC npc = getNPC(player);
+        if (npc != null) pickupNearbyItems(npc, npcLoc, includeJunk);
+    }
+
+    void equipTool(Player player, Material tool) {
+        NPC npc = getNPC(player);
+        if (npc != null) equipTool(npc, tool);
+    }
+
+    ItemStack getToolInHand(Player player) {
+        NPC npc = getNPC(player);
+        return npc == null ? null : getToolInHand(npc);
+    }
+
+    void giveGuardEquipment(Player player) {
+        NPC npc = getNPC(player);
+        if (npc != null) giveGuardEquipment(npc);
+    }
+
+    void giveStartingEquipment(Player player) {
+        NPC npc = getNPC(player);
+        if (npc != null) giveStartingEquipment(npc);
+    }
+
+    void faceLevel(Player player, Location target) {
+        NPC npc = getNPC(player);
+        if (npc != null) faceLevel(npc, target);
+    }
+
+    int lootSlotsUsed(Player player) {
+        NPC npc = getNPC(player);
+        return npc == null ? 0 : lootSlotsUsed(npc);
+    }
+
+    ItemStack getOrRestoreTool(Player player) {
+        NPC npc = getNPC(player);
+        return npc == null ? null : getOrRestoreTool(npc);
+    }
+
+    Location getCurrentLocation(Player player) {
+        NPC npc = getNPC(player);
+        return npc == null ? null : getCurrentLocation(npc);
+    }
+
+    /** The NPC backend, for everything that drives the NPC without knowing Citizens. */
+    public INPCProvider getProvider() {
+        return provider;
     }
 
     public NPC getNPCForPlayer(UUID uuid) {
