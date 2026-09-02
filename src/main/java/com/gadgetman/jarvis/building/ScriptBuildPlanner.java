@@ -327,11 +327,20 @@ public class ScriptBuildPlanner {
 
         boolean hollow = "hollow".equalsIgnoreCase(mode);
         boolean outline = "outline".equalsIgnoreCase(mode);
+        // "walls" exists because vanilla has no mode for what a building
+        // actually needs. Models reach for "hollow" to mean walls -- one live
+        // script commented a hollow fill as "Walls (hollow box)" -- but hollow
+        // is a full shell, so its bottom face paves the floor the player is
+        // standing on and its top face caps the room. That is what put every
+        // floor and door a block too high.
+        boolean walls = "walls".equalsIgnoreCase(mode);
 
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {
-                    if (hollow || outline) {
+                    if (walls) {
+                        if (x != minX && x != maxX && z != minZ && z != maxZ) continue;
+                    } else if (hollow || outline) {
                         // How many axes sit on a face of the box. One means a
                         // face (shell), two means an edge.
                         int onFace = 0;

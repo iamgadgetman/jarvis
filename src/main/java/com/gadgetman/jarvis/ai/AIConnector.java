@@ -405,8 +405,13 @@ public class AIConnector {
                 You control a builder through two functions. Implement buildCreation; do not call it yourself.
 
                   fill(x1, y1, z1, x2, y2, z2, block, mode)
-                      Fills the box between the two corners, inclusive.
-                      mode is optional: "solid" (default), "hollow" (shell only), "outline" (edges only).
+                      Fills the box between the two corners, inclusive. mode is optional:
+                        "solid"   (default) every block in the box
+                        "walls"   the four upright sides only -- no floor, no ceiling
+                        "hollow"  the whole shell, INCLUDING its floor and ceiling faces
+                        "outline" the twelve edges only
+                      For a room, use "walls". "hollow" would pave the floor you stand on
+                      and cap the room with a ceiling.
                   setBlock(x, y, z, block)
                       Places one block.
                   function buildCreation(x, y, z) { }
@@ -420,6 +425,9 @@ public class AIConnector {
                 that is the air the player is standing in, and filling it buries them and
                 lifts the whole building a block off the ground. Lay exactly one floor
                 layer, and add no foundation beneath it unless asked.
+
+                This means the walls of a room are `fill(..., "walls")` from y up, over a
+                floor laid at y-1. Nothing else may write to the y level inside the room.
 
                 Block ids may carry states, exactly as the /setblock command accepts them:
                   "oak_planks", "minecraft:stone_bricks", "oak_stairs[facing=north,half=bottom]",
