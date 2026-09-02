@@ -1101,7 +1101,7 @@ public class JarvisNPC implements Listener {
         stopTask(player);
         miningStates.remove(player.getUniqueId());
 
-        Defender defender = new Defender(this, player, npc, stance, Defender.Mode.BODYGUARD);
+        Defender defender = new Defender(this, player, stance, Defender.Mode.BODYGUARD);
         activeDefenders.put(player.getUniqueId(), defender);
         defender.start();
     }
@@ -1118,7 +1118,7 @@ public class JarvisNPC implements Listener {
         miningStates.remove(player.getUniqueId());
 
         Defender.Stance stance = parseStance(stanceArg, Defender.Stance.AGGRESSIVE);
-        Defender defender = new Defender(this, player, npc, stance, Defender.Mode.SENTRY);
+        Defender defender = new Defender(this, player, stance, Defender.Mode.SENTRY);
         activeDefenders.put(player.getUniqueId(), defender);
         defender.start();
     }
@@ -1205,7 +1205,7 @@ public class JarvisNPC implements Listener {
         stopTask(player);
         miningStates.remove(player.getUniqueId());
         Material crop = Farmer.cropFromKeyword(cropKeyword);
-        new Farmer(this, player, npc, depositManager, crop, tend).start();
+        new Farmer(this, player, depositManager, crop, tend).start();
     }
 
     /** Lumberjack: fell N trees, replant saplings. */
@@ -1217,7 +1217,7 @@ public class JarvisNPC implements Listener {
         }
         stopTask(player);
         miningStates.remove(player.getUniqueId());
-        new Lumberjack(this, player, npc, depositManager, trees).start();
+        new Lumberjack(this, player, depositManager, trees).start();
     }
 
     /** Fishing at the nearest water's edge. */
@@ -1229,7 +1229,7 @@ public class JarvisNPC implements Listener {
         }
         stopTask(player);
         miningStates.remove(player.getUniqueId());
-        new Fisherman(this, player, npc, depositManager).start();
+        new Fisherman(this, player, depositManager).start();
     }
 
     /** The dance. */
@@ -1239,7 +1239,7 @@ public class JarvisNPC implements Listener {
             say(player, "Summon me first, sir — /jarvis summon.");
             return;
         }
-        Entertainer.dance(this, player, npc);
+        Entertainer.dance(this, player);
     }
 
     /**
@@ -1254,7 +1254,7 @@ public class JarvisNPC implements Listener {
         }
         stopTask(player);
         miningStates.remove(player.getUniqueId());
-        new Lamplighter(this, player, npc, radius, type, spacing).start();
+        new Lamplighter(this, player, radius, type, spacing).start();
     }
 
     /** Patrol: walk a persisted waypoint circuit as a sentry. */
@@ -1281,7 +1281,7 @@ public class JarvisNPC implements Listener {
                 }
                 stopTask(player);
                 miningStates.remove(player.getUniqueId());
-                Defender defender = new Defender(this, player, npc,
+                Defender defender = new Defender(this, player,
                         Defender.Stance.AGGRESSIVE, Defender.Mode.PATROL);
                 defender.setPatrolRoute(route);
                 activeDefenders.put(player.getUniqueId(), defender);
@@ -1360,7 +1360,7 @@ public class JarvisNPC implements Listener {
         }
         stopTask(player);
         miningStates.remove(player.getUniqueId());
-        new BranchMiner(this, player, npc, depositManager).start();
+        new BranchMiner(this, player, depositManager).start();
     }
 
     /** v0.2.0: follow mode — trail the player, carry the loot. */

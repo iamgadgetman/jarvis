@@ -1,8 +1,7 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
-import net.citizensnpcs.api.trait.trait.Inventory;
+import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
@@ -66,7 +65,7 @@ class Farmer {
     private final Jarvis plugin;
     private final JarvisNPC host;
     private final Player player;
-    private final NPC npc;
+    private final INPCProvider provider;
     private final DepositManager deposits;
     private final Material cropFilter;      // null = all crops
     private final boolean tendMode;
@@ -85,22 +84,22 @@ class Farmer {
     private int stalled = 0;
     private Location lastPos = null;
 
-    Farmer(JarvisNPC host, Player player, NPC npc, DepositManager deposits,
+    Farmer(JarvisNPC host, Player player, DepositManager deposits,
            Material cropFilter, boolean tendMode) {
         this.host = host;
         this.plugin = host.getPlugin();
         this.player = player;
-        this.npc = npc;
+        this.provider = host.getProvider();
         this.deposits = deposits;
         this.cropFilter = cropFilter;
         this.tendMode = tendMode;
-        this.fieldCenter = host.getCurrentLocation(npc).getBlock().getLocation();
+        this.fieldCenter = host.getCurrentLocation(player).getBlock().getLocation();
         this.fieldRadius = plugin.getConfig().getInt("farming.field-radius", 16);
     }
 
     void start() {
-        host.applyNavigatorDefaults(npc, null);
-        host.equipTool(npc, Material.DIAMOND_HOE);
+        host.applyNavigatorDefaults(player, null);
+        host.equipTool(player, Material.DIAMOND_HOE);
 
         scanField();
         if (targets.isEmpty() && !tendMode) {
@@ -117,13 +116,13 @@ class Farmer {
         BukkitRunnable task = new BukkitRunnable() {
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline()) {
+                if (!provider.isSpawned(player) || !player.isOnline()) {
                     cancel();
                     host.taskDone(player, this);
                     return;
                 }
-                Location loc = host.getCurrentLocation(npc);
-                host.pickupNearbyItems(npc, loc);
+                Location loc = host.getCurrentLocation(player);
+                host.pickupNearbyItems(player, loc);
                 tick(loc, this);
             }
         };
@@ -135,18 +134,18 @@ class Farmer {
         if (working) return;
 
         // Bags full? Deliver and continue (tend) or wrap up (sweep)
-        if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2 && deposits.hasChest(player)) {
+        if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2 && deposits.hasChest(player)) {
             host.say(player, "Bags full, sir — delivering the produce. Back shortly.");
             self.cancel();
             deposits.startDepositRun(player, deposits.getChest(player), () -> {
                 // v0.8.0: if the chest couldn't take it, don't loop forever
-                if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
+                if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
                     host.say(player, "The chest is full and so are my bags, sir. "
                             + "Farming is paused until there's somewhere to put things.");
                     return;
                 }
-                host.applyNavigatorDefaults(npc, null);
-                host.equipTool(npc, Material.DIAMOND_HOE);
+                host.applyNavigatorDefaults(player, null);
+                host.equipTool(player, Material.DIAMOND_HOE);
                 start(); // re-enter: rescan from the field
             });
             return;
@@ -170,8 +169,8 @@ class Farmer {
             }
             // Drift back to the field center if he wandered
             if (loc.distance(fieldCenter.clone().add(0.5, 0, 0.5)) > fieldRadius
-                    && !npc.getNavigator().isNavigating()) {
-                npc.getNavigator().setTarget(fieldCenter.clone().add(0.5, 1, 0.5));
+                    && !provider.isNavigating(player)) {
+                provider.navigateTo(player, fieldCenter.clone().add(0.5, 1, 0.5));
             }
             return;
         }
@@ -188,16 +187,15 @@ class Farmer {
         double dist = loc.distance(target.clone().add(0.5, 0.5, 0.5));
         if (dist > REACH) {
             // Walk over
-            if (!npc.getNavigator().isNavigating()) {
-                npc.getNavigator().setTarget(target.clone().add(0.5, 1, 0.5));
+            if (!provider.isNavigating(player)) {
+                provider.navigateTo(player, target.clone().add(0.5, 1, 0.5));
             }
             if (lastPos != null && loc.distance(lastPos) < 0.15) stalled++;
             else stalled = 0;
             lastPos = loc.clone();
             if (stalled > STALL_HOP_TICKS) {
-                npc.getNavigator().cancelNavigation();
-                npc.teleport(host.findSafeNear(target.clone().add(0.5, 1, 0.5)),
-                        org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                provider.cancelNavigation(player);
+                provider.teleport(player, host.findSafeNear(target.clone().add(0.5, 1, 0.5)));
                 stalled = 0;
             }
             return;
@@ -206,11 +204,11 @@ class Farmer {
         // Harvest: face, swing the hoe, break, replant
         targets.poll();
         working = true;
-        npc.faceLocation(target.clone().add(0.5, 0.5, 0.5));
-        if (npc.getEntity() instanceof LivingEntity le) le.swingMainHand();
+        provider.lookAt(player, target.clone().add(0.5, 0.5, 0.5));
+        if (provider.getEntity(player) instanceof LivingEntity le) le.swingMainHand();
 
         Material type = crop.getType();
-        crop.breakNaturally(host.getToolInHand(npc));
+        crop.breakNaturally(host.getToolInHand(player));
         harvested++;
         loc.getWorld().playSound(target, Sound.BLOCK_CROP_BREAK, 0.8f, 1.0f);
 
@@ -256,14 +254,13 @@ class Farmer {
 
     /** Take one seed item from the bags (slots 1..35). */
     private boolean consumeSeed(Material seed) {
-        Inventory invTrait = npc.getOrAddTrait(Inventory.class);
-        ItemStack[] contents = invTrait.getContents();
+        ItemStack[] contents = provider.getInventoryContents(player);
         for (int i = 1; i < Math.min(36, contents.length); i++) {
             ItemStack item = contents[i];
             if (item == null || item.getType() != seed) continue;
             if (item.getAmount() <= 1) contents[i] = null;
             else item.setAmount(item.getAmount() - 1);
-            invTrait.setContents(contents);
+            provider.setInventoryContents(player, contents);
             return true;
         }
         return false;
@@ -299,15 +296,15 @@ class Farmer {
     }
 
     private void finish() {
-        npc.getNavigator().cancelNavigation();
+        provider.cancelNavigation(player);
         String seedNote = unplanted > 0
                 ? " (" + unplanted + " plots await seed, I'm afraid.)" : " All replanted.";
         host.say(player, "Harvest complete, sir — " + harvested + " crops gathered." + seedNote);
         if (harvested >= 10) {
-            Entertainer.celebrate(host, player, npc);
+            Entertainer.celebrate(host, player);
         }
         if (plugin.getConfig().getBoolean("mining.auto-deposit", true)
-                && deposits.hasChest(player) && host.lootSlotsUsed(npc) > 0) {
+                && deposits.hasChest(player) && host.lootSlotsUsed(player) > 0) {
             deposits.startDepositRun(player, deposits.getChest(player), () -> {});
         }
     }

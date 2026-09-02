@@ -1,7 +1,7 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
+import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
 import org.bukkit.Sound;
 import org.bukkit.entity.Creeper;
@@ -40,7 +40,7 @@ class Defender {
     private final Jarvis plugin;
     private final JarvisNPC host;
     private final Player player;
-    private final NPC npc;
+    private final INPCProvider provider;
 
     private Stance stance;
     private final Mode mode;
@@ -71,15 +71,15 @@ class Defender {
     private static final long CALLOUT_COOLDOWN_MS = 8_000;
     private static final double CALLOUT_RADIUS = 10.0;
 
-    Defender(JarvisNPC host, Player player, NPC npc, Stance stance, Mode mode) {
+    Defender(JarvisNPC host, Player player, Stance stance, Mode mode) {
         this.host = host;
         this.plugin = host.getPlugin();
         this.player = player;
-        this.npc = npc;
+        this.provider = host.getProvider();
         this.stance = stance;
         this.mode = mode;
         this.post = mode == Mode.SENTRY
-                ? host.getCurrentLocation(npc).getBlock().getLocation().add(0.5, 0, 0.5) : null;
+                ? host.getCurrentLocation(player).getBlock().getLocation().add(0.5, 0, 0.5) : null;
 
         var cfg = plugin.getConfig();
         this.engageRadius = cfg.getDouble("defender.engage-radius", 12.0);
@@ -111,8 +111,8 @@ class Defender {
     // ==================== LIFECYCLE ====================
 
     void start() {
-        host.applyNavigatorDefaults(npc, null);
-        host.giveGuardEquipment(npc);
+        host.applyNavigatorDefaults(player, null);
+        host.giveGuardEquipment(player);
 
         String where = switch (mode) {
             case SENTRY -> "Holding this position";
@@ -129,13 +129,13 @@ class Defender {
         BukkitRunnable task = new BukkitRunnable() {
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline()) {
+                if (!provider.isSpawned(player) || !player.isOnline()) {
                     cancel();
                     host.taskDone(player, this);
                     return;
                 }
-                Location npcLoc = host.getCurrentLocation(npc);
-                host.pickupNearbyItems(npc, npcLoc);
+                Location npcLoc = host.getCurrentLocation(player);
+                host.pickupNearbyItems(player, npcLoc);
                 tick(npcLoc);
             }
         };
@@ -164,9 +164,8 @@ class Defender {
         if (anchor.getWorld() != npcLoc.getWorld()) {
             // Player changed worlds — bodyguard catches up, sentry stays
             if (mode == Mode.BODYGUARD) {
-                npc.getNavigator().cancelNavigation();
-                npc.teleport(player.getLocation(),
-                        org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                provider.cancelNavigation(player);
+                provider.teleport(player, player.getLocation());
             }
             return;
         }
@@ -209,19 +208,18 @@ class Defender {
         double distToAnchor = npcLoc.distance(anchor);
         if (returning && distToAnchor <= 3.0) {
             returning = false;
-            npc.getNavigator().cancelNavigation();
+            provider.cancelNavigation(player);
         }
         if (distToAnchor > (mode == Mode.BODYGUARD ? 4.0 : mode == Mode.PATROL ? 1.5 : 3.0)) {
-            if (!npc.getNavigator().isNavigating()) {
+            if (!provider.isNavigating(player)) {
                 if (mode == Mode.BODYGUARD && distToAnchor > 30) {
-                    npc.teleport(player.getLocation(),
-                            org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                    provider.teleport(player, player.getLocation());
                 } else {
-                    npc.getNavigator().setTarget(anchor);
+                    provider.navigateTo(player, anchor);
                 }
             }
-        } else if (npc.getNavigator().isNavigating() && distToAnchor <= 2.0) {
-            npc.getNavigator().cancelNavigation();
+        } else if (provider.isNavigating(player) && distToAnchor <= 2.0) {
+            provider.cancelNavigation(player);
         }
     }
 
@@ -231,24 +229,24 @@ class Defender {
         double dist = npcLoc.distance(target.getLocation());
 
         if (dist > ATTACK_REACH) {
-            if (!navBusy || !npc.getNavigator().isNavigating()) {
-                npc.getNavigator().setTarget(target, true);
+            if (!navBusy || !provider.isNavigating(player)) {
+                provider.navigateTo(player, target, true);
                 navBusy = true;
             }
             return;
         }
 
-        npc.getNavigator().cancelNavigation();
+        provider.cancelNavigation(player);
         navBusy = false;
-        npc.faceLocation(target.getLocation());
+        provider.lookAt(player, target.getLocation());
 
         long now = System.currentTimeMillis();
         if (now - lastAttackMs >= attackCooldownMs) {
             lastAttackMs = now;
-            if (npc.getEntity() instanceof LivingEntity le) {
+            if (provider.getEntity(player) instanceof LivingEntity le) {
                 le.swingMainHand();
             }
-            target.damage(attackDamage, npc.getEntity());
+            target.damage(attackDamage, provider.getEntity(player));
             npcLoc.getWorld().playSound(npcLoc, Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1f, 1f);
 
             if (target.isDead() || !target.isValid()) {
@@ -262,17 +260,17 @@ class Defender {
         target = null;
         navBusy = false;
         returning = true;
-        npc.getNavigator().cancelNavigation();
+        provider.cancelNavigation(player);
     }
 
     /** Choose the most pressing hostile per stance. Creepers first — they explode. */
     private LivingEntity selectTarget(Location anchor, Location npcLoc) {
-        if (npc.getEntity() == null) return null;
+        if (provider.getEntity(player) == null) return null;
 
         LivingEntity best = null;
         double bestScore = Double.MAX_VALUE;
 
-        for (Entity e : npc.getEntity().getNearbyEntities(engageRadius, engageRadius, engageRadius)) {
+        for (Entity e : provider.getEntity(player).getNearbyEntities(engageRadius, engageRadius, engageRadius)) {
             if (!(e instanceof Enemy) || !(e instanceof LivingEntity living)) continue;
             if (living.isDead() || !living.isValid()) continue;
             if (living.getLocation().distance(anchor) > engageRadius) continue;

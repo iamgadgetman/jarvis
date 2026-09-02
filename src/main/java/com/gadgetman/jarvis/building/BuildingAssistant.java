@@ -4,7 +4,7 @@ import com.gadgetman.jarvis.Jarvis;
 import com.gadgetman.jarvis.memory.BuildExperience;
 import com.gadgetman.jarvis.memory.ExperienceMemory;
 import com.gadgetman.jarvis.memory.SituationSnapshot;
-import net.citizensnpcs.api.npc.NPC;
+
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -235,8 +235,7 @@ public class BuildingAssistant {
         }
 
         // Check if NPC is summoned
-        NPC npc = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
-        if (npc == null || !npc.isSpawned()) {
+        if (!plugin.getJarvisNPC().getProvider().isSpawned(player)) {
             player.sendMessage(ChatColor.RED + "Summon Jarvis first with /jarvis summon");
             return;
         }
@@ -513,8 +512,7 @@ public class BuildingAssistant {
         state.task = new BukkitRunnable() {
             @Override
             public void run() {
-                NPC npc = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
-                if (npc == null || !npc.isSpawned() || !player.isOnline()) {
+                if (!plugin.getJarvisNPC().getProvider().isSpawned(player) || !player.isOnline()) {
                     cancelBuildInternal(player, "NPC or player unavailable", false);
                     cancel();
                     return;
@@ -915,8 +913,7 @@ public class BuildingAssistant {
      * Build a simple shape without AI
      */
     public void buildSimpleStructure(Player player, String type, int size) {
-        NPC npc = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
-        if (npc == null || !npc.isSpawned()) {
+        if (!plugin.getJarvisNPC().getProvider().isSpawned(player)) {
             player.sendMessage(ChatColor.RED + "Summon Jarvis first!");
             return;
         }

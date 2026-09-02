@@ -1,7 +1,7 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
+import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -50,7 +50,7 @@ class BranchMiner {
     private final Jarvis plugin;
     private final JarvisNPC host;
     private final Player player;
-    private final NPC npc;
+    private final INPCProvider provider;
     private final DepositManager deposits;
 
     private final List<Step> plan = new ArrayList<>();
@@ -84,11 +84,11 @@ class BranchMiner {
     private static final int FAR_NUDGE_TICKS = 16;     // 8s stall on longer transitions
     private static final double MAX_TRANSITION_DISTANCE = 32.0;
 
-    BranchMiner(JarvisNPC host, Player player, NPC npc, DepositManager deposits) {
+    BranchMiner(JarvisNPC host, Player player, DepositManager deposits) {
         this.host = host;
         this.plugin = host.getPlugin();
         this.player = player;
-        this.npc = npc;
+        this.provider = host.getProvider();
         this.deposits = deposits;
 
         var cfg = plugin.getConfig();
@@ -105,7 +105,7 @@ class BranchMiner {
 
     /** Build the whole mine as a deterministic list of steps, then start digging. */
     void start() {
-        Location anchor = host.getCurrentLocation(npc);
+        Location anchor = host.getCurrentLocation(player);
         World world = anchor.getWorld();
         if (world == null) return;
 
@@ -170,8 +170,8 @@ class BranchMiner {
 
         host.say(player, "Very good, sir. Sinking a shaft to Y=" + depth + " — "
                 + corridorLength + "-block gallery, " + branchCount + " branches. I shall keep it lit.");
-        host.applyNavigatorDefaults(npc, () -> navStuck = true);
-        host.giveStartingEquipment(npc);
+        host.applyNavigatorDefaults(player, () -> navStuck = true);
+        host.giveStartingEquipment(player);
         runLoop();
     }
 
@@ -181,13 +181,13 @@ class BranchMiner {
         BukkitRunnable task = new BukkitRunnable() {
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline() || mode == Mode.DONE) {
+                if (!provider.isSpawned(player) || !player.isOnline() || mode == Mode.DONE) {
                     cancel();
                     host.taskDone(player, this);
                     return;
                 }
-                Location npcLoc = host.getCurrentLocation(npc);
-                host.pickupNearbyItems(npc, npcLoc);
+                Location npcLoc = host.getCurrentLocation(player);
+                host.pickupNearbyItems(player, npcLoc);
                 tick(npcLoc, this);
             }
         };
@@ -199,21 +199,21 @@ class BranchMiner {
         if (breaking) return;
 
         // Bags full? Deliver to the chest and come back.
-        if (autoDeposit && host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
+        if (autoDeposit && host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
             if (deposits.hasChest(player)) {
                 host.say(player, "Bags are full, sir — running a delivery. Back shortly.");
                 resumeCell = npcLoc.getBlock().getLocation();
                 self.cancel();
                 deposits.startDepositRun(player, deposits.getChest(player), () -> {
                     // v0.8.0: if the chest couldn't take it, don't loop forever
-                    if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
+                    if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
                         mode = Mode.DONE;
                         host.say(player, "The chest is full and so are my bags, sir. "
                                 + "Pausing the mine until there's room somewhere.");
                         return;
                     }
                     mode = Mode.RETURNING;
-                    host.applyNavigatorDefaults(npc, () -> navStuck = true);
+                    host.applyNavigatorDefaults(player, () -> navStuck = true);
                     runLoop();
                 });
                 return;
@@ -240,7 +240,7 @@ class BranchMiner {
             }
             breaking = true;
             Material type = ore.getType();
-            host.breakBlockProperly(npc, ore, success -> {
+            host.breakBlockProperly(player, ore, success -> {
                 breaking = false;
                 harvestQueue.poll();
                 if (success) {
@@ -280,7 +280,7 @@ class BranchMiner {
 
             boolean wasOre = host.isOre(toDig.getType());
             breaking = true;
-            host.breakBlockProperly(npc, toDig, success -> {
+            host.breakBlockProperly(player, toDig, success -> {
                 breaking = false;
                 if (success) {
                     digQueue.poll();
@@ -359,17 +359,17 @@ class BranchMiner {
         }
 
         advanceTicks++;
-        if (!npc.getNavigator().isNavigating() || navStuck) {
+        if (!provider.isNavigating(player) || navStuck) {
             navStuck = false;
-            host.navigateTo(npc, cellCenter, () -> navStuck = true);
+            host.navigateTo(player, cellCenter, () -> navStuck = true);
         }
 
         int limit = distance > 2.5 ? FAR_NUDGE_TICKS : NUDGE_TICKS;
         if (advanceTicks > limit) {
-            npc.getNavigator().cancelNavigation();
+            provider.cancelNavigation(player);
             Location nudge = cellCenter.clone();
             nudge.setYaw(npcLoc.getYaw());
-            npc.teleport(nudge, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+            provider.teleport(player, nudge);
             stepCell = null;
             advanceTicks = 0;
         }
@@ -388,13 +388,13 @@ class BranchMiner {
             return;
         }
         advanceTicks++;
-        if (!npc.getNavigator().isNavigating() || navStuck) {
+        if (!provider.isNavigating(player) || navStuck) {
             navStuck = false;
-            host.navigateTo(npc, center, () -> navStuck = true);
+            host.navigateTo(player, center, () -> navStuck = true);
         }
         if (advanceTicks > FAR_NUDGE_TICKS * 2) {
-            npc.getNavigator().cancelNavigation();
-            npc.teleport(center, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+            provider.cancelNavigation(player);
+            provider.teleport(player, center);
             advanceTicks = 0;
         }
     }
@@ -467,19 +467,19 @@ class BranchMiner {
 
     private void finish() {
         mode = Mode.DONE;
-        npc.getNavigator().cancelNavigation();
+        provider.cancelNavigation(player);
         String seals = sealedPockets > 0 ? " Sealed " + sealedPockets + " liquid pockets along the way." : "";
         host.say(player, "The mine is complete, sir. " + blocksDug + " blocks excavated, "
                 + oresMined + " ores recovered." + seals + " It's lit and walkable whenever you care to visit.");
-        Entertainer.celebrate(host, player, npc);
-        if (autoDeposit && deposits.hasChest(player) && host.lootSlotsUsed(npc) > 0) {
+        Entertainer.celebrate(host, player);
+        if (autoDeposit && deposits.hasChest(player) && host.lootSlotsUsed(player) > 0) {
             deposits.startDepositRun(player, deposits.getChest(player), () -> {});
         }
     }
 
     private void finishEarly(String message) {
         mode = Mode.DONE;
-        npc.getNavigator().cancelNavigation();
+        provider.cancelNavigation(player);
         host.say(player, message + " (" + oresMined + " ores recovered.)");
     }
 }

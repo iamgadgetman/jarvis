@@ -1,7 +1,7 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
+import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
@@ -46,7 +46,7 @@ class Lumberjack {
     private final Jarvis plugin;
     private final JarvisNPC host;
     private final Player player;
-    private final NPC npc;
+    private final INPCProvider provider;
     private final DepositManager deposits;
     private final int treeQuota;
     private final boolean replant;
@@ -63,31 +63,31 @@ class Lumberjack {
     private static final int MAX_TREE_LOGS = 80;
     private static final int STALL_HOP_TICKS = 8;
 
-    Lumberjack(JarvisNPC host, Player player, NPC npc, DepositManager deposits, int treeQuota) {
+    Lumberjack(JarvisNPC host, Player player, DepositManager deposits, int treeQuota) {
         this.host = host;
         this.plugin = host.getPlugin();
         this.player = player;
-        this.npc = npc;
+        this.provider = host.getProvider();
         this.deposits = deposits;
         this.treeQuota = Math.max(1, Math.min(treeQuota, 32));
         this.replant = plugin.getConfig().getBoolean("farming.replant-saplings", true);
     }
 
     void start() {
-        host.applyNavigatorDefaults(npc, null);
-        host.equipTool(npc, Material.DIAMOND_AXE);
+        host.applyNavigatorDefaults(player, null);
+        host.equipTool(player, Material.DIAMOND_AXE);
         host.say(player, "Very good, sir. " + treeQuota + " trees, coming down — replanting as I go.");
 
         BukkitRunnable task = new BukkitRunnable() {
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline()) {
+                if (!provider.isSpawned(player) || !player.isOnline()) {
                     cancel();
                     host.taskDone(player, this);
                     return;
                 }
-                Location loc = host.getCurrentLocation(npc);
-                host.pickupNearbyItems(npc, loc);
+                Location loc = host.getCurrentLocation(player);
+                host.pickupNearbyItems(player, loc);
                 tick(loc, this);
             }
         };
@@ -103,18 +103,18 @@ class Lumberjack {
             finish(self);
             return;
         }
-        if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2 && deposits.hasChest(player)) {
+        if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2 && deposits.hasChest(player)) {
             host.say(player, "Bags full of timber, sir — one delivery and I'll resume.");
             self.cancel();
             deposits.startDepositRun(player, deposits.getChest(player), () -> {
                 // v0.8.0: if the chest couldn't take it, don't loop forever
-                if (host.lootSlotsUsed(npc) >= JarvisNPC.LOOT_CAPACITY - 2) {
+                if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
                     host.say(player, "The chest is full and so are my bags, sir. "
                             + "The timber work is paused for now.");
                     return;
                 }
-                host.applyNavigatorDefaults(npc, null);
-                host.equipTool(npc, Material.DIAMOND_AXE);
+                host.applyNavigatorDefaults(player, null);
+                host.equipTool(player, Material.DIAMOND_AXE);
                 start();
             });
             return;
@@ -131,29 +131,28 @@ class Lumberjack {
 
         double dist = loc.distance(currentBase.getLocation().add(0.5, 0.5, 0.5));
         if (dist > 2.8) {
-            if (!npc.getNavigator().isNavigating()) {
-                npc.getNavigator().setTarget(currentBase.getLocation().add(0.5, 1, 0.5));
+            if (!provider.isNavigating(player)) {
+                provider.navigateTo(player, currentBase.getLocation().add(0.5, 1, 0.5));
             }
             if (lastPos != null && loc.distance(lastPos) < 0.15) stalled++;
             else stalled = 0;
             lastPos = loc.clone();
             if (stalled > STALL_HOP_TICKS) {
-                npc.getNavigator().cancelNavigation();
-                npc.teleport(host.findSafeNear(currentBase.getLocation().add(0.5, 1, 0.5)),
-                        org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                provider.cancelNavigation(player);
+                provider.teleport(player, host.findSafeNear(currentBase.getLocation().add(0.5, 1, 0.5)));
                 stalled = 0;
             }
             return;
         }
 
         // At the tree: chop the base with real timing, then TIMBER the rest
-        npc.getNavigator().cancelNavigation();
+        provider.cancelNavigation(player);
         busy = true;
         Block base = currentBase;
         Material species = base.getType();
         List<Block> tree = collectTree(base);
 
-        host.breakBlockProperly(npc, base, success -> {
+        host.breakBlockProperly(player, base, success -> {
             // v0.8.0: /jarvis stop mid-chop must not fell the rest of the tree
             if (mainTask == null || mainTask.isCancelled()) return;
             if (!success) {
@@ -188,14 +187,14 @@ class Lumberjack {
         new BukkitRunnable() {
             @Override
             public void run() {
-                if (mainTask == null || mainTask.isCancelled() || !npc.isSpawned()) {
+                if (mainTask == null || mainTask.isCancelled() || !provider.isSpawned(player)) {
                     cancel();   // stopped mid-fell — leave the rest of the tree standing
                     return;
                 }
                 for (int i = 0; i < 2 && !queue.isEmpty(); i++) {
                     Block log = queue.poll();
                     if (LOGS.contains(log.getType())) {
-                        log.breakNaturally(host.getToolInHand(npc));
+                        log.breakNaturally(host.getToolInHand(player));
                         logsCollected++;
                     }
                 }
@@ -286,13 +285,13 @@ class Lumberjack {
     private void finish(BukkitRunnable self) {
         self.cancel();
         host.taskDone(player, self);
-        npc.getNavigator().cancelNavigation();
+        provider.cancelNavigation(player);
         host.say(player, "Timber work complete, sir — " + treesFelled + " trees, "
                 + logsCollected + " logs" + (replant ? ", saplings in the ground." : "."));
         if (treesFelled >= 3) {
-            Entertainer.celebrate(host, player, npc);
+            Entertainer.celebrate(host, player);
         }
-        if (deposits.hasChest(player) && host.lootSlotsUsed(npc) > 0
+        if (deposits.hasChest(player) && host.lootSlotsUsed(player) > 0
                 && plugin.getConfig().getBoolean("mining.auto-deposit", true)) {
             deposits.startDepositRun(player, deposits.getChest(player), () -> {});
         }

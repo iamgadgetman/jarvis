@@ -1,8 +1,7 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
-import net.citizensnpcs.api.trait.trait.Inventory;
+import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -35,6 +34,7 @@ public class RecoveryService implements Listener {
 
     private final Jarvis plugin;
     private final JarvisNPC host;
+    private final INPCProvider provider;
 
     private static class DeathRecord {
         Location location;
@@ -55,6 +55,7 @@ public class RecoveryService implements Listener {
     public RecoveryService(Jarvis plugin, JarvisNPC host) {
         this.plugin = plugin;
         this.host = host;
+        this.provider = host.getProvider();
         this.autoRecover = plugin.getConfig().getBoolean("steward.recovery.auto", false);
         this.maxDistance = plugin.getConfig().getDouble("steward.recovery.max-distance", 192.0);
     }
@@ -64,7 +65,7 @@ public class RecoveryService implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
-        if (host.getNPC(player) == null) return;
+        if (!provider.isSpawned(player)) return;
         if (event.getDrops().isEmpty() && event.getKeepInventory()) return;
 
         DeathRecord record = new DeathRecord();
@@ -87,8 +88,7 @@ public class RecoveryService implements Listener {
     // ==================== RECOVERY RUN ====================
 
     public void recover(Player player) {
-        NPC npc = host.getNPC(player);
-        if (npc == null) {
+        if (!provider.isSpawned(player)) {
             host.say(player, "Summon me first, sir — /jarvis summon.");
             return;
         }
@@ -100,7 +100,7 @@ public class RecoveryService implements Listener {
         }
 
         Location site = record.location;
-        Location npcLoc = host.getCurrentLocation(npc);
+        Location npcLoc = host.getCurrentLocation(player);
         if (site.getWorld() != npcLoc.getWorld()) {
             host.say(player, "Your effects are in another world, sir — beyond even my reach.");
             return;
@@ -113,7 +113,7 @@ public class RecoveryService implements Listener {
 
         deathPoints.remove(player.getUniqueId());
         host.stopTask(player);
-        host.applyNavigatorDefaults(npc, null);
+        host.applyNavigatorDefaults(player, null);
         host.say(player, "On my way, sir. Guard duty and salvage in one trip.");
 
         BukkitRunnable task = new BukkitRunnable() {
@@ -124,18 +124,18 @@ public class RecoveryService implements Listener {
 
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline()) {
+                if (!provider.isSpawned(player) || !player.isOnline()) {
                     cancel();
                     host.taskDone(player, this);
                     return;
                 }
 
-                Location loc = host.getCurrentLocation(npc);
+                Location loc = host.getCurrentLocation(player);
                 // v0.8.0: on a recovery run EVERYTHING is the player's stuff —
                 // including cobblestone and dirt the junk filter normally skips.
                 // (The old filter left junk on the ground and then stood there
                 // 60 seconds waiting for it to be "collected".)
-                host.pickupNearbyItems(npc, loc, true);
+                host.pickupNearbyItems(player, loc, true);
 
                 // Stall watchdog (shared by travel phases)
                 if (lastPos != null && loc.distance(lastPos) < 0.2) stalled++;
@@ -145,36 +145,36 @@ public class RecoveryService implements Listener {
                 switch (phase) {
                     case 0 -> { // Travel to the death site
                         if (loc.distance(site) <= SITE_RADIUS - 2) {
-                            npc.getNavigator().cancelNavigation();
+                            provider.cancelNavigation(player);
                             phase = 1;
                             host.sayQuiet(player, "At the site. Collecting your effects.");
                             return;
                         }
-                        travelToward(npc, loc, site);
+                        travelToward(loc, site);
                     }
                     case 1 -> { // Collect everything on the ground
                         collectTicks++;
                         boolean itemsLeft = false;
-                        if (npc.getEntity() != null) {
-                            for (Entity e : npc.getEntity().getNearbyEntities(SITE_RADIUS, 5, SITE_RADIUS)) {
+                        if (provider.getEntity(player) != null) {
+                            for (Entity e : provider.getEntity(player).getNearbyEntities(SITE_RADIUS, 5, SITE_RADIUS)) {
                                 if (e instanceof Item) { itemsLeft = true; break; }
                             }
                         }
                         if (!itemsLeft || collectTicks > COLLECT_TIMEOUT_TICKS) {
                             phase = 2;
                             host.sayQuiet(player, "Site cleared. Returning to you.");
-                        } else if (!npc.getNavigator().isNavigating()) {
+                        } else if (!provider.isNavigating(player)) {
                             // Wander to the nearest item entity
                             Item nearest = null;
                             double best = Double.MAX_VALUE;
-                            for (Entity e : npc.getEntity().getNearbyEntities(SITE_RADIUS, 5, SITE_RADIUS)) {
+                            for (Entity e : provider.getEntity(player).getNearbyEntities(SITE_RADIUS, 5, SITE_RADIUS)) {
                                 if (e instanceof Item item) {
                                     double d = loc.distance(item.getLocation());
                                     if (d < best) { best = d; nearest = item; }
                                 }
                             }
                             if (nearest != null && best > 2.0) {
-                                npc.getNavigator().setTarget(nearest.getLocation());
+                                provider.navigateTo(player, nearest.getLocation());
                             }
                         }
                     }
@@ -191,21 +191,21 @@ public class RecoveryService implements Listener {
                         if (loc.distance(playerLoc) <= 3.0) {
                             cancel();
                             host.taskDone(player, this);
-                            handOver(player, npc);
+                            handOver(player);
                             return;
                         }
-                        travelToward(npc, loc, playerLoc);
+                        travelToward(loc, playerLoc);
                     }
                 }
             }
 
-            private void travelToward(NPC npc, Location from, Location to) {
-                if (!npc.getNavigator().isNavigating()) {
-                    npc.getNavigator().setTarget(to);
+            private void travelToward(Location from, Location to) {
+                if (!provider.isNavigating(player)) {
+                    provider.navigateTo(player, to);
                 }
                 if (stalled > STALL_HOP_TICKS) {
                     // Butler-rules hop: a short, visible bound toward the target
-                    npc.getNavigator().cancelNavigation();
+                    provider.cancelNavigation(player);
                     Vector dir = to.toVector().subtract(from.toVector());
                     double dist = dir.length();
                     Location hop;
@@ -220,7 +220,7 @@ public class RecoveryService implements Listener {
                         }
                         hop = host.findSafeNear(hop);
                     }
-                    npc.teleport(hop, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                    provider.teleport(player, hop);
                     stalled = 0;
                 }
             }
@@ -231,9 +231,8 @@ public class RecoveryService implements Listener {
     }
 
     /** Give the player everything in Jarvis's bags (drops overflow at their feet). */
-    private void handOver(Player player, NPC npc) {
-        Inventory invTrait = npc.getOrAddTrait(Inventory.class);
-        ItemStack[] contents = invTrait.getContents();
+    private void handOver(Player player) {
+        ItemStack[] contents = provider.getInventoryContents(player);
         int returned = 0;
 
         // v0.8.0: slots 1+ are ALL the player's — including their own diamond
@@ -249,12 +248,12 @@ public class RecoveryService implements Listener {
             }
             contents[i] = null;
         }
-        invTrait.setContents(contents);
+        provider.setInventoryContents(player, contents);
 
         if (returned > 0) {
             host.say(player, "Your effects, sir — " + returned
                     + " items recovered, along with everything else I was carrying.");
-            Entertainer.celebrate(host, player, npc);
+            Entertainer.celebrate(host, player);
         } else {
             host.say(player, "I'm afraid there was nothing left to recover, sir. The clock won.");
         }

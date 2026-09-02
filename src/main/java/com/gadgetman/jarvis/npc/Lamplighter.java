@@ -1,7 +1,7 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
+import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
@@ -43,7 +43,7 @@ class Lamplighter {
     private final Jarvis plugin;
     private final JarvisNPC host;
     private final Player player;
-    private final NPC npc;
+    private final INPCProvider provider;
 
     private final int radius;
     private final int spacing;
@@ -68,11 +68,11 @@ class Lamplighter {
     private Location lastPos = null;
 
     /** radius/spacing <= 0 and typeArg == null mean "use config defaults". */
-    Lamplighter(JarvisNPC host, Player player, NPC npc, int radius, String typeArg, int spacing) {
+    Lamplighter(JarvisNPC host, Player player, int radius, String typeArg, int spacing) {
         this.host = host;
         this.plugin = host.getPlugin();
         this.player = player;
-        this.npc = npc;
+        this.provider = host.getProvider();
 
         var cfg = plugin.getConfig();
         int r = radius > 0 ? radius : cfg.getInt("lighting.default-radius", 16);
@@ -109,8 +109,8 @@ class Lamplighter {
             return;
         }
 
-        host.applyNavigatorDefaults(npc, null);
-        host.equipTool(npc, lightType == Material.END_ROD ? Material.END_ROD
+        host.applyNavigatorDefaults(player, null);
+        host.equipTool(player, lightType == Material.END_ROD ? Material.END_ROD
                 : lightType == Material.LANTERN ? Material.LANTERN : Material.TORCH);
 
         String typeName = lightType.name().toLowerCase().replace('_', ' ');
@@ -135,12 +135,12 @@ class Lamplighter {
         BukkitRunnable task = new BukkitRunnable() {
             @Override
             public void run() {
-                if (!npc.isSpawned() || !player.isOnline()) {
+                if (!provider.isSpawned(player) || !player.isOnline()) {
                     cancel();
                     host.taskDone(player, this);
                     return;
                 }
-                tick(host.getCurrentLocation(npc), this);
+                tick(host.getCurrentLocation(player), this);
             }
         };
         task.runTaskTimer(plugin, 10L, 10L);
@@ -171,16 +171,15 @@ class Lamplighter {
         double reach = cur == Material.WATER ? 5.0 : REACH;
         double dist = loc.distance(target.clone().add(0.5, 0.5, 0.5));
         if (dist > reach) {
-            if (!npc.getNavigator().isNavigating()) {
-                npc.getNavigator().setTarget(target.clone().add(0.5, 1, 0.5));
+            if (!provider.isNavigating(player)) {
+                provider.navigateTo(player, target.clone().add(0.5, 1, 0.5));
             }
             if (lastPos != null && loc.distance(lastPos) < 0.15) stalled++;
             else stalled = 0;
             lastPos = loc.clone();
             if (stalled > STALL_HOP_TICKS) {
-                npc.getNavigator().cancelNavigation();
-                npc.teleport(host.findSafeNear(target.clone().add(0.5, 1, 0.5)),
-                        org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                provider.cancelNavigation(player);
+                provider.teleport(player, host.findSafeNear(target.clone().add(0.5, 1, 0.5)));
                 stalled = 0;
             }
             return;
@@ -188,8 +187,8 @@ class Lamplighter {
 
         // Place the light: face, swing, done
         targets.poll();
-        npc.faceLocation(target.clone().add(0.5, 0.5, 0.5));
-        if (npc.getEntity() instanceof LivingEntity le) le.swingMainHand();
+        provider.lookAt(player, target.clone().add(0.5, 0.5, 0.5));
+        if (provider.getEntity(player) instanceof LivingEntity le) le.swingMainHand();
         boolean wasWater = cell.getType() == Material.WATER;
         if (placeLight(cell)) {
             placed++;
@@ -340,12 +339,12 @@ class Lamplighter {
     private void finish(BukkitRunnable self) {
         self.cancel();
         host.taskDone(player, self);
-        npc.getNavigator().cancelNavigation();
+        provider.cancelNavigation(player);
         String note = skippedLit > 0
                 ? " (" + skippedLit + " spots were already bright enough.)" : "";
         host.say(player, "The grounds are lit, sir — " + placed + " lights placed." + note);
         if (placed >= 20) {
-            Entertainer.celebrate(host, player, npc);
+            Entertainer.celebrate(host, player);
         }
     }
 }
