@@ -41,6 +41,16 @@ public class AIConnector {
     /** Workload tier: decides which provider chain serves the request. */
     public enum Tier { LIGHT, HEAVY }
 
+    /** Output ceiling for chat, intent parsing and JSON block plans. */
+    private static final int DEFAULT_MAX_TOKENS = 2000;
+
+    /**
+     * Output ceiling for build scripts. A script is prose reasoning plus code,
+     * and 2000 tokens truncates one mid-function -- which reads to the parser
+     * as a syntax error rather than as "ran out of room".
+     */
+    private static final int BUILD_SCRIPT_MAX_TOKENS = 16000;
+
     private final Jarvis plugin;
 
     // Current provider settings
@@ -348,6 +358,113 @@ public class AIConnector {
         return sendTiered(Tier.HEAVY, prompt, "You are a Minecraft build planner. Output ONLY valid JSON.", true);
     }
 
+    /**
+     * Ask the AI for a JavaScript build script.
+     *
+     * <p>This is the freeform build path as of v0.9.0. It replaces asking for a
+     * list of every block, which does not work: a model spends its whole output
+     * budget enumerating coordinates and runs out somewhere around the floor.
+     * v0.8.6's best measured plan was 168 blocks -- a footprint with no walls.
+     * The same cottage as {@code fill} calls is roughly a dozen lines, because
+     * a wall is one call rather than four hundred coordinates.
+     *
+     * <p>The contract is adapted from MC-Bench, the public LLM build-off
+     * benchmark, which is the strongest evidence available for what actually
+     * makes models build well. Two details there are load-bearing and are kept
+     * here: the model is addressed as an architect and told to weigh accents,
+     * symmetry and material variety, and it must describe the design in prose
+     * <em>before</em> writing code.
+     *
+     * @param memoryExamples formatted few-shot examples, or blank for none
+     * @param previousScript a script that failed, or null on the first attempt
+     * @param previousError  why it failed, fed back verbatim so the model can repair it
+     */
+    public String queryBuildScript(String description, String memoryExamples,
+                                   String previousScript, String previousError) throws Exception {
+        if (reducedMode) {
+            // A 7B writes bad JavaScript. v0.8.6 measured qwen2.5-coder:7b as
+            // worse than qwen2.5:7b at spatial layout, so there is no local
+            // model here worth falling back to -- the JSON planner is the
+            // honest reduced-mode answer.
+            throw new ReducedModeException(
+                    "Script building needs a cloud model. Set build.planner to json, or use schematics.");
+        }
+
+        String system = """
+                You are an expert Minecraft architect and builder.
+
+                You control a builder through two functions. Implement buildCreation; do not call it yourself.
+
+                  fill(x1, y1, z1, x2, y2, z2, block, mode)
+                      Fills the box between the two corners, inclusive.
+                      mode is optional: "solid" (default), "hollow" (shell only), "outline" (edges only).
+                  setBlock(x, y, z, block)
+                      Places one block.
+                  function buildCreation(x, y, z) { }
+                      x, y, z are the build origin. y is ground level; build upward from there.
+
+                Block ids may carry states, exactly as the /setblock command accepts them:
+                  "oak_planks", "minecraft:stone_bricks", "oak_stairs[facing=north,half=bottom]",
+                  "oak_log[axis=y]", "oak_slab[type=top]", "glass_pane", "air"
+                Use real placeable block ids. Never item ids -- "bricks" is the block, "brick" is an item.
+
+                Rules:
+                - Later writes win, so fill a wall and then set air over it to carve a doorway.
+                - Coordinates are relative to the origin and must stay within a few dozen blocks of it.
+                - Ordinary JavaScript is available: loops, math, arrays, functions. Use them.
+                  There is no DOM, no require, no host access, and no console.
+
+                Write two short paragraphs first -- your influences, then how the finished build looks --
+                and then the code in a single ```javascript block.
+                """;
+
+        String prompt;
+        if (previousScript != null && previousError != null) {
+            // Repairing beats regenerating: the design reasoning in the failed
+            // attempt is usually sound and only the code broke.
+            prompt = "Your previous script for \"" + description + "\" failed.\n\n"
+                    + "```javascript\n" + previousScript + "\n```\n\n"
+                    + "The error was:\n" + previousError + "\n\n"
+                    + "Fix it and return the complete corrected script. Keep the design; "
+                    + "change only what the error requires.";
+        } else {
+            prompt = "Build: " + description;
+            if (memoryExamples != null && !memoryExamples.isBlank()) {
+                prompt = memoryExamples + "\n" + prompt;
+            }
+        }
+
+        return sendTiered(Tier.HEAVY, prompt, system, false, BUILD_SCRIPT_MAX_TOKENS);
+    }
+
+    /**
+     * Pulls the JavaScript out of a model reply.
+     *
+     * <p>The prompt asks for prose and then a fenced block, so the prose has to
+     * come off before the script reaches the engine. A model that skips the
+     * fence still usually produces something starting at a function keyword,
+     * which is worth salvaging rather than failing on.
+     */
+    public static String extractScript(String response) {
+        if (response == null) return null;
+
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("```(?:javascript|js)?\\s*\\n(.*?)```", java.util.regex.Pattern.DOTALL)
+                .matcher(response);
+        String best = null;
+        while (m.find()) {
+            String block = m.group(1);
+            // Take the largest fenced block: a reply sometimes shows a short
+            // illustrative snippet before the real implementation.
+            if (best == null || block.length() > best.length()) best = block;
+        }
+        if (best != null) return best.strip();
+
+        int fn = response.indexOf("function buildCreation");
+        if (fn < 0) fn = response.indexOf("async function buildCreation");
+        return fn >= 0 ? response.substring(fn).strip() : null;
+    }
+
     /** Thrown when a capability is unavailable in Ollama-only reduced mode. */
     public static class ReducedModeException extends Exception {
         public ReducedModeException(String message) { super(message); }
@@ -504,6 +621,17 @@ public class AIConnector {
      * health cooldowns are shared across tiers.
      */
     private String sendTiered(Tier tier, String userContent, String systemContent, boolean jsonMode) throws Exception {
+        return sendTiered(tier, userContent, systemContent, jsonMode, DEFAULT_MAX_TOKENS);
+    }
+
+    /**
+     * @param maxTokens output ceiling for providers that require one. Chat and
+     *                  intent parsing fit in the default; a build script does
+     *                  not, and silently truncating one produces a script that
+     *                  will not parse.
+     */
+    private String sendTiered(Tier tier, String userContent, String systemContent, boolean jsonMode,
+                              int maxTokens) throws Exception {
         enforceRateLimit();
 
         List<String> route = tier == Tier.LIGHT ? lightRoute : heavyRoute;
@@ -526,7 +654,8 @@ public class AIConnector {
             triedProviders.add(tryProvider);
 
             try {
-                String result = sendRequestForProvider(tryProvider, userContent, systemContent, jsonMode, timeoutOverride);
+                String result = sendRequestForProvider(tryProvider, userContent, systemContent, jsonMode,
+                        timeoutOverride, maxTokens);
                 health.recordSuccess();
                 lastServed.put(tier, tryProvider);
 
@@ -551,7 +680,8 @@ public class AIConnector {
     }
 
     private String sendRequestForProvider(String providerName, String userContent, String systemContent,
-                                          boolean jsonMode, int timeoutOverrideSeconds) throws Exception {
+                                          boolean jsonMode, int timeoutOverrideSeconds,
+                                          int maxTokens) throws Exception {
         ProviderConfig config = providerConfigs.get(providerName);
         if (config == null) {
             throw new RuntimeException("Unknown provider: " + providerName);
@@ -559,10 +689,10 @@ public class AIConnector {
         int readTimeoutMs = (timeoutOverrideSeconds > 0 ? timeoutOverrideSeconds : config.timeoutSeconds) * 1000;
 
         return switch (providerName) {
-            case "claude" -> sendClaudeRequest(userContent, systemContent, config, readTimeoutMs);
+            case "claude" -> sendClaudeRequest(userContent, systemContent, config, readTimeoutMs, maxTokens);
             case "gemini" -> sendGeminiRequest(userContent, systemContent, config, readTimeoutMs);
             case "ollama" -> sendOllamaRequest(userContent, systemContent, config, jsonMode, readTimeoutMs);
-            default -> sendOpenAIStyleRequest(userContent, systemContent, config, readTimeoutMs);
+            default -> sendOpenAIStyleRequest(userContent, systemContent, config, readTimeoutMs, maxTokens);
         };
     }
 
@@ -627,7 +757,7 @@ public class AIConnector {
     }
 
     private String sendClaudeRequest(String userContent, String systemContent, ProviderConfig config,
-                                     int readTimeoutMs) throws Exception {
+                                     int readTimeoutMs, int maxTokens) throws Exception {
         URL url = new URL(config.endpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -640,7 +770,7 @@ public class AIConnector {
 
         JSONObject payload = new JSONObject();
         payload.put("model", config.model);
-        payload.put("max_tokens", 2000);
+        payload.put("max_tokens", maxTokens);
         payload.put("system", systemContent);
 
         JSONArray messages = new JSONArray();
@@ -685,7 +815,7 @@ public class AIConnector {
     }
 
     private String sendOpenAIStyleRequest(String userContent, String systemContent, ProviderConfig config,
-                                          int readTimeoutMs) throws Exception {
+                                          int readTimeoutMs, int maxTokens) throws Exception {
         URL url = new URL(config.endpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -697,7 +827,7 @@ public class AIConnector {
 
         JSONObject payload = new JSONObject();
         payload.put("model", config.model);
-        payload.put("max_tokens", 2000);
+        payload.put("max_tokens", maxTokens);
 
         JSONArray messages = new JSONArray();
         messages.put(new JSONObject().put("role", "system").put("content", systemContent));

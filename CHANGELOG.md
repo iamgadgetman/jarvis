@@ -1,5 +1,92 @@
 # Jarvis Changelog
 
+## v0.9.0-dev (2026-09-01) — the builder writes code
+
+0.8.6 got the JSON build planner as far as it goes, and the first real cottage
+showed where that is: a flat oak footprint with a few wall stubs, no roof, and
+glass scattered on the ground. The plumbing was never the problem. Asking a
+model for a list of every block is.
+
+A model given that task spends its whole output budget enumerating coordinates.
+0.8.6's best measured plan was **168 blocks** — enough for a floor and nothing
+else — and that was after three releases of prompt work. The ceiling is
+structural, not a prompt bug.
+
+### Added
+
+- **`build.planner: script` — the model writes JavaScript instead of a block
+  list.** It implements `buildCreation(x, y, z)` against two functions:
+
+  ```javascript
+  fill(x1, y1, z1, x2, y2, z2, block, mode)   // mode: solid | hollow | outline
+  setBlock(x, y, z, block)                     // "oak_stairs[facing=north]"
+  ```
+
+  A wall is one call rather than four hundred coordinates, so the model spends
+  its reasoning on the shape. Measured on the same cottage design: **762 blocks
+  from 24 calls**, about thirty lines of script, against 168 blocks from the
+  JSON planner.
+
+  The contract is adapted from [MC-Bench](https://mcbench.ai/), the public LLM
+  build-off. Two details there are load-bearing and are kept: the model is
+  addressed as an architect and told to weigh accents, symmetry and material
+  variety, and it must describe the design in prose before writing code.
+
+- **`ScriptBuildPlanner`, a sandbox for model-written code.** The script never
+  touches the world — `fill` and `setBlock` only append to a map — so a plan is
+  a pure function from text to a block list, and everything downstream
+  (placement throttling, undo, material repair, experience memory) is unchanged.
+
+  Guardrails, all verified against GraalJS 25.3.4.1 Community on a stock JDK 25:
+
+  | Guard | Behaviour |
+  |---|---|
+  | `allowAllAccess(false)` | `Java.type` is undefined; no host class is reachable |
+  | Block budget | Throwing from a binding unwinds the script |
+  | Watchdog `close(true)` | Cancels `while(true){}` from another thread |
+  | Bounds / fill volume | A fill cannot span the world |
+  | Last write wins | Fill a wall, then set air to carve a doorway |
+
+- **One repair retry.** A script that will not run goes back to the model with
+  the error attached rather than being regenerated. Failures here are
+  mechanical — a typo, a bad block id, a fill over budget — and the design
+  reasoning in the failed attempt is usually sound.
+
+- **Block states survive.** `BlockPlacement` carries the full spec, so
+  `oak_stairs[facing=north]` and `oak_log[axis=y]` land oriented instead of
+  collapsing to a default. Undo restores the original `BlockData` for the same
+  reason: restoring only the material would flatten a staircase the build
+  covered.
+
+### Changed
+
+- **`max_tokens` is per-call, was hardcoded 2000.** Build scripts get 16000.
+  2000 truncates a script mid-function, which reaches the parser as a syntax
+  error rather than as "ran out of room" — the same ceiling that capped JSON
+  plans at a floor's worth of blocks.
+
+- **GraalJS arrives through Paper's `libraries:` loader**, not shading. The jar
+  stays at ~1 MB instead of ~60 MB; the engine is 67 MB of dependencies and
+  icu4j is 18.5 MB of that and is *not* optional (tested — GraalJS will not
+  initialise without it). `mvn -Pshade-graaljs package` bundles it instead for a
+  server that cannot resolve it at start.
+
+### Not changed, deliberately
+
+The JSON planner stays, and is the automatic fallback when GraalJS is missing.
+It is also the honest answer for Ollama-only reduced mode: **script building
+needs a cloud model.** A 7B writes bad JavaScript, and 0.8.6 already measured
+`qwen2.5-coder:7b` as *worse* than `qwen2.5:7b` at spatial layout — there is no
+local model here worth falling back to.
+
+### Not yet verified
+
+The guardrails, the fill geometry and the script extraction are covered by
+standalone tests against the compiled classes. **The prompt itself has not been
+run against a live model**, and the plugin has not been loaded on a real server —
+in particular, whether Paper's library loader resolves GraalJS cleanly is
+untested. Both need a server with a configured key.
+
 ## v0.8.6 (2026-09-01) — build plans that are actually buildings
 
 The plumbing was right by 0.8.5; the output was not. A local 7B returned 13

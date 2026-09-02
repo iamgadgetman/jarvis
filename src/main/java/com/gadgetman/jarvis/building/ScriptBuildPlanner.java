@@ -1,0 +1,357 @@
+package com.gadgetman.jarvis.building;
+
+import org.graalvm.polyglot.Context;
+import org.graalvm.polyglot.Engine;
+import org.graalvm.polyglot.PolyglotException;
+import org.graalvm.polyglot.Value;
+import org.graalvm.polyglot.proxy.ProxyExecutable;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
+
+/**
+ * Runs an LLM-written JavaScript build script in a sandbox and collects the
+ * blocks it asks for.
+ *
+ * <p>Why a script at all: asking a model for a JSON list of every block spends
+ * the entire output budget on a floor. v0.8.6's best measured run was 168
+ * explicit block entries — enough for a footprint and nothing else. The same
+ * structure expressed as {@code fill}/{@code setBlock} calls is about a dozen
+ * lines, because a wall is one call rather than four hundred coordinates. The
+ * model then spends its reasoning on the shape instead of on arithmetic.
+ *
+ * <p><b>The script never touches the world.</b> {@code fill} and {@code
+ * setBlock} are host functions that only append to a map held here, so a plan
+ * is a pure function from text to a block list. That is what makes running
+ * model-written code acceptable: the sandbox surface is two functions that put
+ * entries in a LinkedHashMap, not a Bukkit handle. Everything downstream —
+ * placement throttling, undo, material repair, experience memory — is unchanged
+ * and still sees an ordinary list of blocks.
+ *
+ * <p>Guardrails, all verified against GraalJS 25.3.4.1 Community on a stock
+ * JDK 25:
+ * <ul>
+ *   <li>{@code allowAllAccess(false)} — {@code Java.type} is not defined, so
+ *       the script cannot reach a single host class.</li>
+ *   <li>A block budget enforced inside the host functions. Throwing from a
+ *       binding unwinds the script, so a runaway loop stops at the budget
+ *       rather than filling memory.</li>
+ *   <li>A wall-clock watchdog that calls {@code close(true)} from another
+ *       thread, which cancels even {@code while(true){}}.</li>
+ *   <li>Bounds and per-call volume limits, so a fill cannot span the world.</li>
+ * </ul>
+ */
+public class ScriptBuildPlanner {
+
+    /** A block the script asked for, in coordinates relative to the build origin. */
+    public static class PlannedBlock {
+        public final int dx, dy, dz;
+        /** Raw block spec, e.g. {@code oak_stairs[facing=north]}. Resolved on the main thread. */
+        public final String spec;
+
+        PlannedBlock(int dx, int dy, int dz, String spec) {
+            this.dx = dx; this.dy = dy; this.dz = dz; this.spec = spec;
+        }
+    }
+
+    /** Outcome of a successful run. */
+    public static class Result {
+        public final List<PlannedBlock> blocks;
+        public final int fillCalls;
+        public final int setBlockCalls;
+
+        Result(List<PlannedBlock> blocks, int fillCalls, int setBlockCalls) {
+            this.blocks = blocks;
+            this.fillCalls = fillCalls;
+            this.setBlockCalls = setBlockCalls;
+        }
+    }
+
+    /**
+     * A script that would not run. The message is written to be fed straight
+     * back to the model as a repair prompt, so it says what was wrong in terms
+     * the model can act on.
+     */
+    public static class ScriptException extends Exception {
+        private final boolean syntaxError;
+
+        ScriptException(String message, boolean syntaxError) {
+            super(message);
+            this.syntaxError = syntaxError;
+        }
+
+        public boolean isSyntaxError() { return syntaxError; }
+    }
+
+    /** Thrown from a host binding to unwind the script when a limit is hit. */
+    private static class LimitExceeded extends RuntimeException {
+        LimitExceeded(String message) { super(message); }
+    }
+
+    private final Logger log;
+    private final int maxBlocks;
+    private final int timeoutMs;
+    private final int maxHorizontal;
+    private final int maxVertical;
+    private final int maxFillVolume;
+
+    /**
+     * Shared across builds so each one does not pay engine start-up. Measured
+     * at ~1.3s for the first context on a stock JDK; contexts after that are
+     * cheap. Created lazily so a server that never runs a script build never
+     * initialises GraalJS at all.
+     */
+    private volatile Engine engine;
+
+    public ScriptBuildPlanner(Logger log, int maxBlocks, int timeoutMs,
+                              int maxHorizontal, int maxVertical, int maxFillVolume) {
+        this.log = log;
+        this.maxBlocks = maxBlocks;
+        this.timeoutMs = timeoutMs;
+        this.maxHorizontal = maxHorizontal;
+        this.maxVertical = maxVertical;
+        this.maxFillVolume = maxFillVolume;
+    }
+
+    /**
+     * True when GraalJS is actually on the classpath.
+     *
+     * <p>The engine arrives through Paper's {@code libraries:} loader rather
+     * than being shaded, so it can legitimately be missing — an offline server
+     * on first start, for one. Callers probe with this and fall back to the
+     * JSON planner instead of the plugin failing to load.
+     */
+    public static boolean isAvailable() {
+        try {
+            Class.forName("org.graalvm.polyglot.Context", false,
+                    ScriptBuildPlanner.class.getClassLoader());
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private Engine engine() {
+        Engine local = engine;
+        if (local == null) {
+            synchronized (this) {
+                local = engine;
+                if (local == null) {
+                    // Interpreted mode is expected: this is a stock JDK, not
+                    // GraalVM. The warning is noise on every context, and build
+                    // scripts are a few thousand operations — the JIT would
+                    // never pay for itself here.
+                    local = Engine.newBuilder()
+                            .option("engine.WarnInterpreterOnly", "false")
+                            .build();
+                    engine = local;
+                }
+            }
+        }
+        return local;
+    }
+
+    /** Releases the shared engine. Safe to call when one was never created. */
+    public void shutdown() {
+        Engine local = engine;
+        engine = null;
+        if (local != null) {
+            try {
+                local.close();
+            } catch (Throwable t) {
+                log.fine("Engine close failed: " + t.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Runs a model-written script and returns the blocks it asked for.
+     *
+     * <p>Call this off the main thread — it blocks for as long as the script
+     * runs, up to the watchdog timeout.
+     *
+     * @param script the model's JavaScript, which must define {@code buildCreation}
+     * @throws ScriptException if the script will not parse, will not run, or
+     *                         exceeded a limit
+     */
+    public Result run(String script) throws ScriptException {
+        // Keyed by packed coordinate so the last write to a block wins. This is
+        // not just deduplication: it is what lets a script carve a doorway by
+        // filling the wall and then setting air over it, and it means
+        // overlapping fills cost the budget once rather than twice.
+        Map<Long, PlannedBlock> blocks = new LinkedHashMap<>();
+        int[] counters = new int[2]; // 0 = fill calls, 1 = setBlock calls
+
+        ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "Jarvis-script-watchdog");
+            t.setDaemon(true);
+            return t;
+        });
+
+        Context ctx = Context.newBuilder("js")
+                .engine(engine())
+                .allowAllAccess(false)   // implies HostAccess.NONE: no Java.type, no IO, no threads
+                .build();
+
+        // close(true) cancels a script mid-execution from another thread. This
+        // is the only thing that stops `while(true){}` — a budget check cannot,
+        // because a spinning loop never calls back into a binding.
+        watchdog.schedule(() -> {
+            try {
+                ctx.close(true);
+            } catch (Throwable ignored) {
+                // Racing a normal close; nothing to do.
+            }
+        }, timeoutMs, TimeUnit.MILLISECONDS);
+
+        try {
+            Value bindings = ctx.getBindings("js");
+            bindings.putMember("setBlock", (ProxyExecutable) args -> {
+                if (args.length < 4) {
+                    throw new LimitExceeded("setBlock needs (x, y, z, block)");
+                }
+                counters[1]++;
+                put(blocks, args[0].asInt(), args[1].asInt(), args[2].asInt(), args[3].asString());
+                return null;
+            });
+            bindings.putMember("fill", (ProxyExecutable) args -> {
+                if (args.length < 7) {
+                    throw new LimitExceeded("fill needs (x1, y1, z1, x2, y2, z2, block[, mode])");
+                }
+                counters[0]++;
+                String mode = args.length > 7 && !args[7].isNull() ? args[7].asString() : "solid";
+                fill(blocks,
+                        args[0].asInt(), args[1].asInt(), args[2].asInt(),
+                        args[3].asInt(), args[4].asInt(), args[5].asInt(),
+                        args[6].asString(), mode);
+                return null;
+            });
+
+            ctx.eval("js", script);
+
+            Value entry = bindings.getMember("buildCreation");
+            if (entry == null || !entry.canExecute()) {
+                throw new ScriptException(
+                        "The script did not define a callable buildCreation function.", false);
+            }
+            // Called at the origin so the script's coordinates are relative,
+            // matching how the JSON planner has always been anchored. A script
+            // that also calls itself at the bottom is harmless — the same
+            // coordinates simply get written twice and collapse in the map.
+            entry.execute(0, 0, 0);
+
+        } catch (PolyglotException e) {
+            throw translate(e);
+        } catch (ScriptException e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new ScriptException("Script failed: " + t.getMessage(), false);
+        } finally {
+            watchdog.shutdownNow();
+            try {
+                ctx.close(true);
+            } catch (Throwable ignored) {
+                // Already closed by the watchdog.
+            }
+        }
+
+        if (blocks.isEmpty()) {
+            throw new ScriptException("The script ran but placed no blocks.", false);
+        }
+        return new Result(new ArrayList<>(blocks.values()), counters[0], counters[1]);
+    }
+
+    /**
+     * Turns a GraalJS failure into a message worth showing a model.
+     *
+     * <p>A limit breach surfaces as a host exception wrapped by the engine, so
+     * the real message has to be dug out of the cause — otherwise the model is
+     * told "HostException" and cannot act on it.
+     */
+    private ScriptException translate(PolyglotException e) {
+        if (e.isCancelled()) {
+            return new ScriptException("The script ran longer than "
+                    + (timeoutMs / 1000) + "s and was stopped. Avoid unbounded loops.", false);
+        }
+        if (e.isSyntaxError()) {
+            return new ScriptException("The script is not valid JavaScript: " + e.getMessage(), true);
+        }
+        // asHostException() throws outright unless isHostException() is true --
+        // a guest-level error such as a ReferenceError is not a host exception.
+        Throwable cause = e.isHostException() ? e.asHostException() : e.getCause();
+        while (cause != null && !(cause instanceof LimitExceeded)) {
+            cause = cause.getCause();
+        }
+        if (cause != null) {
+            return new ScriptException(cause.getMessage(), false);
+        }
+        return new ScriptException("The script threw: " + e.getMessage(), false);
+    }
+
+    /** Expands a box into blocks. Modes match the vanilla /fill vocabulary the model already knows. */
+    private void fill(Map<Long, PlannedBlock> out, int x1, int y1, int z1,
+                      int x2, int y2, int z2, String spec, String mode) {
+        int minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+        int minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+        int minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+
+        long volume = (long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+        if (volume > maxFillVolume) {
+            throw new LimitExceeded("A single fill asked for " + volume + " blocks, over the "
+                    + maxFillVolume + " limit. Build it from smaller pieces.");
+        }
+
+        boolean hollow = "hollow".equalsIgnoreCase(mode);
+        boolean outline = "outline".equalsIgnoreCase(mode);
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    if (hollow || outline) {
+                        // How many axes sit on a face of the box. One means a
+                        // face (shell), two means an edge.
+                        int onFace = 0;
+                        if (x == minX || x == maxX) onFace++;
+                        if (y == minY || y == maxY) onFace++;
+                        if (z == minZ || z == maxZ) onFace++;
+                        if (outline ? onFace < 2 : onFace < 1) continue;
+                    }
+                    put(out, x, y, z, spec);
+                }
+            }
+        }
+    }
+
+    private void put(Map<Long, PlannedBlock> out, int x, int y, int z, String spec) {
+        if (Math.abs(x) > maxHorizontal || Math.abs(z) > maxHorizontal) {
+            throw new LimitExceeded("Coordinate (" + x + "," + y + "," + z + ") is more than "
+                    + maxHorizontal + " blocks from the origin. Keep the build near 0,0,0.");
+        }
+        if (Math.abs(y) > maxVertical) {
+            throw new LimitExceeded("Height " + y + " is more than " + maxVertical
+                    + " from the origin. Keep the build near y=0 and build upward.");
+        }
+        if (spec == null || spec.isBlank()) {
+            throw new LimitExceeded("A block id was empty at (" + x + "," + y + "," + z + ").");
+        }
+
+        Long key = key(x, y, z);
+        // Overwrites are free; only a new coordinate spends budget.
+        if (!out.containsKey(key) && out.size() >= maxBlocks) {
+            throw new LimitExceeded("The build exceeded the " + maxBlocks
+                    + " block budget. Design something smaller or less solid.");
+        }
+        out.put(key, new PlannedBlock(x, y, z, spec.trim()));
+    }
+
+    /** Packs a relative coordinate into one long. Ranges are bounded by the checks in {@link #put}. */
+    private static long key(int x, int y, int z) {
+        return ((long) (x & 0xFFFFF) << 40) | ((long) (y & 0xFFFFF) << 20) | (z & 0xFFFFF);
+    }
+}

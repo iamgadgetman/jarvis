@@ -234,7 +234,25 @@ build:
   fallback-material: minecraft:dirt  # Use if material not found
   
   # AI Building
-  max-ai-blocks: 5000            # Max blocks for AI-generated builds
+  #
+  # planner: how a freeform build is designed.
+  #   script - the model writes JavaScript that calls fill() and setBlock().
+  #            A wall is one call, so the model spends its output on the shape
+  #            instead of on coordinates. Needs a cloud model and GraalJS.
+  #   json   - the model lists every block. Works with a local 7B, but the
+  #            output budget runs out around the floor. Pre-0.9.0 behaviour,
+  #            and the automatic fallback when GraalJS is unavailable.
+  planner: script
+
+  script:
+    max-blocks: 50000            # Budget for one build. Overwrites are free.
+    timeout-ms: 5000             # Wall-clock limit; cancels runaway loops
+    max-horizontal: 128          # Max blocks from origin on X/Z
+    max-vertical: 128            # Max blocks from origin on Y
+    max-fill-volume: 200000      # Largest single fill() call
+    repair-attempts: 1           # Retries with the error fed back to the model
+
+  max-ai-blocks: 5000            # Max blocks for JSON-planner builds
   ai-timeout: 30                 # Seconds to wait for AI response
 
 # ========== MINING (v0.1.0 rework) ==========
