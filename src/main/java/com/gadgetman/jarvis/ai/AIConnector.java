@@ -410,16 +410,43 @@ public class AIConnector {
                   setBlock(x, y, z, block)
                       Places one block.
                   function buildCreation(x, y, z) { }
-                      x, y, z are the build origin. y is ground level; build upward from there.
+                      x, y, z are the build origin.
+
+                y is the first empty space above the ground -- the level a player standing
+                there occupies. So the floor you walk on goes at y, and the interior, the
+                walls and the furniture start at y+1. Lay exactly ONE floor layer: a second
+                course on top of the first is the single most common mistake, and it shows
+                as a doubled floor. Do not add a foundation under it unless asked.
 
                 Block ids may carry states, exactly as the /setblock command accepts them:
                   "oak_planks", "minecraft:stone_bricks", "oak_stairs[facing=north,half=bottom]",
                   "oak_log[axis=y]", "oak_slab[type=top]", "glass_pane", "air"
                 Use real placeable block ids. Never item ids -- "bricks" is the block, "brick" is an item.
 
+                Roofs. A stair's `facing` points DOWN the slope -- the tall half of the block
+                is on the side away from `facing`. So a roof surface that descends toward the
+                north is built from stairs with facing=north, and the south side of the same
+                roof uses facing=south. Getting this backwards leaves the roof inside out,
+                with the steps facing the sky and gaps between the courses.
+
+                Build each slope as a continuous run: every course sits one block higher and
+                one block in from the course below, the lowest course rests directly on top of
+                the wall, and the two slopes meet at a ridge you cap with a solid block or a
+                slab. Courses that skip a level do not touch, and the roof reads as floating
+                slats.
+
+                Windows. Cut the opening in the wall and put the glass in it. A single
+                glass_pane in a one-block hole is fine -- it is joined up to the wall around it
+                after the build. Use `glass` rather than `glass_pane` when you want a flush,
+                solid-looking window.
+
                 Rules:
                 - Later writes win, so fill a wall and then set air over it to carve a doorway.
                 - Coordinates are relative to the origin and must stay within a few dozen blocks of it.
+                - Every block id must be one that really exists. Guessing by pattern is where
+                  builds go wrong: it is `polished_blackstone_bricks`, not `blackstone_bricks`;
+                  `bricks`, not `brick`; `stone_bricks`, not `stone_brick`. If you are unsure of
+                  a decorative variant, use the plain block rather than inventing a name.
                 - Ordinary JavaScript is available: loops, math, arrays, functions. Use them.
                   There is no DOM, no require, no host access, and no console.
 

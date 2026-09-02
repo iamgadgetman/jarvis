@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -100,6 +101,21 @@ public class ScriptBuildPlanner {
     private final int maxHorizontal;
     private final int maxVertical;
     private final int maxFillVolume;
+    /**
+     * Every placeable block id the server knows, lowercase and unqualified.
+     *
+     * <p>Validating here rather than at placement time is the difference
+     * between a build and a pile of dirt. A model asking for
+     * {@code blackstone_bricks} -- which is not a real block; the real one is
+     * {@code polished_blackstone_bricks} -- used to fall through to the
+     * fallback material silently: one live build came out 186 of 347 blocks
+     * DIRT, walls and roof included. Rejecting the id instead sends it back
+     * through the repair retry, where the model simply corrects it.
+     *
+     * <p>Built on the main thread by the caller, because it reads the registry.
+     * Null disables validation.
+     */
+    private final Set<String> validBlocks;
 
     /**
      * Shared across builds so each one does not pay engine start-up. Measured
@@ -110,8 +126,10 @@ public class ScriptBuildPlanner {
     private volatile Engine engine;
 
     public ScriptBuildPlanner(Logger log, int maxBlocks, int timeoutMs,
-                              int maxHorizontal, int maxVertical, int maxFillVolume) {
+                              int maxHorizontal, int maxVertical, int maxFillVolume,
+                              Set<String> validBlocks) {
         this.log = log;
+        this.validBlocks = validBlocks;
         this.maxBlocks = maxBlocks;
         this.timeoutMs = timeoutMs;
         this.maxHorizontal = maxHorizontal;
@@ -339,6 +357,18 @@ public class ScriptBuildPlanner {
         }
         if (spec == null || spec.isBlank()) {
             throw new LimitExceeded("A block id was empty at (" + x + "," + y + "," + z + ").");
+        }
+        if (validBlocks != null) {
+            String base = spec.trim().toLowerCase();
+            int br = base.indexOf('[');
+            if (br >= 0) base = base.substring(0, br);
+            if (base.startsWith("minecraft:")) base = base.substring(10);
+            if (!validBlocks.contains(base)) {
+                throw new LimitExceeded("'" + base + "' is not a real Minecraft block id. "
+                        + "Use only ids this server knows, and check the exact spelling "
+                        + "(for example the block is 'polished_blackstone_bricks', "
+                        + "there is no 'blackstone_bricks').");
+            }
         }
 
         Long key = key(x, y, z);

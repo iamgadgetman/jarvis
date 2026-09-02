@@ -10,7 +10,10 @@ import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.MultipleFacing;
+import org.bukkit.block.data.type.Wall;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
@@ -53,6 +56,9 @@ public class BuildingAssistant {
     /** Null when GraalJS is not on the classpath, which forces the JSON planner. */
     private ScriptBuildPlanner scriptPlanner;
 
+    /** Every placeable block id, for validating scripts off the main thread. */
+    private Set<String> validBlockNames;
+
     public BuildingAssistant(Jarvis plugin) {
         this.plugin = plugin;
         loadConfig();
@@ -83,8 +89,17 @@ public class BuildingAssistant {
             // must not stop the plugin loading, so probe and fall back rather
             // than letting a NoClassDefFoundError escape on first build.
             if (ScriptBuildPlanner.isAvailable()) {
+                // Snapshot the registry here, on the main thread, so the planner
+                // can reject a bad block id while running async.
+                validBlockNames = new HashSet<>();
+                for (Material m : Material.values()) {
+                    if (m.isBlock() && !m.isLegacy()) {
+                        validBlockNames.add(m.getKey().getKey());
+                    }
+                }
                 scriptPlanner = new ScriptBuildPlanner(plugin.getLogger(), scriptMaxBlocks,
-                        scriptTimeoutMs, scriptMaxHorizontal, scriptMaxVertical, scriptMaxFillVolume);
+                        scriptTimeoutMs, scriptMaxHorizontal, scriptMaxVertical, scriptMaxFillVolume,
+                        validBlockNames);
             } else {
                 plugin.getLogger().warning("build.planner is 'script' but GraalJS is not on the "
                         + "classpath -- falling back to the JSON planner. Check that the server "
@@ -114,6 +129,14 @@ public class BuildingAssistant {
         // Experience memory. Only AI-planned builds are remembered — a hand-built
         // wall says nothing about plan quality, so it must never be recorded or
         // demoted alongside one.
+        /**
+         * Blocks whose look depends on their neighbours -- glass panes, iron
+         * bars, fences, walls. Filled during placement and resolved afterwards,
+         * because a pane placed before the wall beside it cannot know it will
+         * be enclosed.
+         */
+        Queue<Block> connectQueue = new LinkedList<>();
+
         boolean aiGenerated;
         String situationJson;
         String planJson;
@@ -521,6 +544,10 @@ public class BuildingAssistant {
                     // Place the block, keeping states when the plan supplied them.
                     if (placement.blockData != null) {
                         block.setBlockData(placement.blockData, false);
+                        if (placement.blockData instanceof MultipleFacing
+                                || placement.blockData instanceof Wall) {
+                            state.connectQueue.add(block);
+                        }
                     } else {
                         block.setType(placement.material);
                     }
@@ -544,13 +571,80 @@ public class BuildingAssistant {
 
                 // Check completion
                 if (state.queue.isEmpty()) {
-                    completeBuild(player, state);
-                    cancel();
+                    // Resolve connections in the same throttled loop rather than
+                    // all at once -- a village build can carry hundreds of panes.
+                    int connected = 0;
+                    while (!state.connectQueue.isEmpty() && connected < blocksPerTick) {
+                        connectToNeighbours(state.connectQueue.poll());
+                        connected++;
+                    }
+                    if (state.connectQueue.isEmpty()) {
+                        completeBuild(player, state);
+                        cancel();
+                    }
                 }
             }
         }.runTaskTimer(plugin, 1L, 1L);
 
         return state;
+    }
+
+    /** The four horizontal faces a pane, bar, fence or wall can connect along. */
+    private static final BlockFace[] SIDES = {
+        BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST
+    };
+
+    /**
+     * Point a pane, bar, fence or wall at whatever ended up beside it.
+     *
+     * <p>Without this a window reads as a floating shard. Placement runs with
+     * physics off -- deliberately, so a build does not set off cascading
+     * updates, falling gravel and popping torches while it goes up -- but that
+     * also means a glass pane keeps the disconnected shape it was placed with.
+     * Re-placing it with physics on does not help either: a block does not
+     * recompute its own shape, it only tells its neighbours to recompute
+     * theirs, so a pane walled in by solid blocks is never told anything.
+     *
+     * <p>So the connections are worked out directly. A face connects when the
+     * neighbour is a solid block, or is another pane, bar, fence or wall.
+     */
+    private void connectToNeighbours(Block block) {
+        BlockData data = block.getBlockData();
+
+        if (data instanceof MultipleFacing facing) {
+            boolean changed = false;
+            for (BlockFace side : SIDES) {
+                if (!facing.getAllowedFaces().contains(side)) continue;
+                boolean connect = connectsTo(block.getRelative(side));
+                if (facing.hasFace(side) != connect) {
+                    facing.setFace(side, connect);
+                    changed = true;
+                }
+            }
+            if (changed) block.setBlockData(facing, false);
+
+        } else if (data instanceof Wall wall) {
+            boolean changed = false;
+            for (BlockFace side : SIDES) {
+                Wall.Height want = connectsTo(block.getRelative(side))
+                        ? Wall.Height.LOW : Wall.Height.NONE;
+                if (wall.getHeight(side) != want) {
+                    wall.setHeight(side, want);
+                    changed = true;
+                }
+            }
+            // A wall with no side connections shows its centre post, which is
+            // the right look for a free-standing post and wrong for a run.
+            if (changed) block.setBlockData(wall, false);
+        }
+    }
+
+    /** True when a neighbour is something a pane or wall should attach to. */
+    private boolean connectsTo(Block neighbour) {
+        BlockData data = neighbour.getBlockData();
+        if (data instanceof MultipleFacing || data instanceof Wall) return true;
+        Material m = neighbour.getType();
+        return m.isSolid() && m.isOccluding();
     }
 
     /**
