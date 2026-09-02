@@ -7,6 +7,10 @@ import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.proxy.ProxyExecutable;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -370,10 +374,10 @@ public class ScriptBuildPlanner {
         if (validBlocks != null) {
             String base = baseName(spec);
             if (!validBlocks.contains(base)) {
-                throw new LimitExceeded("'" + base + "' is not a real Minecraft block id. "
-                        + "Use only ids this server knows, and check the exact spelling "
-                        + "(for example the block is 'polished_blackstone_bricks', "
-                        + "there is no 'blackstone_bricks').");
+                String hint = suggest(base);
+                throw new LimitExceeded("'" + base + "' is not a real Minecraft block id."
+                        + (hint.isEmpty() ? " Use only ids this server knows."
+                                          : " Did you mean: " + hint + "?"));
             }
         }
 
@@ -408,6 +412,61 @@ public class ScriptBuildPlanner {
                     + " block budget. Design something smaller or less solid.");
         }
         out.put(key, new PlannedBlock(x, y, z, spec.trim()));
+    }
+
+    /**
+     * Nearest real block ids to one the model invented.
+     *
+     * <p>Saying only that an id is wrong is not enough to repair it. A live
+     * build asked for {@code dark_oak_bed} twice in a row and failed both
+     * times, because nothing in the error hinted that beds are coloured rather
+     * than wood-typed. Ranking the real ids that share the invented one's last
+     * word turns that into "did you mean red_bed, black_bed", which is
+     * actionable in one round.
+     */
+    private String suggest(String base) {
+        if (validBlocks == null || base.isEmpty()) return "";
+        String[] parts = base.split("_");
+        String noun = parts[parts.length - 1];
+        Set<String> words = new HashSet<>(Arrays.asList(parts));
+
+        List<String> hits = new ArrayList<>();
+        // Singular/plural first, because it is the most common near-miss of all:
+        // `brick` for `bricks`, `stone_brick` for `stone_bricks`.
+        String plural = base + "s";
+        String singular = base.endsWith("s") ? base.substring(0, base.length() - 1) : null;
+        if (validBlocks.contains(plural)) hits.add(plural);
+        if (singular != null && validBlocks.contains(singular)) hits.add(singular);
+
+        for (String candidate : validBlocks) {
+            if (hits.contains(candidate)) continue;
+            if (candidate.equals(noun) || candidate.endsWith("_" + noun)) hits.add(candidate);
+        }
+        if (hits.isEmpty()) {
+            // Nothing shares the noun, so fall back to anything sharing any word
+            // -- "white_wool_slab" should still surface the wool blocks.
+            for (String candidate : validBlocks) {
+                for (String w : words) {
+                    if (w.length() > 2 && candidate.contains(w)) { hits.add(candidate); break; }
+                }
+            }
+        }
+        // Most words in common first, then shortest, so the plainest form leads.
+        // The singular/plural match, if there was one, stays pinned at the front.
+        int pinned = 0;
+        if (validBlocks.contains(plural)) pinned++;
+        if (singular != null && validBlocks.contains(singular)) pinned++;
+        List<String> ranked = hits.subList(pinned, hits.size());
+        ranked.sort(Comparator
+                .comparingInt((String c) -> -sharedWords(c, words))
+                .thenComparingInt(String::length));
+        return String.join(", ", hits.subList(0, Math.min(6, hits.size())));
+    }
+
+    private static int sharedWords(String candidate, Set<String> words) {
+        int n = 0;
+        for (String w : candidate.split("_")) if (words.contains(w)) n++;
+        return n;
     }
 
     /** Block id with the namespace and any block states stripped. */
