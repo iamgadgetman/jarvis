@@ -518,6 +518,19 @@ public class AIConnector {
      */
     public String queryBuildScript(String description, String memoryExamples,
                                    String previousScript, String previousError) throws Exception {
+        return queryBuildScript(description, memoryExamples, previousScript, previousError, "");
+    }
+
+    /**
+     * @param siteNote what the ground at this particular origin allows, or blank.
+     *                 Standing near bedrock or near the world ceiling leaves far
+     *                 less headroom than the usual limits imply, and a model told
+     *                 only afterwards cannot correct it -- it writes relative
+     *                 coordinates and does not know where the origin sits.
+     */
+    public String queryBuildScript(String description, String memoryExamples,
+                                   String previousScript, String previousError,
+                                   String siteNote) throws Exception {
         if (reducedMode) {
             // A 7B writes bad JavaScript. v0.8.6 measured qwen2.5-coder:7b as
             // worse than qwen2.5:7b at spatial layout, so there is no local
@@ -651,6 +664,9 @@ public class AIConnector {
             if (memoryExamples != null && !memoryExamples.isBlank()) {
                 prompt = memoryExamples + "\n" + prompt;
             }
+        }
+        if (siteNote != null && !siteNote.isBlank()) {
+            prompt = prompt + "\n\n" + siteNote;
         }
 
         return sendTiered(Tier.HEAVY, prompt, system, false, BUILD_SCRIPT_MAX_TOKENS);

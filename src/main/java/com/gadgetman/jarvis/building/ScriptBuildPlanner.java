@@ -82,6 +82,27 @@ public class ScriptBuildPlanner {
         public static WorldBounds unbounded() {
             return new WorldBounds(0, Integer.MIN_VALUE, Integer.MAX_VALUE);
         }
+
+        /** Lowest usable offset from the origin. */
+        public int relativeMinY() {
+            return minY == Integer.MIN_VALUE ? Integer.MIN_VALUE : minY - originY;
+        }
+
+        /** Highest usable offset from the origin. */
+        public int relativeMaxY() {
+            return maxY == Integer.MAX_VALUE ? Integer.MAX_VALUE : maxY - 1 - originY;
+        }
+
+        /**
+         * True when the origin leaves little enough room to be worth saying up
+         * front. 96 blocks, because a tower or a spire can easily want more than
+         * that: a mountain top at y=250 has only 69 blocks of ceiling left, and a
+         * model told nothing will happily design past it and burn a repair round.
+         * Ordinary ground has hundreds either way and gets no note.
+         */
+        public boolean isTight() {
+            return relativeMinY() > -96 || relativeMaxY() < 96;
+        }
     }
 
     /** Outcome of a successful run. */
@@ -394,9 +415,15 @@ public class ScriptBuildPlanner {
         }
         int worldY = bounds.originY() + y;
         if (worldY < bounds.minY() || worldY >= bounds.maxY()) {
+            // Naming the world range alone is not actionable: the script works in
+            // coordinates relative to the origin and has no idea where that sits,
+            // so it cannot convert. A live build failed twice with the identical
+            // error for exactly that reason. Give it the relative range instead.
             throw new LimitExceeded("Height " + y + " puts a block at world y=" + worldY
-                    + ", outside this world's build range of " + bounds.minY() + " to "
-                    + (bounds.maxY() - 1) + ". Build shorter, or nearer the ground.");
+                    + ", " + (worldY < bounds.minY() ? "below" : "above")
+                    + " this world's limit. From this origin you may only use y between "
+                    + bounds.relativeMinY() + " and " + bounds.relativeMaxY()
+                    + ". Redesign to fit that range.");
         }
         if (spec == null || spec.isBlank()) {
             throw new LimitExceeded("A block id was empty at (" + x + "," + y + "," + z + ").");
