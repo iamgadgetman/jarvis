@@ -331,6 +331,20 @@ public class BuildingAssistant {
         }.runTaskAsynchronously(plugin);
     }
 
+    /**
+     * What this particular spot allows, told to the model before it writes.
+     *
+     * <p>Only mentioned when the ground is genuinely tight. Saying it on every
+     * build would be noise, and a cottage on a plain has hundreds of blocks of
+     * headroom in both directions.
+     */
+    private String siteNote(ScriptBuildPlanner.WorldBounds b) {
+        if (!b.isTight()) return "";
+        return "Site constraint: from this origin you may only use y between "
+                + b.relativeMinY() + " and " + b.relativeMaxY()
+                + ". The build must fit inside that.";
+    }
+
     /** A script and the blocks it produced. Null placements mean the script never ran. */
     private static class ScriptPlan {
         final String script;
@@ -362,7 +376,7 @@ public class BuildingAssistant {
 
         for (int attempt = 0; attempt <= scriptRepairAttempts; attempt++) {
             String response = plugin.getAIConnector()
-                    .queryBuildScript(description, examples, script, error);
+                    .queryBuildScript(description, examples, script, error, siteNote(worldBounds));
             script = com.gadgetman.jarvis.ai.AIConnector.extractScript(response);
 
             if (script == null || script.isBlank()) {
