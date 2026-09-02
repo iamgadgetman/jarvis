@@ -1,6 +1,6 @@
 # Jarvis — AI-Powered Minecraft Butler Plugin
 
-**Version 0.8.6** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
+**Version 0.9.0** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
 
 Jarvis is a feature-rich AI companion plugin that spawns a Citizens NPC who follows you, fights for you, mines for you, builds for you — and understands natural language via OpenAI, Claude, Grok, Gemini, or a local Ollama model.
 
@@ -67,10 +67,26 @@ Supports multiple AI backends with **tiered, Ollama-first routing** (new in 0.3.
 ### Steward (new in 0.5.0)
 - `/jarvis report` — the briefing: TPS/ms-tick with health coloring, players online, his cargo, pending requests; compact version on join
 - `/jarvis duty add <minutes> <message>` — standing broadcasts that survive restarts; `/jarvis duties` to review
-- "Jarvis, build me a house" picks the best schematic from your library (works even on local-only AI); freeform AI building is just the fallback
+- "Jarvis, build me a house" picks the best schematic from your library (works even on local-only AI); freeform AI building takes over when nothing matches
 
-### Building Assistant
-- Describe a structure in natural language; Jarvis plans and builds it block by block
+### Building Assistant (rebuilt in 0.9.0)
+- Describe a structure in natural language and Jarvis designs it, writing the build
+  as a **JavaScript program** that calls `fill` and `setBlock` rather than listing
+  every block. A wall is one call instead of four hundred coordinates, so the model
+  spends its reasoning on the shape. Live builds run 200–38,000 blocks; the old
+  block-list planner topped out around 168 — a footprint with no walls
+- The script runs sandboxed with no host access, under a block budget, a wall-clock
+  watchdog and bounds limits. It never touches the world: it returns a block list,
+  which goes through the same placement, undo and memory path as everything else
+- A script that will not run is sent back to the model with the error attached, so
+  an invented block id comes back as *"did you mean red_bed, pink_bed…"* and is
+  usually fixed in one round
+- Common mistakes are repaired rather than described: block ids are checked against
+  the server registry, glass panes and fences are joined to their neighbours, bed
+  halves are made to agree, and a torch that would delete the wall it hangs on is
+  moved into the room instead
+- `build.planner: json` restores the pre-0.9.0 block-list planner, which is also the
+  automatic fallback if GraalJS cannot be loaded
 - Paste WorldEdit schematics by name (fuzzy matching — no need for exact filenames)
 
 ### Lamplighter (new in 0.8.3)
@@ -342,8 +358,18 @@ Everything else works without it. Verify with `/we version`.
 try the explicit prefix (`jarvis <command>`), and check console for errors.
 
 **Building not working** — verify WorldEdit loaded, that you have build rights
-in the area, and try something simple first (`/jarvis build wall`). AI JSON
-parse errors show in the console.
+in the area, and try something simple first (`/jarvis build wall`). Script
+failures and the repair retry are logged: look for `Build script attempt N
+failed:`, which names the exact reason the model was given.
+
+**Freeform builds fall back to the old planner** — the console says GraalJS is
+not on the classpath. The engine is fetched at start via `libraries:` in
+`plugin.yml`, so a server with no outbound access never gets it. Build with
+`mvn -Pshade-graaljs package` to bundle it into the jar instead (~60 MB).
+
+**Script builds refuse to run** — they need a cloud model; a local 7B does not
+write usable JavaScript. On an Ollama-only server, use schematics or set
+`build.planner: json`.
 
 **"Database init error"** — `plugins/Jarvis/` must be writable. Failing that,
 delete `database.db` and restart, and check free disk space.
