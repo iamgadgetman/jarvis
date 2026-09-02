@@ -1,5 +1,62 @@
 # Jarvis Changelog
 
+## v0.9.1 (2026-09-02) — the NPC backend goes behind an interface
+
+No behaviour change. This is the `npc-provider-abstraction` branch finally
+landing, seven months after it was written, so that a Citizens-free NPC
+backend can be added later without touching every class that drives the NPC.
+
+That branch could not be merged. It forked in January, carries 26 files under
+`com/yourname` against main's 34 under `com/gadgetman` — so git would add a
+second parallel class tree rather than conflict — and its `JarvisNPC` is 862
+lines against main's 1,893. It predates Lamplighter, Farmer, Fisherman,
+Lumberjack, EscortService, RecoveryService and Entertainer entirely. So the
+interface and the Citizens implementation were ported and the callers rewired
+by hand.
+
+**Files naming a Citizens type: 13 before, 3 after.**
+
+The three that remain are the right three. `CitizensNPCProvider` must — it is
+the backend. `JarvisNPC` is the documented owner and still holds NPC objects
+directly. `UIManager` listens for `NPCRightClickEvent`, a Bukkit event type
+that cannot move behind the interface until the provider owns event
+registration.
+
+### What made it tractable
+
+The navigator was 71 of 76 helper call sites, and it was only ever
+`cancelNavigation`, `isNavigating` and `setTarget` — all three already on the
+January interface. Only `setPaused`/`isPaused` and `stuckAction` had to be
+added, and the Citizens `Inventory` trait mapped straight onto the provider's
+inventory methods.
+
+### Ownership
+
+`JarvisNPC` and the provider each kept their own `Map<UUID, NPC>`. Two
+registries for the same NPCs is the split that works until one of them misses
+a despawn on chunk unload, so `JarvisNPC` now points at the provider's map —
+the same object, one source of truth, and its sixteen call sites unchanged.
+
+### Added to the interface
+
+Expressed as behaviour rather than mechanism, so another backend can satisfy
+them differently:
+
+| | |
+|---|---|
+| `breakBlock` | vanilla-timed breaking with swing and crack overlay; the Citizens `BlockBreaker` logic moved out of `JarvisNPC` |
+| `setSwimming` | the `SWIM` metadata from 0.8.2 |
+| `applyNavigationDefaults` | pathfinder choice, repath rate, examiners — all backend policy |
+| `setStuckHandler` | **null means never teleport out of being stuck.** Citizens' default is `TeleportStuckAction`, exactly the teleport-hopping 0.1.0 removed, so this had to be preserved deliberately rather than inherited |
+| `setNavigationPaused` / `isNavigationPaused` | |
+
+### Not ported
+
+`CustomNPCProvider` and its `FakePlayer`, `PathfinderProxy`, `MovementController`
+and `NPCEquipment` supporting cast stay on the branch. Making Citizens a
+`softdepend` also needs a `BlockBreaker` equivalent for timed mining. That is
+the next pass, and the point of this one.
+
 ## v0.9.0 (2026-09-01) — the builder writes code
 
 Freeform building worked, in the sense that it ran. What it produced was a
