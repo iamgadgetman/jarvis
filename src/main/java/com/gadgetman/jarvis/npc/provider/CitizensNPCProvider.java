@@ -40,6 +40,9 @@ public class CitizensNPCProvider implements INPCProvider {
     /** In-flight block breaks, keyed by NPC, so a new dig supersedes the old one. */
     private final Map<UUID, BukkitRunnable> activeBreakers = new ConcurrentHashMap<>();
 
+    /** Refuse to teleport out of being stuck; the tick loops handle recovery. */
+    private static final net.citizensnpcs.api.ai.StuckAction NO_TELEPORT = (n, navigator) -> false;
+
     private final Jarvis plugin;
     private final Map<UUID, NPC> playerNPCs = new ConcurrentHashMap<>();
 
@@ -404,6 +407,40 @@ public class CitizensNPCProvider implements INPCProvider {
     public void cancelBreaking(UUID npcId) {
         BukkitRunnable task = activeBreakers.remove(npcId);
         if (task != null) task.cancel();
+    }
+
+    @Override
+    public void setNavigationPaused(Player owner, boolean paused) {
+        NPC npc = playerNPCs.get(owner.getUniqueId());
+        if (npc == null) return;
+        Navigator nav = npc.getNavigator();
+        if (nav != null) nav.setPaused(paused);
+    }
+
+    @Override
+    public boolean isNavigationPaused(Player owner) {
+        NPC npc = playerNPCs.get(owner.getUniqueId());
+        if (npc == null) return false;
+        Navigator nav = npc.getNavigator();
+        return nav != null && nav.isPaused();
+    }
+
+    /**
+     * Null means "never teleport out of being stuck" -- the behaviour 0.1.0
+     * introduced when it replaced teleport-hopping with real movement. Citizens'
+     * own default is TeleportStuckAction, which is exactly what we do not want.
+     */
+    @Override
+    public void setStuckHandler(Player owner, Runnable onStuck) {
+        NPC npc = playerNPCs.get(owner.getUniqueId());
+        if (npc == null) return;
+        Navigator nav = npc.getNavigator();
+        if (nav == null) return;
+        nav.getLocalParameters().stuckAction(
+                onStuck == null ? NO_TELEPORT : (n, navigator) -> {
+                    onStuck.run();
+                    return false;
+                });
     }
 
     @Override

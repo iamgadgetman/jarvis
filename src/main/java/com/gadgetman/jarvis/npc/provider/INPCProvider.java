@@ -95,6 +95,22 @@ public interface INPCProvider {
      */
     void setNavigationParams(Player owner, float speed, double range);
 
+    /** Pause or resume navigation without losing the current target. */
+    void setNavigationPaused(Player owner, boolean paused);
+
+    /** Whether navigation is currently paused. */
+    boolean isNavigationPaused(Player owner);
+
+    /**
+     * What to do when the NPC wedges and cannot make progress.
+     *
+     * <p>Expressed as a callback rather than a pathfinder policy object so the
+     * interface stays free of backend types. Passing null means "never
+     * teleport out of it" -- the behaviour 0.1.0 introduced when it replaced
+     * teleport-hopping with real movement.
+     */
+    void setStuckHandler(Player owner, Runnable onStuck);
+
     // ==================== EQUIPMENT ====================
 
     /**
