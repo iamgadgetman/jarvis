@@ -436,9 +436,11 @@ public class AIConnector {
 
                 Roofs are where builds most often go wrong, so follow this exactly.
 
-                A stair's `facing` points DOWN the slope; the tall half of the block is on the
-                side away from `facing`. A roof surface descending toward the north is built
-                from stairs with facing=north, and the opposite slope uses facing=south.
+                A stair's `facing` points UP the slope, toward the ridge -- the tall half of
+                the block is on the side named by `facing`. So the slope that descends toward
+                the north is built from stairs with facing=south, and the slope opposite it
+                uses facing=north. Point them down-slope instead and the whole roof is
+                inside out.
 
                 Each course must be a full-length `fill` along the ridge axis, one block higher
                 and one block inward from the course below. The FIRST course sits directly on
@@ -449,18 +451,25 @@ public class AIConnector {
                   const mid = Math.floor((d - 1) / 2);           // d = depth in z
                   for (let i = 0; i < mid; i++) {
                     const yy = wallTop + 1 + i;
-                    fill(x-1, yy, z+i,       x+w, yy, z+i,       "oak_stairs[facing=north]");
-                    fill(x-1, yy, z+d-1-i,   x+w, yy, z+d-1-i,   "oak_stairs[facing=south]");
+                    // z+i descends toward north, so it faces south, back up to the ridge
+                    fill(x-1, yy, z+i,       x+w, yy, z+i,       "oak_stairs[facing=south]");
+                    fill(x-1, yy, z+d-1-i,   x+w, yy, z+d-1-i,   "oak_stairs[facing=north]");
                   }
                   fill(x-1, wallTop+1+mid, z+mid, x+w, wallTop+1+mid, z+mid, "oak_planks");
 
                 which gives this profile, walls to ridge with nothing floating:
 
                   y=7  . . . # . . .
-                  y=6  . . n . s . .
-                  y=5  . n . . . s .
-                  y=4  n . . . . . s     <- resting on the wall tops
+                  y=6  . . s . n . .
+                  y=5  . s . . . n .
+                  y=4  s . . . . . n     <- resting on the wall tops
                   y=3  #           #
+
+                Blocks that occupy two spaces. A bed is a foot and a head, and the head sits
+                one block from the foot in the direction of `facing` -- facing=east means the
+                head is one block EAST, not one block north. A door is two blocks stacked,
+                half=lower then half=upper directly above it. Place both halves and make the
+                offset agree with `facing`, or the two halves face different ways.
 
                 Windows. Cut the opening in the wall and put the glass in it. A single
                 glass_pane in a one-block hole is fine -- it is joined up to the wall around it

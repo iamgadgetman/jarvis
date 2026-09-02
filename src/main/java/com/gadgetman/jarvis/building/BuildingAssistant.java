@@ -13,6 +13,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.MultipleFacing;
+import org.bukkit.block.data.type.Bed;
 import org.bukkit.block.data.type.Wall;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -494,6 +495,10 @@ public class BuildingAssistant {
                     + " non-block material(s); substituted " + fallback + ".");
         }
 
+        // Beds are two blocks that have to agree with each other, so this runs
+        // once the specs are resolved and before anything is queued.
+        normaliseBeds(placements);
+
         BuildState state = new BuildState(player.getUniqueId(), description);
         state.queue.addAll(placements);
         state.totalBlocks = placements.size();
@@ -587,6 +592,67 @@ public class BuildingAssistant {
         }.runTaskTimer(plugin, 1L, 1L);
 
         return state;
+    }
+
+    /**
+     * Make each bed's two halves agree, and drop any half left on its own.
+     *
+     * <p>A bed is a foot and a head, and the head must sit one block from the
+     * foot in the direction of {@code facing}. Models get the axis wrong: one
+     * live script asked for {@code facing=east} while offsetting the halves
+     * along z, which renders as a bed with one end turned the wrong way.
+     *
+     * <p>Rather than trust the stated facing, this takes the geometry the
+     * script actually laid out as the intent -- foot here, head there -- and
+     * rewrites both facings to the direction between them. A half with no
+     * partner is dropped: placing one alone leaves an invalid block that pops
+     * off as an item the moment anything updates it.
+     */
+    private void normaliseBeds(List<BlockPlacement> placements) {
+        Map<Long, BlockPlacement> beds = new HashMap<>();
+        for (BlockPlacement p : placements) {
+            if (p.blockData instanceof Bed) beds.put(blockKey(p.location), p);
+        }
+        if (beds.isEmpty()) return;
+
+        Set<BlockPlacement> paired = new HashSet<>();
+        for (BlockPlacement foot : beds.values()) {
+            if (((Bed) foot.blockData).getPart() != Bed.Part.FOOT) continue;
+            for (BlockFace side : SIDES) {
+                BlockPlacement head = beds.get(blockKey(foot.location.clone().add(
+                        side.getModX(), side.getModY(), side.getModZ())));
+                if (head == null || ((Bed) head.blockData).getPart() != Bed.Part.HEAD) continue;
+
+                Bed footData = (Bed) foot.blockData;
+                Bed headData = (Bed) head.blockData;
+                if (footData.getFacing() != side) {
+                    footData.setFacing(side);
+                    headData.setFacing(side);
+                    plugin.getLogger().fine("Bed facing corrected to " + side
+                            + " to match where the halves were placed.");
+                }
+                paired.add(foot);
+                paired.add(head);
+                break;
+            }
+        }
+
+        int orphans = 0;
+        for (BlockPlacement p : beds.values()) {
+            if (!paired.contains(p)) {
+                placements.remove(p);
+                orphans++;
+            }
+        }
+        if (orphans > 0) {
+            plugin.getLogger().info("Dropped " + orphans
+                    + " bed half/halves with no matching partner.");
+        }
+    }
+
+    /** Packs a world block position into one long, for placement lookups. */
+    private static long blockKey(Location loc) {
+        return ((long) loc.getBlockX() << 38) ^ ((long) loc.getBlockY() << 26) ^ loc.getBlockZ();
     }
 
     /** The four horizontal faces a pane, bar, fence or wall can connect along. */
