@@ -451,11 +451,18 @@ public class AIConnector {
                   const mid = Math.floor((d - 1) / 2);           // d = depth in z
                   for (let i = 0; i < mid; i++) {
                     const yy = wallTop + 1 + i;
+                    // close the gable triangle at each end, or the roof space is open to the sky
+                    for (const ex of [x, x+w-1]) {
+                      fill(ex, yy, z+i+1, ex, yy, z+d-2-i, "oak_planks");
+                    }
                     // z+i descends toward north, so it faces south, back up to the ridge
                     fill(x-1, yy, z+i,       x+w, yy, z+i,       "oak_stairs[facing=south]");
                     fill(x-1, yy, z+d-1-i,   x+w, yy, z+d-1-i,   "oak_stairs[facing=north]");
                   }
                   fill(x-1, wallTop+1+mid, z+mid, x+w, wallTop+1+mid, z+mid, "oak_planks");
+
+                The two ends of a pitched roof are open triangles until you fill them. Skip
+                that and the room is open to the sky along both gables.
 
                 which gives this profile, walls to ridge with nothing floating:
 
@@ -464,6 +471,13 @@ public class AIConnector {
                   y=5  . s . . . n .
                   y=4  s . . . . . n     <- resting on the wall tops
                   y=3  #           #
+
+                Blocks that hang on something. A torch, button, lever, sign or ladder is
+                supported by a neighbouring block and must go in the empty space NEXT to it,
+                never at the wall's own coordinate -- writing it there deletes the wall and
+                leaves a hole. A wall torch is held up by the block behind it, opposite its
+                facing: to light a north wall from inside a room, put a
+                wall_torch[facing=south] one block SOUTH of that wall.
 
                 Blocks that occupy two spaces. A bed is a foot and a head, and the head sits
                 one block from the foot in the direction of `facing` -- facing=east means the

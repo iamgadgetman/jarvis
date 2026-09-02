@@ -368,16 +368,37 @@ public class ScriptBuildPlanner {
             throw new LimitExceeded("A block id was empty at (" + x + "," + y + "," + z + ").");
         }
         if (validBlocks != null) {
-            String base = spec.trim().toLowerCase();
-            int br = base.indexOf('[');
-            if (br >= 0) base = base.substring(0, br);
-            if (base.startsWith("minecraft:")) base = base.substring(10);
+            String base = baseName(spec);
             if (!validBlocks.contains(base)) {
                 throw new LimitExceeded("'" + base + "' is not a real Minecraft block id. "
                         + "Use only ids this server knows, and check the exact spelling "
                         + "(for example the block is 'polished_blackstone_bricks', "
                         + "there is no 'blackstone_bricks').");
             }
+        }
+
+        String base = baseName(spec);
+
+        // A torch, button, lever, sign or ladder hangs on a block; it must never
+        // replace one. Models write the torch at the wall's own coordinate --
+        // `setBlock(x+1, y+2, z, "wall_torch[facing=south]")` where z IS the wall
+        // -- and last-write-wins then deletes the wall, leaving a hole straight
+        // through to the sky with a torch sitting in it.
+        //
+        // The fix follows from what the block needs: a wall torch is supported by
+        // the block behind it, opposite its facing. Shifting it one block ALONG
+        // its facing puts it in the open air of the room with the wall it was
+        // meant to hang on now directly behind it.
+        Long here = key(x, y, z);
+        PlannedBlock existing = out.get(here);
+        if (isAttachment(base) && existing != null && !"air".equals(baseName(existing.spec))) {
+            int[] dir = facingOf(spec);
+            if (dir == null) return; // nowhere sensible to move it; a missing torch beats a hole
+            int tx = x + dir[0], ty = y + dir[1], tz = z + dir[2];
+            Long target = key(tx, ty, tz);
+            PlannedBlock occupant = out.get(target);
+            if (occupant != null && !"air".equals(baseName(occupant.spec))) return;
+            x = tx; y = ty; z = tz;
         }
 
         Long key = key(x, y, z);
@@ -388,6 +409,40 @@ public class ScriptBuildPlanner {
         }
         out.put(key, new PlannedBlock(x, y, z, spec.trim()));
     }
+
+    /** Block id with the namespace and any block states stripped. */
+    private static String baseName(String spec) {
+        String b = spec.trim().toLowerCase();
+        int br = b.indexOf('[');
+        if (br >= 0) b = b.substring(0, br);
+        return b.startsWith("minecraft:") ? b.substring(10) : b;
+    }
+
+    /** True for blocks that hang on a neighbour rather than standing on their own. */
+    private static boolean isAttachment(String base) {
+        return base.equals("torch") || base.endsWith("_torch")
+                || base.endsWith("_button") || base.equals("lever")
+                || base.endsWith("_sign") || base.equals("ladder")
+                || base.endsWith("_banner");
+    }
+
+    /** The offset named by a spec's {@code facing} state, or null if it has none. */
+    private static int[] facingOf(String spec) {
+        java.util.regex.Matcher m = FACING.matcher(spec);
+        if (!m.find()) return null;
+        return switch (m.group(1)) {
+            case "north" -> new int[]{0, 0, -1};
+            case "south" -> new int[]{0, 0, 1};
+            case "east"  -> new int[]{1, 0, 0};
+            case "west"  -> new int[]{-1, 0, 0};
+            case "up"    -> new int[]{0, 1, 0};
+            case "down"  -> new int[]{0, -1, 0};
+            default -> null;
+        };
+    }
+
+    private static final java.util.regex.Pattern FACING =
+            java.util.regex.Pattern.compile("facing=([a-z]+)");
 
     /** Packs a relative coordinate into one long. Ranges are bounded by the checks in {@link #put}. */
     private static long key(int x, int y, int z) {
