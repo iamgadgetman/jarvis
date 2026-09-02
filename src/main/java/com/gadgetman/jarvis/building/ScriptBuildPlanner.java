@@ -65,6 +65,25 @@ public class ScriptBuildPlanner {
         }
     }
 
+    /**
+     * Absolute world build limits for one run.
+     *
+     * <p>Passed per call rather than held on the planner: the planner is shared
+     * and two players can be planning at the same time, so anything describing
+     * one build has to travel with it.
+     *
+     * <p>The other limits are measured from the origin, which says nothing
+     * about whether the result fits in the world. A tower asked for on a
+     * mountain at y=250 stays inside maxVertical and still runs off the top of
+     * the world, where the blocks never place.
+     */
+    public record WorldBounds(int originY, int minY, int maxY) {
+        /** Permissive bounds, for callers with no world in hand (tests). */
+        public static WorldBounds unbounded() {
+            return new WorldBounds(0, Integer.MIN_VALUE, Integer.MAX_VALUE);
+        }
+    }
+
     /** Outcome of a successful run. */
     public static class Result {
         public final List<PlannedBlock> blocks;
@@ -105,6 +124,7 @@ public class ScriptBuildPlanner {
     private final int maxHorizontal;
     private final int maxVertical;
     private final int maxFillVolume;
+
     /**
      * Every placeable block id the server knows, lowercase and unqualified.
      *
@@ -203,6 +223,10 @@ public class ScriptBuildPlanner {
      *                         exceeded a limit
      */
     public Result run(String script) throws ScriptException {
+        return run(script, WorldBounds.unbounded());
+    }
+
+    public Result run(String script, WorldBounds bounds) throws ScriptException {
         // Keyed by packed coordinate so the last write to a block wins. This is
         // not just deduplication: it is what lets a script carve a doorway by
         // filling the wall and then setting air over it, and it means
@@ -239,7 +263,7 @@ public class ScriptBuildPlanner {
                     throw new LimitExceeded("setBlock needs (x, y, z, block)");
                 }
                 counters[1]++;
-                put(blocks, args[0].asInt(), args[1].asInt(), args[2].asInt(), args[3].asString());
+                put(blocks, args[0].asInt(), args[1].asInt(), args[2].asInt(), args[3].asString(), bounds);
                 return null;
             });
             bindings.putMember("fill", (ProxyExecutable) args -> {
@@ -251,7 +275,7 @@ public class ScriptBuildPlanner {
                 fill(blocks,
                         args[0].asInt(), args[1].asInt(), args[2].asInt(),
                         args[3].asInt(), args[4].asInt(), args[5].asInt(),
-                        args[6].asString(), mode);
+                        args[6].asString(), mode, bounds);
                 return null;
             });
 
@@ -318,7 +342,7 @@ public class ScriptBuildPlanner {
 
     /** Expands a box into blocks. Modes match the vanilla /fill vocabulary the model already knows. */
     private void fill(Map<Long, PlannedBlock> out, int x1, int y1, int z1,
-                      int x2, int y2, int z2, String spec, String mode) {
+                      int x2, int y2, int z2, String spec, String mode, WorldBounds bounds) {
         int minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
         int minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
         int minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
@@ -353,13 +377,13 @@ public class ScriptBuildPlanner {
                         if (z == minZ || z == maxZ) onFace++;
                         if (outline ? onFace < 2 : onFace < 1) continue;
                     }
-                    put(out, x, y, z, spec);
+                    put(out, x, y, z, spec, bounds);
                 }
             }
         }
     }
 
-    private void put(Map<Long, PlannedBlock> out, int x, int y, int z, String spec) {
+    private void put(Map<Long, PlannedBlock> out, int x, int y, int z, String spec, WorldBounds bounds) {
         if (Math.abs(x) > maxHorizontal || Math.abs(z) > maxHorizontal) {
             throw new LimitExceeded("Coordinate (" + x + "," + y + "," + z + ") is more than "
                     + maxHorizontal + " blocks from the origin. Keep the build near 0,0,0.");
@@ -367,6 +391,12 @@ public class ScriptBuildPlanner {
         if (Math.abs(y) > maxVertical) {
             throw new LimitExceeded("Height " + y + " is more than " + maxVertical
                     + " from the origin. Keep the build near y=0 and build upward.");
+        }
+        int worldY = bounds.originY() + y;
+        if (worldY < bounds.minY() || worldY >= bounds.maxY()) {
+            throw new LimitExceeded("Height " + y + " puts a block at world y=" + worldY
+                    + ", outside this world's build range of " + bounds.minY() + " to "
+                    + (bounds.maxY() - 1) + ". Build shorter, or nearer the ground.");
         }
         if (spec == null || spec.isBlank()) {
             throw new LimitExceeded("A block id was empty at (" + x + "," + y + "," + z + ").");

@@ -247,6 +247,10 @@ public class BuildingAssistant {
         // SituationSnapshot touches the world and is main-thread only.
         final Location origin = player.getLocation();
         final String situationJson = SituationSnapshot.capture(origin);
+        // Build height is a world lookup, so it is read here with everything
+        // else the async planner needs, and travels with the request.
+        final ScriptBuildPlanner.WorldBounds worldBounds = new ScriptBuildPlanner.WorldBounds(
+                origin.getBlockY(), origin.getWorld().getMinHeight(), origin.getWorld().getMaxHeight());
         final ExperienceMemory memory = plugin.getExperienceMemory();
 
         // Generate build asynchronously
@@ -268,7 +272,7 @@ public class BuildingAssistant {
                     String response;
                     List<BlockPlacement> placements;
                     if (scriptPlanner != null) {
-                        ScriptPlan plan = planWithScript(description, examples, origin);
+                        ScriptPlan plan = planWithScript(description, examples, origin, worldBounds);
                         response = plan.script;
                         placements = plan.placements;
                     } else {
@@ -350,7 +354,8 @@ public class BuildingAssistant {
      *
      * <p>Runs off the main thread.
      */
-    private ScriptPlan planWithScript(String description, String examples, Location origin)
+    private ScriptPlan planWithScript(String description, String examples, Location origin,
+                                      ScriptBuildPlanner.WorldBounds worldBounds)
             throws Exception {
         String script = null;
         String error = null;
@@ -368,7 +373,7 @@ public class BuildingAssistant {
             }
 
             try {
-                ScriptBuildPlanner.Result result = scriptPlanner.run(script);
+                ScriptBuildPlanner.Result result = scriptPlanner.run(script, worldBounds);
                 plugin.getLogger().info("Script plan for \"" + description + "\": "
                         + result.blocks.size() + " blocks from " + result.fillCalls
                         + " fill and " + result.setBlockCalls + " setBlock calls"
