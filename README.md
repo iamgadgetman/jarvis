@@ -1,6 +1,6 @@
 # Jarvis — AI-Powered Minecraft Butler Plugin
 
-**Version 0.9.2** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
+**Version 0.9.3** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
 
 Jarvis is a feature-rich AI companion plugin that spawns a Citizens NPC who follows you, fights for you, mines for you, builds for you — and understands natural language via OpenAI, Claude, Grok, Gemini, or a local Ollama model.
 
