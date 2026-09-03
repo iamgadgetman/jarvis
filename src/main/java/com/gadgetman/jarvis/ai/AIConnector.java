@@ -653,6 +653,12 @@ public class AIConnector {
                 windows, so the two do not compete for the same band of wall.
 
                 Rules:
+                - You only ever place blocks; nothing is removed unless you place air. The
+                  space you build into is NOT guaranteed empty. On open ground it is, so this
+                  costs you nothing there. Inside a hill or a cave it is solid rock, and a
+                  wall raised through untouched stone leaves the room filled in. If you are
+                  told the site is enclosed, fill the entire volume with air first -- rooms,
+                  doorways, stairwells, the lot -- and then build into what you cleared.
                 - Later writes win, so fill a wall and then set air over it to carve a doorway.
                 - Coordinates are relative to the origin and must stay within a few dozen blocks of it.
                 - Every block id must be one that really exists. Guessing by pattern is where

@@ -279,6 +279,19 @@ public class BuildingAssistant {
                     String response;
                     List<BlockPlacement> placements;
                     if (scriptPlanner != null) {
+                        // Logged because there was no way to tell, after the
+                        // fact, whether a constraint had been sent or the model
+                        // had ignored one. A cave build came back uncarved and
+                        // the log could not say which.
+                        String note = siteNote(worldBounds, site);
+                        if (!note.isBlank()) {
+                            plugin.getLogger().info("Site note for \"" + description + "\": "
+                                    + note.replace("\n", " | "));
+                        } else {
+                            plugin.getLogger().fine("No site constraints for \"" + description
+                                    + "\" (enclosed=" + site.enclosed()
+                                    + ", solid=" + site.solidPercent() + "%)");
+                        }
                         ScriptPlan plan = planWithScript(description, examples, origin, worldBounds, site);
                         response = plan.script;
                         placements = plan.placements;
@@ -404,7 +417,12 @@ public class BuildingAssistant {
                 }
             }
             int pct = total == 0 ? 0 : (solid * 100) / total;
-            return new SiteSurvey(roofed && pct >= 25, pct);
+            // 15, not 25. The feet-level ring and everything above it is
+            // sampled but the ground underfoot is not, so open sky reads near
+            // zero and a canopy barely moves it -- leaves do not occlude. A
+            // cave tight enough to matter clears 15 easily, and a build that
+            // does not need the clearing loses nothing by being told.
+            return new SiteSurvey(roofed && pct >= 15, pct);
         }
     }
 

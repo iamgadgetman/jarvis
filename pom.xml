@@ -5,7 +5,7 @@
 
     <groupId>com.gadgetman</groupId>
     <artifactId>jarvis</artifactId>
-    <version>0.10.3</version>
+    <version>0.10.4</version>
     <packaging>jar</packaging>
 
     <name>Jarvis</name>

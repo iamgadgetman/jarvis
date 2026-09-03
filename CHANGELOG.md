@@ -1,5 +1,40 @@
 # Jarvis Changelog
 
+## v0.10.4 (2026-09-03) — say what was sent
+
+0.10.3 told the model when a site was enclosed. A cave build then came back
+with nothing carved, and the log could not say whether the constraint had been
+sent and ignored, or never fired at all. Same blindness `/jarvis version` was
+built to end.
+
+### Changed
+
+- **The site note is logged when it is sent**, and the measurement is logged at
+  `fine` when it is not:
+
+  ```
+  Site note for "20 block tall trebuchet": Site constraint: this spot is
+  underground or enclosed — roughly 68% of the surrounding space is solid rock...
+  ```
+
+- **Enclosed threshold 25% → 15%.** The ground underfoot is not sampled, so
+  open sky reads near zero and a canopy barely moves it — leaves do not
+  occlude. Any cave tight enough to matter clears 15 comfortably, and a build
+  that did not need the clearing loses nothing by being told.
+
+- **The system prompt now states the principle**, so the site note triggers a
+  rule the model already holds rather than arriving as an isolated instruction:
+  *you only ever place blocks; nothing is removed unless you place air, and the
+  space you build into is not guaranteed empty.*
+
+### Noted, not changed
+
+`SituationSnapshot.isUnderground` tests only whether anything is overhead, so
+it reports `underground: true` at y=119 under a jungle canopy — visible in the
+build memory. It feeds retrieval ranking rather than any build decision, and
+changing it would reinterpret every experience already stored, so it is left
+alone. The build path uses its own survey, which requires occlusion as well.
+
 ## v0.10.3 (2026-09-03) — underground builds carve their own space
 
 A build script only ever *places* blocks. It never assumes it has to remove
