@@ -1,5 +1,27 @@
 # Jarvis Changelog
 
+## v0.10.3 (2026-09-03) — underground builds carve their own space
+
+A build script only ever *places* blocks. It never assumes it has to remove
+any, and above ground it never needs to — the space is already air. Build
+inside a cave and the walls go up around an interior that is still solid
+deepslate, so the rooms come out filled in.
+
+The model cannot see where it is standing, so it now gets told. The origin is
+surveyed on the main thread alongside the world bounds, and an enclosed site
+adds to the prompt before a line of script is written:
+
+> Site constraint: this spot is underground or enclosed — roughly 68% of the
+> surrounding space is solid rock, not air. Nothing here is hollow by default.
+> Carve the volume out with `fill(..., "air")` FIRST, including every room,
+> doorway and stairwell, and then build into the space you have cleared.
+
+Enclosed means both something overhead and at least a quarter of the
+surrounding volume occluding. Both halves matter: overhead alone catches every
+tree, and the occlusion test uses `isOccluding` rather than `isSolid` because
+leaves are solid — a forest canopy would otherwise be told to carve rock that
+is not there.
+
 ## v0.10.2 (2026-09-03) — the plugin can say what it is
 
 Between them, three separate faults meant the plugin could not tell you which

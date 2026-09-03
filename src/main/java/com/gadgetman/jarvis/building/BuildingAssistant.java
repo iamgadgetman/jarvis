@@ -9,6 +9,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.BlockData;
@@ -256,6 +257,7 @@ public class BuildingAssistant {
         // else the async planner needs, and travels with the request.
         final ScriptBuildPlanner.WorldBounds worldBounds = new ScriptBuildPlanner.WorldBounds(
                 origin.getBlockY(), origin.getWorld().getMinHeight(), origin.getWorld().getMaxHeight());
+        final SiteSurvey site = SiteSurvey.around(origin);
         final ExperienceMemory memory = plugin.getExperienceMemory();
 
         // Generate build asynchronously
@@ -277,7 +279,7 @@ public class BuildingAssistant {
                     String response;
                     List<BlockPlacement> placements;
                     if (scriptPlanner != null) {
-                        ScriptPlan plan = planWithScript(description, examples, origin, worldBounds);
+                        ScriptPlan plan = planWithScript(description, examples, origin, worldBounds, site);
                         response = plan.script;
                         placements = plan.placements;
                     } else {
@@ -343,11 +345,67 @@ public class BuildingAssistant {
      * build would be noise, and a cottage on a plain has hundreds of blocks of
      * headroom in both directions.
      */
-    private String siteNote(ScriptBuildPlanner.WorldBounds b) {
-        if (!b.isTight()) return "";
-        return "Site constraint: from this origin you may only use y between "
-                + b.relativeMinY() + " and " + b.relativeMaxY()
-                + ". The build must fit inside that.";
+    private String siteNote(ScriptBuildPlanner.WorldBounds b, SiteSurvey site) {
+        StringBuilder sb = new StringBuilder();
+        if (b.isTight()) {
+            sb.append("Site constraint: from this origin you may only use y between ")
+              .append(b.relativeMinY()).append(" and ").append(b.relativeMaxY())
+              .append(". The build must fit inside that.");
+        }
+        if (site.enclosed()) {
+            if (sb.length() > 0) sb.append("\n");
+            sb.append("Site constraint: this spot is underground or enclosed — roughly ")
+              .append(site.solidPercent())
+              .append("% of the surrounding space is solid rock, not air. Nothing here is ")
+              .append("hollow by default. Carve the volume out with fill(..., \"air\") FIRST, ")
+              .append("including every room, doorway and stairwell, and then build into the ")
+              .append("space you have cleared. A wall raised through untouched stone leaves ")
+              .append("the interior filled in.");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * What the ground around the origin is actually like.
+     *
+     * <p>A script only ever *places* blocks; it never assumes it must remove
+     * any. Above ground that is fine, because the space is already air. Build
+     * inside a cave and the walls go up around an interior that is still solid
+     * deepslate -- the rooms come out filled in. The model cannot see this, so
+     * it has to be told.
+     *
+     * <p>Sampled on the main thread with everything else the async planner needs.
+     */
+    private record SiteSurvey(boolean enclosed, int solidPercent) {
+
+        /** Reads the world. Main thread only. */
+        static SiteSurvey around(Location origin) {
+            World world = origin.getWorld();
+            if (world == null) return new SiteSurvey(false, 0);
+
+            int ox = origin.getBlockX(), oy = origin.getBlockY(), oz = origin.getBlockZ();
+            // Anything overhead means this is not open sky, cave or building alike.
+            boolean roofed = world.getHighestBlockYAt(ox, oz) > oy + 2;
+
+            // Sample the space a modest build would occupy rather than the single
+            // block underfoot: standing in a small clearing inside a cave still
+            // means the walls will land in rock.
+            int solid = 0, total = 0;
+            for (int dx = -6; dx <= 6; dx += 3) {
+                for (int dz = -6; dz <= 6; dz += 3) {
+                    for (int dy = 0; dy <= 6; dy += 2) {
+                        Material m = world.getBlockAt(ox + dx, oy + dy, oz + dz).getType();
+                        // isOccluding, not isSolid: leaves are solid, so a dense
+                        // canopy would otherwise read as a cave and every forest
+                        // build would be told to carve rock that is not there.
+                        if (m.isOccluding()) solid++;
+                        total++;
+                    }
+                }
+            }
+            int pct = total == 0 ? 0 : (solid * 100) / total;
+            return new SiteSurvey(roofed && pct >= 25, pct);
+        }
     }
 
     /** A script and the blocks it produced. Null placements mean the script never ran. */
@@ -374,14 +432,14 @@ public class BuildingAssistant {
      * <p>Runs off the main thread.
      */
     private ScriptPlan planWithScript(String description, String examples, Location origin,
-                                      ScriptBuildPlanner.WorldBounds worldBounds)
+                                      ScriptBuildPlanner.WorldBounds worldBounds, SiteSurvey site)
             throws Exception {
         String script = null;
         String error = null;
 
         for (int attempt = 0; attempt <= scriptRepairAttempts; attempt++) {
             String response = plugin.getAIConnector()
-                    .queryBuildScript(description, examples, script, error, siteNote(worldBounds));
+                    .queryBuildScript(description, examples, script, error, siteNote(worldBounds, site));
             script = com.gadgetman.jarvis.ai.AIConnector.extractScript(response);
 
             if (script == null || script.isBlank()) {
