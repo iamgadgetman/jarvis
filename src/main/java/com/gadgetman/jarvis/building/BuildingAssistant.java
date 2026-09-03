@@ -110,6 +110,11 @@ public class BuildingAssistant {
         }
     }
 
+    /** Which planner is live: "script" or "json". */
+    public String getPlanner() {
+        return planner;
+    }
+
     /** Releases the script engine. Called from plugin shutdown. */
     public void shutdown() {
         if (scriptPlanner != null) scriptPlanner.shutdown();

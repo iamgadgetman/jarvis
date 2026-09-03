@@ -1,5 +1,41 @@
 # Jarvis Changelog
 
+## v0.10.2 (2026-09-03) — the plugin can say what it is
+
+Between them, three separate faults meant the plugin could not tell you which
+version it was running, on either of two servers, for an entire evening.
+
+### Added
+
+- **`/jarvis version`** (also `ver`, `about`). There was no such command. It
+  fell through to the natural-language handler, which sent the bare word
+  "version" to a model and got back a confident, invented Minecraft version.
+  It now reports the plugin version, the real server and API version, Java,
+  which build planner is live and whether GraalJS actually loaded, the NPC
+  backend, and the AI provider and model.
+
+- **A typo guard on single-word subcommands.** Any unrecognised subcommand was
+  treated as natural language, so one mistyped word became a paid model call
+  returning something fluent and wrong. A sentence is natural language; a lone
+  word is a typo. `/jarvis verison` now answers *"Did you mean /jarvis
+  version?"* against the 92 commands the switch actually accepts, by edit
+  distance so transpositions land. Phrases still go to the model untouched.
+
+### Fixed
+
+- `/jarvis help` had `v0.8.2` typed into a `sendMessage` and had claimed it
+  since 0.8.3 — seven releases. Now reads `plugin.getVersion()`. (v0.10.1)
+
+### Note on diagnosing this
+
+`latest.log` rotates at midnight, so its first line is not the boot time.
+Reading it as one gave two false "the server restarted" conclusions. Process
+start time is the reliable check:
+
+```
+ps -o lstart= -p <pid>
+```
+
 ## v0.10.1 (2026-09-02) — the help screen stops lying about the version
 
 `/jarvis help` had the version typed into it:

@@ -79,6 +79,7 @@ public class JarvisCommands implements CommandExecutor {
             case "attack" -> plugin.getJarvisNPC().attack(player);
             case "guard" -> plugin.getJarvisNPC().guard(player, args.length > 1 ? args[1] : null);
             case "watch", "sentry" -> plugin.getJarvisNPC().watch(player, args.length > 1 ? args[1] : null);
+            case "version", "ver", "about" -> showVersion(player);
             case "dig" -> {
                 // "/jarvis dig [depth]" -> vertical shaft, default from config
                 int depth = 0;
@@ -433,6 +434,24 @@ public class JarvisCommands implements CommandExecutor {
             case "help"      -> showHelp(player);
 
             default -> {
+                // A single unknown word is a typo, not a sentence. Sending it to
+                // the model costs a call and returns something confident and
+                // invented -- "/jarvis version" produced a made-up Minecraft
+                // version that way. Natural language is a phrase; catch the
+                // one-word case here and suggest instead.
+                if (args.length == 1) {
+                    String near = nearestCommand(args[0].toLowerCase());
+                    player.sendMessage(ChatColor.RED + "No such command: " + ChatColor.WHITE + args[0]);
+                    if (near != null) {
+                        player.sendMessage(ChatColor.GRAY + "  Did you mean " + ChatColor.WHITE
+                                + "/jarvis " + near + ChatColor.GRAY + "?");
+                    } else {
+                        player.sendMessage(ChatColor.GRAY + "  /jarvis help for the list, or "
+                                + "phrase it as a sentence to ask me properly.");
+                    }
+                    return true;
+                }
+
                 // Unknown subcommand — treat entire input as natural language
                 String nlInput = String.join(" ", args);
                 player.sendMessage(ChatColor.GOLD + "Jarvis: Very good, sir. On it...");
@@ -729,6 +748,160 @@ public class JarvisCommands implements CommandExecutor {
         }
     }
 
+    /**
+     * What is actually running.
+     *
+     * <p>Added because there was no way to ask. "/jarvis version" fell through
+     * to the natural-language handler, which sent the word "version" to a
+     * model and got back a confident, invented Minecraft version -- while the
+     * help screen showed a number that had been typed in seven releases ago.
+     * Between them, the plugin could not tell you what it was.
+     */
+    /** Every subcommand the switch above accepts, for typo suggestions. */
+    private static final java.util.List<String> KNOWN_COMMANDS = java.util.List.of(
+            "about",
+            "add",
+            "ai",
+            "approve",
+            "ask",
+            "attack",
+            "bell",
+            "branch_mine",
+            "briefing",
+            "broadcast",
+            "build",
+            "cancel",
+            "cancelbuild",
+            "chat",
+            "chest",
+            "chop",
+            "chop_trees",
+            "clearloot",
+            "come",
+            "confirm",
+            "convert",
+            "convertall",
+            "dance",
+            "defend",
+            "delete",
+            "deny",
+            "deposit",
+            "dig",
+            "discord_broadcast",
+            "dismiss",
+            "duties",
+            "duty",
+            "enchant",
+            "farm",
+            "feed",
+            "fight",
+            "fish",
+            "folder",
+            "follow",
+            "give_item",
+            "guard",
+            "heal",
+            "help",
+            "home",
+            "inventory",
+            "light",
+            "light_area",
+            "list",
+            "litematic",
+            "litematics",
+            "load",
+            "loot",
+            "lp_group_add",
+            "lp_group_remove",
+            "lumber",
+            "mine",
+            "mine_here",
+            "mining",
+            "paste",
+            "paste_schematic",
+            "patrol",
+            "potion_effect",
+            "protect",
+            "recover",
+            "reload",
+            "remove",
+            "report",
+            "requests",
+            "return",
+            "rotate",
+            "save",
+            "scan",
+            "schematic",
+            "schematics",
+            "sentry",
+            "server_say",
+            "set_chest",
+            "set_gamemode",
+            "set_gamerule",
+            "set_time",
+            "set_weather",
+            "stand_down",
+            "status",
+            "stop",
+            "summon",
+            "talk",
+            "teleport",
+            "tend",
+            "ver",
+            "version",
+            "warp",
+            "watch");
+
+    /**
+     * Closest command to a mistyped one, or null when nothing is close.
+     *
+     * <p>Edit distance rather than prefix matching, so "verison" and "dismis"
+     * both land. Anything further than two edits away is treated as not a typo.
+     */
+    private String nearestCommand(String typed) {
+        String best = null;
+        int bestDist = Integer.MAX_VALUE;
+        for (String c : KNOWN_COMMANDS) {
+            int d = editDistance(typed, c);
+            if (d < bestDist) { bestDist = d; best = c; }
+        }
+        return bestDist <= 2 ? best : null;
+    }
+
+    private static int editDistance(String a, String b) {
+        int[] prev = new int[b.length() + 1];
+        int[] cur = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) prev[j] = j;
+        for (int i = 1; i <= a.length(); i++) {
+            cur[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+            }
+            int[] t = prev; prev = cur; cur = t;
+        }
+        return prev[b.length()];
+    }
+
+    private void showVersion(Player player) {
+        player.sendMessage(ChatColor.GOLD + "Jarvis " + ChatColor.WHITE + "v" + plugin.getVersion());
+        player.sendMessage(ChatColor.GRAY + "  Server: " + ChatColor.WHITE
+                + plugin.getServer().getName() + " " + plugin.getServer().getMinecraftVersion()
+                + ChatColor.GRAY + " (API " + plugin.getServer().getBukkitVersion() + ")");
+        player.sendMessage(ChatColor.GRAY + "  Java: " + ChatColor.WHITE
+                + System.getProperty("java.version"));
+
+        String planner = plugin.getBuildingAssistant().getPlanner();
+        boolean graal = com.gadgetman.jarvis.building.ScriptBuildPlanner.isAvailable();
+        player.sendMessage(ChatColor.GRAY + "  Build planner: " + ChatColor.WHITE + planner
+                + ChatColor.GRAY + (graal ? " (GraalJS present)" : " (GraalJS MISSING)"));
+
+        player.sendMessage(ChatColor.GRAY + "  NPC backend: " + ChatColor.WHITE
+                + plugin.getJarvisNPC().getProvider().getProviderName());
+        player.sendMessage(ChatColor.GRAY + "  AI: " + ChatColor.WHITE
+                + plugin.getAIConnector().getProvider() + "/" + plugin.getAIConnector().getModel());
+    }
+
     private void showHelp(Player player) {
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
         // Read from the plugin, never typed in: this line said v0.8.2 from 0.8.3
@@ -737,6 +910,7 @@ public class JarvisCommands implements CommandExecutor {
         player.sendMessage(ChatColor.GOLD + "  Jarvis — AI Butler v" + plugin.getVersion());
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
         
+        player.sendMessage(ChatColor.WHITE + "  /jarvis version" + ChatColor.GRAY + " - What is actually running");
         player.sendMessage(ChatColor.YELLOW + "NPC Commands:");
         player.sendMessage(ChatColor.WHITE + "  /jarvis summon" + ChatColor.GRAY + " - Bring Jarvis to you");
         player.sendMessage(ChatColor.WHITE + "  /jarvis dismiss" + ChatColor.GRAY + " - Send Jarvis away");
