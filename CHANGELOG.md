@@ -1,5 +1,20 @@
 # Jarvis Changelog
 
+## v0.10.1 (2026-09-02) — the help screen stops lying about the version
+
+`/jarvis help` had the version typed into it:
+
+```java
+player.sendMessage(ChatColor.GOLD + "  Jarvis — AI Butler v0.8.2");
+```
+
+The plugin itself reads its version from `getPluginMeta()` and was correct
+everywhere else, but this one line has claimed **v0.8.2** since 0.8.3 — through
+seven releases, including a session spent checking which build was live on two
+servers. Both were running 0.10.0 at the time and saying otherwise.
+
+Now reads `plugin.getVersion()`. `config.yml`'s header comment said 0.8.2 too.
+
 ## v0.10.0 (2026-09-02) — dig down
 
 "Dig down twenty blocks" had nowhere to go. Anything containing "mine" or

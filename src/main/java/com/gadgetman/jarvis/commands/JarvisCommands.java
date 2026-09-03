@@ -731,7 +731,10 @@ public class JarvisCommands implements CommandExecutor {
 
     private void showHelp(Player player) {
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
-        player.sendMessage(ChatColor.GOLD + "  Jarvis — AI Butler v0.8.2");
+        // Read from the plugin, never typed in: this line said v0.8.2 from 0.8.3
+        // right through to 0.10.0, so the help screen was the one place that
+        // confidently reported the wrong version.
+        player.sendMessage(ChatColor.GOLD + "  Jarvis — AI Butler v" + plugin.getVersion());
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
         
         player.sendMessage(ChatColor.YELLOW + "NPC Commands:");
