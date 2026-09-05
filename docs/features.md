@@ -114,7 +114,8 @@ worked for similar requests.
 - `/jarvis clearloot` to clear his inventory
 
 ## Admin Butler Actions (v0.0.9)
-Jarvis can execute powerful server management actions, all gated behind a click-to-confirm prompt for dangerous operations:
+Jarvis can execute powerful server management actions, all gated behind a click-to-confirm prompt for dangerous operations.
+These actions require admin-level access (`jarvis.admin`).
 
 | Action | Description |
 |---|---|

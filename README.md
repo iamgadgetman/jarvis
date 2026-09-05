@@ -33,7 +33,7 @@ Jarvis is a Minecraft AI butler plugin that adds a Citizens NPC companion for ch
 - Paper / Purpur for Minecraft 1.21.11–1.21.26
 - Java 17+ runtime for Jarvis itself (Jarvis is Java 17 bytecode)
 - If your Paper/Purpur build requires Java 25 (common on 1.21.26.x), run the server on Java 25
-- [Citizens 2](https://www.spigotmc.org/resources/citizens.13811/) (required)
+- [Citizens 2 on Spigot](https://www.spigotmc.org/resources/citizens.13811/) or [Citizens 2 Jenkins build](https://ci.citizensnpcs.co/job/citizens2/) (required)
 - [WorldEdit](https://enginehub.org/worldedit/) (optional, for schematic/build features)
 - At least one AI provider key (or local Ollama)
 - Optional embedding model for experience memory: `ollama pull nomic-embed-text`

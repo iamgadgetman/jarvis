@@ -22,8 +22,8 @@ See also: [README](../README.md) • [Features](features.md) • [Troubleshootin
 | `/jarvis watch` | Hold a watch post and clear nearby threats | `jarvis.use` |
 | `/jarvis loot` | Open NPC inventory | `jarvis.use` |
 | `/jarvis clearloot` | Clear NPC inventory | `jarvis.use` |
-| `/jarvis heal` | Heal yourself | `jarvis.use` |
-| `/jarvis feed` | Feed yourself | `jarvis.use` |
+| `/jarvis heal` | Heal yourself | `jarvis.admin` |
+| `/jarvis feed` | Feed yourself | `jarvis.admin` |
 | `/jarvis time <day&#124;night>` | Set time | `jarvis.admin` |
 | `/jarvis weather <clear&#124;rain&#124;storm>` | Set weather | `jarvis.admin` |
 | `/jarvis build <description>` | Build it — pastes a matching schematic, or has the AI design one | `jarvis.use` |
