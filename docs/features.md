@@ -1,0 +1,149 @@
+# Jarvis Features (Detailed)
+
+See also: [README](../README.md) • [Commands](commands.md) • [Configuration](configuration.md)
+
+## AI Natural Language Understanding
+
+Speak to Jarvis in plain English — in chat or via command. Jarvis routes your request through an AI model, picks the right action, and executes it (with a witty response).
+
+Supports multiple AI backends with **tiered, Ollama-first routing** (new in 0.3.0):
+- Light work (chat intents, banter) runs on your local Ollama box when configured
+- Heavy work (build planning) prefers your cloud provider (Claude, OpenAI, Grok, Gemini)
+- Per-provider health tracking with automatic failover between tiers
+- **Ollama-only "reduced mode"**: fully usable with zero cloud keys — freeform build
+  planning turns off and risky console actions require opt-in
+- Jarvis remembers your recent conversation (butler memory)
+- `/jarvis ai` shows routes, provider health, and who answered last
+
+## NPC Companion
+- **Summon / Dismiss** — Jarvis appears at your side or disappears on demand
+- **Follow** — stays close and teleports if you get too far away
+- **Right-click Menu** — opens a GUI for quick access to all Jarvis actions
+- **Custom skin & name** — configurable in `config.yml`
+
+## Branch Mining (new in 0.2.0)
+- `/jarvis mine here` — Jarvis digs a full torch-lit branch mine: staircase to diamond level, main gallery, branch tunnels on a grid
+- Harvests every ore the tunnels expose, follows veins, seals lava pockets with cobblestone
+- The mine stays lit and walkable for you afterwards
+
+## Butler Services (new in 0.2.0)
+- `/jarvis follow` — trails behind you, picking up loot as you go
+- `/jarvis chest` — register the chest you're looking at as his deposit chest
+- `/jarvis deposit` — he carries the loot over and unloads it; auto-delivers when his bags fill mid-mine
+
+## Smart Mining (reworked in 0.1.0)
+- **Real movement** — Citizens A* pathfinding, no more teleport-hopping
+- **Real mining** — vanilla break timing with arm swings and crack animations (Citizens BlockBreaker)
+- **Digs like a player** — when a path is blocked, Jarvis mines through the obstruction instead of warping
+- **Async ore scanning** — chunk-snapshot scans off the main thread, no TPS hit
+- `mine` — mines the nearest ore; `mine diamond` / `mine iron` / `mine ancient debris` — targets a type
+- Understands: diamond, emerald, gold, iron, copper, redstone, lapis, quartz, coal, netherite/ancient debris
+- Collects drops automatically, filters out junk (cobblestone, dirt, gravel, etc.)
+
+## Defender (reworked in 0.4.0)
+- `/jarvis guard [passive|defensive|aggressive]` — bodyguard with stances; anchor-and-leash combat (he never chases into the night)
+- `/jarvis watch` — night watch: holds a fixed post, clears spawns, returns after every fight
+- Threat callouts: "Creeper, behind you, sir!" for hostiles outside your view
+- Diamond sword in guard mode, creeper-priority targeting, retaliation memory
+
+## Groundskeeping (new in 0.7.0)
+- `/jarvis farm [crop]` / `/jarvis tend [crop]` — harvest & replant the field once, or stay on as a farmhand
+- `/jarvis chop [n]` — fells whole trees (timber cascade!), collects logs, replants saplings
+- `/jarvis fish` — casts from the water's edge with real sounds and vanilla-ish loot odds
+- `/jarvis dance` — the performance; short victory bops on big milestones too
+- `/jarvis patrol add` + `/jarvis patrol` — he walks a saved waypoint circuit as an armed sentry
+- Waves and greets you when you return; glances at what you're doing when idle
+
+## Butler Services (new in 0.6.0)
+- `/jarvis recover` — he fetches your death drops: travels to where you died, collects everything, brings it back
+- `/jarvis home set` + `/jarvis home` — saved home point; he escorts you back, torch-lighting the road and waiting when you lag behind
+- Supply handoff — hungry or your tool nearly broken? He hands over food or a spare from his own bags
+
+## Steward (new in 0.5.0)
+- `/jarvis report` — the briefing: TPS/ms-tick with health coloring, players online, his cargo, pending requests; compact version on join
+- `/jarvis duty add <minutes> <message>` — standing broadcasts that survive restarts; `/jarvis duties` to review
+- "Jarvis, build me a house" picks the best schematic from your library (works even on local-only AI); freeform AI building takes over when nothing matches
+
+## Building Assistant (rebuilt in 0.9.0)
+- Describe a structure in natural language and Jarvis designs it, writing the build
+  as a **JavaScript program** that calls `fill` and `setBlock` rather than listing
+  every block. A wall is one call instead of four hundred coordinates, so the model
+  spends its reasoning on the shape. Live builds run 200–38,000 blocks; the old
+  block-list planner topped out around 168 — a footprint with no walls
+- The script runs sandboxed with no host access, under a block budget, a wall-clock
+  watchdog and bounds limits. It never touches the world: it returns a block list,
+  which goes through the same placement, undo and memory path as everything else
+- A script that will not run is sent back to the model with the error attached, so
+  an invented block id comes back as *"did you mean red_bed, pink_bed…"* and is
+  usually fixed in one round
+- Common mistakes are repaired rather than described: block ids are checked against
+  the server registry, glass panes and fences are joined to their neighbours, bed
+  halves are made to agree, and a torch that would delete the wall it hangs on is
+  moved into the room instead
+- `build.planner: json` restores the pre-0.9.0 block-list planner, which is also the
+  automatic fallback if GraalJS cannot be loaded
+- Paste WorldEdit schematics by name (fuzzy matching — no need for exact filenames)
+
+## Lamplighter (new in 0.8.3)
+`/jarvis light [radius] [type] [spacing]` — Jarvis lights an area against mob
+spawns, on the actual spawn rule (hostiles spawn at block light 0) rather than a
+guess.
+- Torches, end rods or lanterns; ground placement by default, `lighting.placement: wall` for walls
+- Skips spots already bright enough, and drops sea lanterns for grid points that land in shallow water
+- Works from chat: *"jarvis, light this place up"*
+- He swims now, with a lifeguard monitor watching for a submerged NPC
+
+## Experience Memory (new in 0.8.0)
+Jarvis remembers how past builds turned out and shows the AI the plans that
+worked for similar requests.
+- Labels come from what you do, not a rating prompt: a build you let finish is a
+  success, one you cancel or undo is not
+- Retrieval matches your wording first, then re-ranks on where you are — the
+  same request underground and on the surface pulls up different examples
+- Embeddings run on your Ollama box and never fall back to a paid provider, so
+  the feature costs nothing to run. If Ollama is down it falls back to keyword
+  matching rather than failing
+- **Ollama-only servers:** freeform build planning is normally disabled, but it
+  unlocks itself once 20 successful builds are remembered — the examples carry
+  the load the block was there to avoid
+- `/jarvis debug` shows how many builds are stored and whether the unlock has fired
+
+## Inventory Management
+- Jarvis has his own NPC inventory
+- Right-click him or use `/jarvis loot` to browse / take items
+- `/jarvis clearloot` to clear his inventory
+
+## Admin Butler Actions (v0.0.9)
+Jarvis can execute powerful server management actions, all gated behind a click-to-confirm prompt for dangerous operations:
+
+| Action | Description |
+|---|---|
+| `give_item` | Give a player an item |
+| `enchant` | Enchant a player's held item |
+| `potion_effect` | Apply a potion effect |
+| `heal` / `feed` | Restore player health or hunger |
+| `set_gamemode` | Change a player's game mode |
+| `teleport` | Teleport a player |
+| `set_time` | Set the world time |
+| `set_weather` | Set the weather |
+| `set_gamerule` | Change a game rule |
+| `set_difficulty` | Change the world difficulty |
+| `broadcast` / `announce_all` | Send a message to all players (chat + title) |
+| `schedule_broadcast` | Schedule a recurring or delayed server message |
+| `clear_mobs` | Remove mobs near a player or in a radius |
+| `clear_drops` | Remove all item drops from the world |
+| `save_world` | Force save all worlds |
+| `console_command` | Execute a single server console command |
+| `console_commands` | Execute multiple server console commands |
+| `warp` | Warp a player to a named location |
+| `paste_schematic` | Paste a WorldEdit schematic |
+| `discord_broadcast` | Send a message to a Discord webhook |
+| `lp_group_add` / `lp_group_remove` | Manage LuckPerms groups |
+
+## Player Request System (v0.0.9)
+Players can ask Jarvis for items ("Jarvis, can I get 64 iron ingots?"). Jarvis queues the request and notifies online admins. Admins review and approve or deny with a single click.
+
+## Butler Events (v0.0.9)
+- **Auto-Greet** — Jarvis greets players when they join with an AI-generated personalized welcome
+- **Death Commentary** — Jarvis provides witty AI-generated commentary when a player dies
+- **TPS Monitor** — Jarvis warns admins in-game when server TPS drops below a configurable threshold
