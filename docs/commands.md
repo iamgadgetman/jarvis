@@ -48,9 +48,11 @@ See also: [README](../README.md) • [Features](features.md) • [Troubleshootin
 | `/jarvis requests` | List pending player requests | `jarvis.admin` |
 | `/jarvis approve <id>` | Approve a player item request | `jarvis.admin` |
 | `/jarvis deny <id>` | Deny a player item request | `jarvis.admin` |
-| `/jarvis confirm` | Confirm a pending dangerous action | `jarvis.use` |
-| `/jarvis cancel` | Cancel a pending dangerous action | `jarvis.use` |
+| `/jarvis confirm` | Confirm your pending dangerous action prompt (for actions you are permitted to run) | `jarvis.use` |
+| `/jarvis cancel` | Cancel your pending dangerous action prompt | `jarvis.use` |
 | `/jarvis <anything>` | Natural language — Jarvis figures it out | `jarvis.use` |
+
+Dangerous prompts are tied to actions you are already authorized to run (typically `jarvis.admin` for admin actions).
 
 You can also just **type in chat** (no command needed) — when `natural-language.require-prefix` is `false`, Jarvis can respond to mentions/recognized keywords; when it's `true`, start with the prefix (for example `jarvis ...`).
 
