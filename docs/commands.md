@@ -16,12 +16,12 @@ See also: [README](../README.md) • [Features](features.md) • [Troubleshootin
 | `/jarvis clearloot` | Clear NPC inventory | `jarvis.use` |
 | `/jarvis heal` | Heal yourself | `jarvis.use` |
 | `/jarvis feed` | Feed yourself | `jarvis.use` |
-| `/jarvis time <day or night>` | Set time | `jarvis.admin` |
-| `/jarvis weather <clear, rain, or storm>` | Set weather | `jarvis.admin` |
+| `/jarvis time <day&#124;night>` | Set time | `jarvis.admin` |
+| `/jarvis weather <clear&#124;rain&#124;storm>` | Set weather | `jarvis.admin` |
 | `/jarvis build <description>` | Build it — pastes a matching schematic, or has the AI design one | `jarvis.use` |
 | `/jarvis build undo` | Revert the last build | `jarvis.use` |
 | `/jarvis build cancel` | Stop the build in progress | `jarvis.use` |
-| `/jarvis build <wall, floor, pillar, or cube> [size]` | Simple shapes, no AI | `jarvis.use` |
+| `/jarvis build <wall&#124;floor&#124;pillar&#124;cube> [size]` | Simple shapes, no AI | `jarvis.use` |
 | `/jarvis paste <name>` | Paste a schematic by name, no AI | `jarvis.use` |
 | `/jarvis requests` | List pending player requests | `jarvis.admin` |
 | `/jarvis approve <id>` | Approve a player item request | `jarvis.admin` |

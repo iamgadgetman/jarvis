@@ -18,7 +18,7 @@ See also: [README](../README.md) • [Troubleshooting](troubleshooting.md)
 1. Download **`Jarvis-<version>.jar`** from the
    [latest release](https://github.com/iamgadgetman/jarvis/releases/latest)
    and drop it into your `plugins/` folder
-2. Drop `Citizens.jar` and `WorldEdit.jar` into `plugins/` (if not already present)
+2. Drop the Citizens and WorldEdit plugin JARs into `plugins/` (if not already present)
 3. Start the server — Jarvis will generate `plugins/Jarvis/config.yml`
 4. Add your AI API key(s) to `config.yml` (see below)
 5. Restart or `/reload confirm`
