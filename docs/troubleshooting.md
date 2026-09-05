@@ -8,8 +8,9 @@ See also: [README](../README.md) • [Configuration](configuration.md)
 `plugins/`, that its version matches your server, and that the console shows it
 loading before Jarvis.
 
-**"WorldEdit not found"** — only building and schematic features need WorldEdit.
-Everything else works without it. Verify with `/we version`.
+**"WorldEdit not found"** — WorldEdit is needed for schematic pasting and
+other WorldEdit-dependent build features. Everything else works without it.
+Verify with `/we version`.
 
 **"AI API error"** — work through these in order:
 
