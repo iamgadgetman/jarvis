@@ -100,7 +100,7 @@ permissions:
 ## Getting an AI API key
 
 Pick one provider and put its key in `config.yml`. Jarvis will fall back through
-the others in `fallback-order` if the primary fails.
+the others in `ai.provider-priority` if the primary fails.
 
 | Provider | Where to get a key | Key looks like |
 |---|---|---|
@@ -111,7 +111,7 @@ the others in `fallback-order` if the primary fails.
 | **Ollama** | none — runs locally, see [ollama.ai](https://ollama.ai) | n/a |
 
 Ollama needs no key and no account: install it, `ollama pull mistral`, and point
-`ollama-url` at it. It is the cheapest option and keeps everything on your own
+`ollama.endpoint` at it. It is the cheapest option and keeps everything on your own
 hardware, at the cost of slower and less accurate responses.
 
 ## Permissions
