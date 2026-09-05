@@ -26,7 +26,7 @@ Supports multiple AI backends with **tiered, Ollama-first routing** (new in 0.3.
 - Harvests every ore the tunnels expose, follows veins, seals lava pockets with cobblestone
 - The mine stays lit and walkable for you afterwards
 
-## Butler Services (new in 0.2.0)
+## Butler Services: Mining Logistics (new in 0.2.0)
 - `/jarvis follow` — trails behind you, picking up loot as you go
 - `/jarvis chest` — register the chest you're looking at as his deposit chest
 - `/jarvis deposit` — he carries the loot over and unloads it; auto-delivers when his bags fill mid-mine
@@ -54,7 +54,7 @@ Supports multiple AI backends with **tiered, Ollama-first routing** (new in 0.3.
 - `/jarvis patrol add` + `/jarvis patrol` — he walks a saved waypoint circuit as an armed sentry
 - Waves and greets you when you return; glances at what you're doing when idle
 
-## Butler Services (new in 0.6.0)
+## Butler Services: Recovery and Escort (new in 0.6.0)
 - `/jarvis recover` — he fetches your death drops: travels to where you died, collects everything, brings it back
 - `/jarvis home set` + `/jarvis home` — saved home point; he escorts you back, torch-lighting the road and waiting when you lag behind
 - Supply handoff — hungry or your tool nearly broken? He hands over food or a spare from his own bags
