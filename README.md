@@ -59,7 +59,7 @@ Jarvis is a Minecraft AI butler plugin that adds a Citizens NPC companion for ch
 /jarvis loot
 ```
 
-Then talk in chat (for example: `jarvis start mining`). If `natural-language.require-prefix` is `true`, start with the configured prefix; see [Configuration Reference](docs/configuration.md) and [Command Reference](docs/commands.md).
+Then talk in chat (for example: `jarvis start mining`). If `natural-language.require-prefix` is `true`, start with `natural-language.prefix` (for example `jarvis ...`); see [Configuration Reference](docs/configuration.md#reference-configyml) and [Command Reference](docs/commands.md).
 
 ---
 
