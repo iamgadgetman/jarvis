@@ -16,7 +16,7 @@ See also: [README](../README.md) • [Troubleshooting](troubleshooting.md)
   weaker keyword-matching path
 
 ### Steps
-1. Download **`Jarvis-{version}.jar`** from the
+1. Download **`Jarvis-&lt;version&gt;.jar`** from the
    [latest release](https://github.com/iamgadgetman/jarvis/releases/latest)
    and drop it into your `plugins/` folder
 2. Drop the Citizens and WorldEdit plugin JARs into `plugins/` (if not already present)

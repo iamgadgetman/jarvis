@@ -21,7 +21,7 @@ Jarvis is a Minecraft AI butler plugin that adds a Citizens NPC companion for ch
 1. Install Paper or Purpur for Minecraft 1.21.11–1.21.26.
 2. Run the server with the Java version required by your Paper/Purpur build (many Minecraft 1.21.26.x builds use Java 25).
 3. Add [Citizens 2](https://www.spigotmc.org/resources/citizens.13811/) to `plugins/` (required). Add [WorldEdit](https://enginehub.org/worldedit/) if you want schematic pasting or other WorldEdit-dependent build features.
-4. Download the latest Jarvis release and place it in `plugins/` with your other plugin JARs.
+4. Download **`Jarvis-&lt;version&gt;.jar`** from the [latest release](https://github.com/iamgadgetman/jarvis/releases/latest) and place it in `plugins/` with your other plugin JARs.
 5. Start the server once to generate `plugins/Jarvis/config.yml`.
 6. Add AI provider key(s) or Ollama settings, then restart.
 7. Run `/jarvis summon`.

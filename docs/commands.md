@@ -52,7 +52,7 @@ See also: [README](../README.md) • [Features](features.md) • [Troubleshootin
 | `/jarvis cancel` | Cancel a pending dangerous action | `jarvis.use` |
 | `/jarvis <anything>` | Natural language — Jarvis figures it out | `jarvis.use` |
 
-You can also just **type in chat** (no command needed) — if your message mentions Jarvis or contains a recognized keyword, he'll respond.
+You can also just **type in chat** (no command needed) — when `natural-language.require-prefix` is `false`, Jarvis can respond to mentions/recognized keywords; when it's `true`, start with the prefix (for example `jarvis ...`).
 
 ## Natural Language Examples
 
