@@ -5,7 +5,7 @@ See also: [README](../README.md) • [Troubleshooting](troubleshooting.md)
 ## Installation
 
 ### Requirements
-- Paper / Purpur 1.21+ (or any fork with Bukkit API)
+- Paper / Purpur for Minecraft 1.21.11–1.21.26 (26.x servers need Java 25)
 - Java 17+
 - [Citizens 2 on spigot](https://www.spigotmc.org/resources/citizens.13811/) or [Citizens 2 Jenkins build](https://ci.citizensnpcs.co/job/citizens2/)
 - [WorldEdit](https://enginehub.org/worldedit/) (optional — for schematic pasting)
@@ -15,7 +15,7 @@ See also: [README](../README.md) • [Troubleshooting](troubleshooting.md)
   weaker keyword-matching path
 
 ### Steps
-1. Download **`Jarvis-<version>.jar`** from the
+1. Download **`Jarvis-{version}.jar`** from the
    [latest release](https://github.com/iamgadgetman/jarvis/releases/latest)
    and drop it into your `plugins/` folder
 2. Drop the Citizens and WorldEdit plugin JARs into `plugins/` (if not already present)
