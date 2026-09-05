@@ -29,7 +29,8 @@ Jarvis is a Minecraft AI butler plugin that adds a Citizens NPC companion for ch
 ## Installation Requirements
 
 - Paper / Purpur for Minecraft 1.21.11–1.21.26
-- Java 17+ (26.x servers need Java 25)
+- Java 17 for Minecraft 1.21.11–1.21.25
+- Java 25 for Minecraft 1.21.26.x
 - [Citizens 2](https://www.spigotmc.org/resources/citizens.13811/) (required)
 - [WorldEdit](https://enginehub.org/worldedit/) (optional, for schematic/build features)
 - At least one AI provider key (or local Ollama)

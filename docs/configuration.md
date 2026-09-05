@@ -5,8 +5,9 @@ See also: [README](../README.md) • [Troubleshooting](troubleshooting.md)
 ## Installation
 
 ### Requirements
-- Paper / Purpur for Minecraft 1.21.11–1.21.26 (26.x servers need Java 25)
-- Java 17+
+- Paper / Purpur for Minecraft 1.21.11–1.21.26
+- Java 17 for Minecraft 1.21.11–1.21.25
+- Java 25 for Minecraft 1.21.26.x
 - [Citizens 2 on spigot](https://www.spigotmc.org/resources/citizens.13811/) or [Citizens 2 Jenkins build](https://ci.citizensnpcs.co/job/citizens2/)
 - [WorldEdit](https://enginehub.org/worldedit/) (optional — for schematic pasting)
 - At least one AI API key (or local Ollama)

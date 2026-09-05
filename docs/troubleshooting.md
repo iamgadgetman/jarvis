@@ -18,8 +18,9 @@ Everything else works without it. Verify with `/we version`.
 2. Confirm the key is active and has quota in your provider's console.
 3. Test connectivity from the server itself:
    ```bash
+   read -rsp "Anthropic API key: " ANTHROPIC_API_KEY; echo
    curl https://api.anthropic.com/v1/messages \
-     -H "x-api-key: YOUR_KEY" \
+     -H "x-api-key: $ANTHROPIC_API_KEY" \
      -H "anthropic-version: 2023-06-01" \
      -H "content-type: application/json" \
      -d '{"model":"claude-opus-5","max_tokens":64,
