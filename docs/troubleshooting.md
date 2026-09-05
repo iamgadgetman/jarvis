@@ -40,7 +40,12 @@ failed:`, which names the exact reason the model was given.
 not on the classpath. The engine is fetched at start via `libraries:` in
 `plugin.yml`, so a server with no outbound access never gets it. Build with
 `mvn -Pshade-graaljs package` to bundle it into the jar instead (~60 MB). This
-requires a source checkout and Maven; see the [README build instructions](../README.md).
+requires a source checkout and Maven, for example:
+```bash
+git clone https://github.com/iamgadgetman/jarvis.git
+cd jarvis
+mvn -Pshade-graaljs package
+```
 
 **Script builds refuse to run** — they need a cloud model; a local 7B does not
 write usable JavaScript. On an Ollama-only server, use schematics or set
