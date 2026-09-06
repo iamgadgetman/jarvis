@@ -1,6 +1,6 @@
 # Jarvis — AI-Powered Minecraft Butler Plugin
 
-**Version 0.11.0** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
+**Version 0.12.0** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
 
 Jarvis is a feature-rich AI companion plugin that spawns a Citizens NPC who follows you, fights for you, mines for you, builds for you — and understands natural language via OpenAI, Claude, Grok, Gemini, or a local Ollama model.
 
@@ -112,6 +112,23 @@ worked for similar requests.
   unlocks itself once 20 successful builds are remembered — the examples carry
   the load the block was there to avoid
 - `/jarvis debug` shows how many builds are stored and whether the unlock has fired
+
+### Reasoning Before Retrieval (new in 0.12.0)
+Before searching the schematic library, Jarvis works out what you are actually
+asking for.
+- *"Somewhere to store my loot"* shares not one word with `storage_shed`. On the
+  raw wording that schematic scores **zero** — not ranked low, invisible
+- One small-model call turns the sentence into feature tags — `storage`, `shed`,
+  `small` — and the library is scored against those instead. The same schematic
+  now scores 85
+- **A confident tag match skips the AI pick entirely.** One feature answered
+  scores 70, two 85, three 99; at or above `schematics.feature-tags.
+  match-threshold` (85) the library answers on its own
+- Decompositions are cached in memory and in SQLite, so a request asked twice
+  costs one model call and a server whose players ask for the same things
+  converges on costing nothing
+- A weak match still falls through to the AI pick — now with the tags in hand
+- Naming a schematic outright still wins over any tag score
 
 ### Self-Explain Recovery (new in 0.11.0)
 When a job stops early, Jarvis works out why before he gives up.

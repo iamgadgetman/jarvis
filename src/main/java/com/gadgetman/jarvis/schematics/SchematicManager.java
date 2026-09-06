@@ -237,6 +237,77 @@ public class SchematicManager {
         return bestScore > 0 ? best : null;
     }
 
+    /**
+     * Score a schematic name against a request that has been decomposed into
+     * feature tags, taking whichever of the two readings is stronger.
+     *
+     * <p>Tags win most of the time, and are meant to. Measured: "somewhere to
+     * store my loot" against {@code storage_shed} scores <b>zero</b> on the raw
+     * wording -- "store" is not a substring of "storage" either way round, so
+     * the schematic is not merely ranked low, it is invisible. The same request
+     * decomposed to {@code storage, shed, small} hits two of the name's own
+     * words and scores 85.
+     *
+     * <p>A name that answers two features is treated as a better answer than
+     * one that answers one, which is the whole point of decomposing first. The
+     * raw score is still consulted, because a player who names a schematic
+     * outright should get that schematic.
+     */
+    static int scoreWithTags(String key, String query, java.util.List<String> tags) {
+        int raw = scoreMatch(key, query);
+        if (tags == null || tags.isEmpty()) return raw;
+
+        Set<String> kt = meaningfulWords(key);
+        if (kt.isEmpty()) return raw;
+
+        int matched = 0;
+        for (String tag : tags) {
+            for (String k : kt) {
+                if (k.equals(tag) || k.contains(tag) || tag.contains(k)) {
+                    matched++;
+                    break;
+                }
+            }
+        }
+        if (matched == 0) return raw;
+
+        // One feature answered is a lead, not a match; two is a real one. The
+        // ceiling stays below the 100 reserved for an exact name.
+        int tagScore = Math.min(99, 55 + 15 * matched);
+        return Math.max(raw, tagScore);
+    }
+
+    /**
+     * Best schematic for a decomposed request: the name, or null if nothing
+     * scores at all. {@code tags} may be empty, in which case this is exactly
+     * the raw-wording match that came before it.
+     */
+    public String bestMatchName(String query, java.util.List<String> tags) {
+        String lower = query.toLowerCase().trim();
+        String best = null;
+        int bestScore = 0;
+        for (String key : availableSchematics.keySet()) {
+            int sc = scoreWithTags(key, lower, tags);
+            // Tie-break toward the shorter (more specific) name.
+            if (sc > bestScore || (sc == bestScore && sc > 0 && best != null
+                    && key.length() < best.length())) {
+                bestScore = sc;
+                best = key;
+            }
+        }
+        return bestScore > 0 ? best : null;
+    }
+
+    /** Score of the best decomposed match, 0 if none. */
+    public int bestMatchScore(String query, java.util.List<String> tags) {
+        String lower = query.toLowerCase().trim();
+        int bestScore = 0;
+        for (String key : availableSchematics.keySet()) {
+            bestScore = Math.max(bestScore, scoreWithTags(key, lower, tags));
+        }
+        return bestScore;
+    }
+
     /** Score of the best match, 0 if none. */
     public int bestMatchScore(String query) {
         String lower = query.toLowerCase().trim();

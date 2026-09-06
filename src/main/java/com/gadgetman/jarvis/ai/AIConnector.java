@@ -862,6 +862,33 @@ public class AIConnector {
 
 
     /**
+     * Reasoning before retrieval: turn a build request into the features it is
+     * actually asking for, before anything is matched against the library.
+     *
+     * <p>"Somewhere to store my loot" shares no word with `storage_shed`. The
+     * paper's finding is that decomposing the utterance first and matching on
+     * what it *means* measurably beats matching the raw wording, and the
+     * decomposition is cheap enough to cache forever.
+     *
+     * <p>LIGHT tier and heavily constrained, because this is exactly the shape
+     * of task a small local model is good at.
+     *
+     * @return raw JSON: {@code {"tags":["storage","small","enclosed"]}}
+     */
+    public String decomposeBuildRequest(String description) throws Exception {
+        String systemPrompt = "You turn Minecraft build requests into feature tags for a "
+                + "library search. Respond ONLY with JSON: {\"tags\":[\"tag\", ...]}\n"
+                + "Give between 2 and 6 single-word lowercase tags naming what the player wants: "
+                + "its PURPOSE (storage, shelter, farm, defence, bridge, decoration, workshop), "
+                + "its KIND (house, tower, shed, barn, wall, keep, hut), "
+                + "and its SIZE or STYLE where the request implies one (small, large, medieval, "
+                + "modern, wooden, stone).\n"
+                + "Name what is asked for, never a material list and never a step. "
+                + "\"Somewhere to store my loot\" is {\"tags\":[\"storage\",\"shed\",\"small\"]}.";
+        return sendTiered(Tier.LIGHT, "Build request: \"" + description + "\"", systemPrompt, true);
+    }
+
+    /**
      * Self-explain: given a dead task, say why it died and pick a way out.
      *
      * <p>LIGHT tier on purpose. A diagnosis is short, wanted quickly, and must

@@ -125,6 +125,17 @@ public class DatabaseManager {
             ps.executeUpdate();
         }
 
+        // Decomposed build requests (v0.11.0) — see schematics.RequestDecomposer.
+        // Keyed on the normalised request text, so a repeat request never pays
+        // for the model call twice.
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS request_features (" +
+                "request_key VARCHAR(255) PRIMARY KEY, " +
+                "tags TEXT NOT NULL, " +
+                "created_at BIGINT NOT NULL)")) {
+            ps.executeUpdate();
+        }
+
         plugin.getLogger().info("Database tables initialized successfully");
     }
 

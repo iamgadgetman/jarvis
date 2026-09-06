@@ -148,6 +148,29 @@ memory:
   # How much of a stored plan to show before truncating.
   max-plan-chars: 1200
 
+# ========== SCHEMATIC FEATURE TAGS ==========
+# Reasoning before retrieval: work out what a build request is asking for
+# before matching it against the schematic library.
+#
+# "Somewhere to store my loot" shares not one word with storage_shed, so
+# matching the raw sentence never finds it. One LIGHT-tier call turns the
+# sentence into feature tags -- storage, shed, small -- and the library is
+# matched on those. A given request only ever decomposes one way, so the result
+# is cached in memory and in SQLite: asked twice, it costs one model call.
+#
+# Turn this off and matching goes back to the raw wording plus the AI pick.
+schematics:
+  feature-tags:
+    enabled: true
+
+    # How well the tags must fit before the library answer is taken as-is.
+    # Below this, the AI is still asked to pick -- now with the tags in hand.
+    #
+    # The scale: one tag answered scores 70, two 85, three or more 99. The
+    # default of 85 therefore means "two of the request's features are in the
+    # schematic's own name", which is a real match rather than a lead.
+    match-threshold: 85
+
 # ========== SELF-EXPLAIN RECOVERY ==========
 # When a job stops before it is finished, Jarvis works out why before he gives
 # up, and takes a way out if the failing job had one to offer.

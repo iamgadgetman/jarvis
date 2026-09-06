@@ -1,5 +1,66 @@
 # Jarvis Changelog
 
+## v0.12.0 (2026-09-05) — work out what was asked before searching for it
+
+Ask for *"somewhere to store my loot"* with `storage_shed` sitting in the
+library and Jarvis would not find it. Not rank it low — not see it. The matcher
+scored the schematic name against the words in the sentence, and those two
+share none: "store" is not a substring of "storage" in either direction, so the
+score is **zero**. The request then fell through to freeform building, which
+improvised a shed that already existed on disk.
+
+Milestone 4 of the JARVIS-1 plan — reasoning before retrieval. The paper's
+finding is that decomposing the request first and matching on what it *means*
+beats matching what it *says*, and it does so measurably.
+
+### Added
+
+- **Feature-tag decomposition (`schematics/RequestDecomposer`).** One LIGHT-tier
+  call turns a build request into 2–6 feature tags naming its purpose, kind and
+  size — *"somewhere to store my loot"* becomes `storage, shed, small`. The
+  library is then scored against those. That same schematic goes from 0 to 85.
+
+- **A confident tag match answers without asking a model to pick.** Scoring is
+  deterministic: one feature answered scores 70, two 85, three or more 99, and
+  at or above `schematics.feature-tags.match-threshold` (default 85) the library
+  answers on its own. Two of the request's features appearing in a schematic's
+  own name is a match; one is a lead, and a lead still goes to the AI pick.
+
+- **Decompositions are cached, in memory and in SQLite** (`request_features`).
+  A request only ever decomposes one way, so asking twice costs one model call.
+  This is what makes skipping the pick worth having: on a server whose players
+  ask for the same half-dozen things, schematic matching converges on free.
+
+- **A weak match still falls through to the AI pick**, which now goes with the
+  tags in hand rather than the bare sentence — it is choosing between names, and
+  knowing the request means "storage" helps it do that.
+
+### Unchanged on purpose
+
+- Naming a schematic outright still beats any tag score. An exact name is 100,
+  and the tag ceiling is 99.
+- With tags off, unavailable, or unparseable, matching is exactly the raw
+  wording plus the AI pick that came before — an empty tag list is not an error
+  path, it is the old behaviour.
+- `schematics.feature-tags.enabled: false` turns the whole thing off.
+
+### Measured
+
+Against a seven-name library (`storage_shed`, `small_warehouse`, `oak_cottage`,
+`medieval_tower`, `stone_keep`, `wheat_farm`, `fishing_hut`):
+
+| Request | Raw wording | Decomposed |
+|---|---|---|
+| "somewhere to store my loot" | nothing (0) | `storage_shed` (85) |
+| "a place to keep my crops" | nothing | `wheat_farm` |
+| "somewhere to hide when it gets dark" | nothing | `fishing_hut` |
+| "i need somewhere defensible" | nothing | `stone_keep` |
+
+The fourth row is the one to keep an eye on: `stone_keep` is right, and it is
+right because the model tagged the request `defence, keep, stone`. A worse
+decomposition gives a worse answer, which is why a single-tag hit is not
+allowed to settle it alone.
+
 ## v0.11.0 (2026-09-05) — the butler says why
 
 A job that stopped early told you *that* it stopped. "The chest is full and so
