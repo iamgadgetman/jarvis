@@ -860,6 +860,40 @@ public class AIConnector {
         }
     }
 
+
+    /**
+     * Self-explain: given a dead task, say why it died and pick a way out.
+     *
+     * <p>LIGHT tier on purpose. A diagnosis is short, wanted quickly, and must
+     * work on an Ollama-only server -- the failures worth explaining happen on
+     * exactly the servers least likely to be paying for a cloud key.
+     *
+     * @param failureContext what broke, from {@code TaskRecoveryHandler}
+     * @param allowedActions the only moves the failing task offered. Anything
+     *                       outside this list is treated as "abort" by the
+     *                       caller, so the model cannot invent an action.
+     * @return raw JSON: {@code {"diagnosis":..., "action":..., "message":...}}
+     */
+    public String diagnoseTaskFailure(String failureContext, java.util.List<String> allowedActions)
+            throws Exception {
+        // "abort" is always on the list, and is the whole of it where the
+        // failing job had no way to carry on.
+        java.util.List<String> choices = new java.util.ArrayList<>(allowedActions);
+        choices.add("abort");
+        String systemPrompt = JARVIS_PERSONALITY + "\n\n"
+                + "TASK: A job you were carrying out has stopped. Work out why, then choose what to do.\n"
+                + "Respond ONLY with JSON: {\"diagnosis\":\"one sentence, mechanical, for the server log\","
+                + "\"action\":\"<one of: " + String.join(", ", choices) + ">\","
+                + "\"message\":\"one or two sentences to the player, in character, saying what went wrong "
+                + "and what you are doing about it\"}\n"
+                + "Pick 'abort' unless one of the other moves genuinely addresses the cause. "
+                + "Never invent an action that is not on the list. "
+                + "The player cannot see the diagnosis field. Your message is a FOLLOW-UP to the "
+                + "line you have already said -- add why it happened and what you are doing now, "
+                + "and do not repeat what they were already told.";
+        return sendTiered(Tier.LIGHT, failureContext, systemPrompt, true);
+    }
+
     /**
      * Generate dialogue response with Jarvis personality
      */

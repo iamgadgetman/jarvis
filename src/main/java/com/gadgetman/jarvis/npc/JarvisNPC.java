@@ -1,6 +1,8 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.recovery.TaskFailure;
+import com.gadgetman.jarvis.recovery.TaskRecoveryHandler;
 import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.ai.Navigator;
 import net.citizensnpcs.api.ai.NavigatorParameters;
@@ -329,6 +331,8 @@ public class JarvisNPC implements Listener {
 
     public void handlePlayerDisconnect(Player player) {
         UUID playerId = player.getUniqueId();
+        TaskRecoveryHandler recovery = plugin.getTaskRecoveryHandler();
+        if (recovery != null) recovery.forget(player);
         NPC npc = playerNPCs.remove(playerId);
         if (npc == null) return;
 
@@ -540,7 +544,8 @@ public class JarvisNPC implements Listener {
         };
 
         task.runTaskTimer(plugin, 0L, MINING_TICK_RATE);
-        activeTasks.put(player.getUniqueId(), task);
+        beginTask(player, "mine");
+        registerTask(player, task);
 
         debug("Mining task started for " + player.getName());
     }
@@ -1205,6 +1210,7 @@ public class JarvisNPC implements Listener {
         stopTask(player);
         miningStates.remove(player.getUniqueId());
         Material crop = Farmer.cropFromKeyword(cropKeyword);
+        beginTask(player, tend ? "tend" : "farm");
         new Farmer(this, player, depositManager, crop, tend).start();
     }
 
@@ -1217,6 +1223,7 @@ public class JarvisNPC implements Listener {
         }
         stopTask(player);
         miningStates.remove(player.getUniqueId());
+        beginTask(player, "chop");
         new Lumberjack(this, player, depositManager, trees).start();
     }
 
@@ -1229,6 +1236,7 @@ public class JarvisNPC implements Listener {
         }
         stopTask(player);
         miningStates.remove(player.getUniqueId());
+        beginTask(player, "fish");
         new Fisherman(this, player, depositManager).start();
     }
 
@@ -1360,6 +1368,7 @@ public class JarvisNPC implements Listener {
         }
         stopTask(player);
         miningStates.remove(player.getUniqueId());
+        beginTask(player, "branch_mine");
         new BranchMiner(this, player, depositManager).start();
     }
 
@@ -1377,6 +1386,7 @@ public class JarvisNPC implements Listener {
         }
         stopTask(player);
         miningStates.remove(player.getUniqueId());
+        beginTask(player, "dig_down");
         new ShaftDigger(plugin, this, player, depth).start();
     }
 
@@ -1456,7 +1466,8 @@ public class JarvisNPC implements Listener {
         };
 
         task.runTaskTimer(plugin, 0L, 20L);
-        activeTasks.put(player.getUniqueId(), task);
+        beginTask(player, "follow");
+        registerTask(player, task);
     }
 
     public void stop(Player player) {
@@ -1468,6 +1479,32 @@ public class JarvisNPC implements Listener {
     /** Register a task as THE active task for this player (cancels via stopTask). */
     void registerTask(Player player, BukkitRunnable task) {
         activeTasks.put(player.getUniqueId(), task);
+    }
+
+    /**
+     * v0.11.0: declare a job by name and hand it a fresh self-explain budget.
+     *
+     * <p>Called once where the player asks for the work, deliberately not from
+     * the tick loop — a recovery move restarts that loop, and resetting the
+     * budget there would let a task retry forever.
+     */
+    void beginTask(Player player, String taskType) {
+        TaskRecoveryHandler recovery = plugin.getTaskRecoveryHandler();
+        if (recovery != null) recovery.taskStarted(player, taskType);
+    }
+
+    /**
+     * Hand a dead task to self-explain. Falls through to the task's own message
+     * whenever diagnosis is off, capped out, or unusable, so a caller can pass
+     * its existing failure text and lose nothing.
+     */
+    public void reportFailure(TaskFailure failure) {
+        TaskRecoveryHandler recovery = plugin.getTaskRecoveryHandler();
+        if (recovery == null) {
+            say(failure.getPlayer(), failure.getDefaultMessage());
+            return;
+        }
+        recovery.handle(failure);
     }
 
     Jarvis getPlugin() {
@@ -1521,6 +1558,10 @@ public class JarvisNPC implements Listener {
     }
 
     public void stopTask(Player player) {
+        // Tells self-explain that anything it is still diagnosing has been
+        // superseded, so a recovery move cannot fire into the next job.
+        TaskRecoveryHandler recovery = plugin.getTaskRecoveryHandler();
+        if (recovery != null) recovery.taskSuperseded(player);
         activeDefenders.remove(player.getUniqueId());
         BukkitRunnable task = activeTasks.remove(player.getUniqueId());
         if (task != null) {
@@ -1547,6 +1588,15 @@ public class JarvisNPC implements Listener {
     }
 
     // ==================== UTILITY METHODS ====================
+
+    /** The tool in hand, named in plain English for a self-explain prompt. */
+    String describeHeldTool(Player player) {
+        NPC npc = getNPC(player);
+        if (npc == null) return "no NPC";
+        ItemStack tool = npc.getOrAddTrait(Equipment.class).get(Equipment.EquipmentSlot.HAND);
+        if (tool == null || tool.getType().isAir()) return "empty handed";
+        return tool.getType().name().toLowerCase().replace('_', ' ');
+    }
 
     /** The pickaxe lives in hand (inventory slot 0). Restore it if anything displaced it. */
     ItemStack getOrRestoreTool(NPC npc) {

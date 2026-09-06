@@ -2,6 +2,7 @@ package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
 import com.gadgetman.jarvis.npc.provider.INPCProvider;
+import com.gadgetman.jarvis.recovery.TaskFailure;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Particle;
@@ -69,7 +70,14 @@ class Fisherman {
         Location npcLoc = host.getCurrentLocation(player);
         Location edge = findWaterEdge(npcLoc);
         if (edge == null) {
-            host.say(player, "No fishable water nearby, sir. A pond would be a start.");
+            // Nothing to recover to — but "no water here" is worth saying with
+            // the surroundings in it rather than as a stock line.
+            host.reportFailure(TaskFailure.of(player, "fish")
+                    .step("looking for somewhere to cast from")
+                    .reason("no water edge found within the search radius")
+                    .say("No fishable water nearby, sir. A pond would be a start.")
+                    .where(npcLoc)
+                    .build());
             return;
         }
 

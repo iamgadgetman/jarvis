@@ -1,6 +1,6 @@
 # Jarvis — AI-Powered Minecraft Butler Plugin
 
-**Version 0.10.4** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
+**Version 0.11.0** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
 
 Jarvis is a feature-rich AI companion plugin that spawns a Citizens NPC who follows you, fights for you, mines for you, builds for you — and understands natural language via OpenAI, Claude, Grok, Gemini, or a local Ollama model.
 
@@ -112,6 +112,26 @@ worked for similar requests.
   unlocks itself once 20 successful builds are remembered — the examples carry
   the load the block was there to avoid
 - `/jarvis debug` shows how many builds are stored and whether the unlock has fired
+
+### Self-Explain Recovery (new in 0.11.0)
+When a job stops early, Jarvis works out why before he gives up.
+- The old behaviour was a stock line — *"The chest is full and so are my bags,
+  sir"* — that said a job had stopped but not what to do about it
+- He says the job's own line immediately, then follows up once the local model
+  has worked out why — you never wait on it, and if the model is slow or absent
+  you simply get the message you would have got before
+- **He picks between ways out; he never invents one.** Each failure declares the
+  moves it can make, and anything else is treated as "stop". A lost branch mine
+  can offer to step back into its own tunnel; a full chest can offer to keep
+  digging and leave the drops on the floor
+- Failures with no way out — lava under the shaft, no pond in the desert — are
+  explained rather than recovered, which was the half that was missing
+- Runs on the LIGHT tier, so it works on an Ollama-only server and costs
+  nothing. Capped at two diagnoses per job
+- Wants a **small** local chat model: the light tier allows five seconds, which
+  a 70B on CPU will not meet. Nothing breaks if it cannot answer — you just keep
+  the plain message
+- `self-explain.enabled: false` restores the old messages exactly
 
 ### Inventory Management
 - Jarvis has his own NPC inventory

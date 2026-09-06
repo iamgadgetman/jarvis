@@ -2,6 +2,7 @@ package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
 import com.gadgetman.jarvis.npc.provider.INPCProvider;
+import com.gadgetman.jarvis.recovery.TaskFailure;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -63,6 +64,8 @@ class BranchMiner {
     private int advanceTicks = 0;
     private boolean breaking = false;
     private boolean navStuck = false;
+    /** Set when self-explain decides to keep digging with nowhere to put the loot. */
+    private boolean depositsPaused = false;
     private final ArrayDeque<Location> harvestQueue = new ArrayDeque<>();
 
     private int oresMined = 0;
@@ -199,7 +202,8 @@ class BranchMiner {
         if (breaking) return;
 
         // Bags full? Deliver to the chest and come back.
-        if (autoDeposit && host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
+        if (autoDeposit && !depositsPaused
+                && host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
             if (deposits.hasChest(player)) {
                 host.say(player, "Bags are full, sir — running a delivery. Back shortly.");
                 resumeCell = npcLoc.getBlock().getLocation();
@@ -208,8 +212,22 @@ class BranchMiner {
                     // v0.8.0: if the chest couldn't take it, don't loop forever
                     if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
                         mode = Mode.DONE;
-                        host.say(player, "The chest is full and so are my bags, sir. "
-                                + "Pausing the mine until there's room somewhere.");
+                        host.reportFailure(TaskFailure.of(player, "branch_mine")
+                                .step("delivering a full load to the deposit chest")
+                                .reason("the chest would not take the load and his own bags are still "
+                                        + "full, so nothing further can be picked up")
+                                .say("The chest is full and so are my bags, sir. "
+                                        + "Pausing the mine until there's room somewhere.")
+                                .where(host.getCurrentLocation(player))
+                                .state("loot slots used", host.lootSlotsUsed(player)
+                                        + " of " + JarvisNPC.LOOT_CAPACITY)
+                                .state("ores recovered", oresMined)
+                                .state("plan progress", index + " of " + plan.size() + " cells")
+                                .option("mine_without_collecting",
+                                        "carry on excavating the plan and leave what drops on the "
+                                        + "floor for the player to collect",
+                                        () -> resumeWithoutDeposits())
+                                .build());
                         return;
                     }
                     mode = Mode.RETURNING;
@@ -353,8 +371,24 @@ class BranchMiner {
 
         double distance = npcLoc.distance(cellCenter);
         if (distance > MAX_TRANSITION_DISTANCE) {
-            // Shouldn't happen inside our own mine — bail politely
-            finishEarly("I seem to have lost the mine, sir. Stopping here.");
+            // Shouldn't happen inside our own mine. Before v0.11.0 this simply
+            // stopped; the tunnel is still there, so stepping back into it is a
+            // move worth offering.
+            final Location target = stepCell;
+            failEarly(TaskFailure.of(player, "branch_mine")
+                    .step("walking to dig cell " + index + " of " + plan.size())
+                    .reason("drifted " + String.format("%.1f", distance) + " blocks from the cell he was "
+                            + "walking to, past the " + MAX_TRANSITION_DISTANCE + "-block limit — "
+                            + "pathfinding has lost the tunnel")
+                    .say("I seem to have lost the mine, sir. Stopping here. ("
+                            + oresMined + " ores recovered.)")
+                    .where(npcLoc)
+                    .state("plan progress", index + " of " + plan.size() + " cells")
+                    .state("ores recovered", oresMined)
+                    .state("blocks excavated", blocksDug)
+                    .option("return_to_mine",
+                            "step back into the tunnel at the cell you were walking to and carry on digging",
+                            () -> resumeAt(target)));
             return;
         }
 
@@ -451,7 +485,20 @@ class BranchMiner {
         digQueue.clear();
         stepCell = null;
         if (index == 0 || index > plan.size()) {
-            finishEarly("The very first stretch is blocked, sir. Stopping here.");
+            // No earlier segment to fall back on. The rest of the plan is still
+            // good, so skipping the opening one is a real way forward.
+            failEarly(TaskFailure.of(player, "branch_mine")
+                    .step("clearing the opening segment of the mine")
+                    .reason("the first segment was blocked before any of it was dug, so there is no "
+                            + "earlier segment to reroute into")
+                    .say("The very first stretch is blocked, sir. Stopping here. ("
+                            + oresMined + " ores recovered.)")
+                    .where(host.getCurrentLocation(player))
+                    .state("plan length", plan.size() + " cells")
+                    .state("ores recovered", oresMined)
+                    .option("skip_first_segment",
+                            "abandon the opening segment and start the mine from the second one instead",
+                            () -> skipToSegment(1)));
             return;
         }
         int current = plan.get(index - 1).segment;
@@ -481,5 +528,70 @@ class BranchMiner {
         mode = Mode.DONE;
         provider.cancelNavigation(player);
         host.say(player, message + " (" + oresMined + " ores recovered.)");
+    }
+
+    /**
+     * As {@link #finishEarly}, but the failure goes to self-explain first along
+     * with whatever moves this particular site can actually make. If diagnosis
+     * is off or out of attempts the builder's own message is said instead, so
+     * this is the old behaviour plus a chance at something better.
+     */
+    private void failEarly(TaskFailure.Builder failure) {
+        mode = Mode.DONE;
+        provider.cancelNavigation(player);
+        host.reportFailure(failure.build());
+    }
+
+    // ==================== RECOVERY MOVES ====================
+    // Only reachable by name, and only from the site that offered them.
+
+    /** Step back into the tunnel at a known-good cell and pick the plan up there. */
+    private void resumeAt(Location cell) {
+        if (cell == null || !player.isOnline() || !provider.isSpawned(player)) return;
+        provider.cancelNavigation(player);
+        provider.teleport(player, cell.clone().add(0.5, 0, 0.5));
+        restartLoop();
+    }
+
+    /** Jump the plan forward to the first cell of the given segment. */
+    private void skipToSegment(int segment) {
+        if (!player.isOnline() || !provider.isSpawned(player)) return;
+        int target = -1;
+        for (int i = 0; i < plan.size(); i++) {
+            if (plan.get(i).segment >= segment) {
+                target = i;
+                break;
+            }
+        }
+        if (target < 0) {
+            finishEarly("There is no more plan to move on to, sir.");
+            return;
+        }
+        index = target;
+        restartLoop();
+    }
+
+    /** Keep digging with nowhere to put the loot. Drops stay on the tunnel floor. */
+    private void resumeWithoutDeposits() {
+        if (!player.isOnline() || !provider.isSpawned(player)) return;
+        depositsPaused = true;
+        restartLoop();
+    }
+
+    /** Clear the transient movement state and start the tick loop again. */
+    private void restartLoop() {
+        // The loop that failed cancels itself once it sees mode == DONE, but a
+        // recovery move lands seconds later and must not race it into a second
+        // registered task.
+        host.stopTask(player);
+        digQueue.clear();
+        stepCell = null;
+        resumeCell = null;
+        advanceTicks = 0;
+        navStuck = false;
+        breaking = false;
+        mode = Mode.EXECUTING;
+        host.applyNavigatorDefaults(player, () -> navStuck = true);
+        runLoop();
     }
 }

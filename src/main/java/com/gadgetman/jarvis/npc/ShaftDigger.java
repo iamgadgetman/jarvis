@@ -2,6 +2,7 @@ package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
 import com.gadgetman.jarvis.npc.provider.INPCProvider;
+import com.gadgetman.jarvis.recovery.TaskFailure;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -115,8 +116,19 @@ public class ShaftDigger {
         // Sealing before opening, not after: the block being removed may be the
         // only thing holding back a lava pocket beside it.
         if (!sealNeighbours(below)) {
-            host.say(player, "There is more lava down there than I care for, sir. Stopping here.");
-            finish(self);
+            // Nothing to be done about this one — the shaft is where the player
+            // put it. The diagnosis is the whole of the value here.
+            host.reportFailure(TaskFailure.of(player, "dig_down")
+                    .step("sealing the walls before opening the next block down")
+                    .reason("more adjacent lava than the sealer will take on in one step")
+                    .say("There is more lava down there than I care for, sir. Stopping here."
+                            + progressNote())
+                    .where(cursor)
+                    .state("depth reached", dug + " blocks, now at y=" + cursor.getBlockY())
+                    .state("target depth", "y=" + stopY)
+                    .state("pockets sealed so far", sealed)
+                    .build());
+            stopQuietly(self);
             return;
         }
         if (host.isFluid(below.getType())) {
@@ -141,8 +153,17 @@ public class ShaftDigger {
                 dug++;
                 descend();
             } else {
-                host.say(player, "That block will not yield, sir. Stopping.");
-                finish(self);
+                host.reportFailure(TaskFailure.of(player, "dig_down")
+                        .step("breaking the block underfoot at y=" + (cursor.getBlockY() - 1))
+                        .reason("the break did not complete — the block is protected, or something "
+                                + "changed it mid-swing")
+                        .say("That block will not yield, sir. Stopping." + progressNote())
+                        .where(cursor)
+                        .state("block", below.getType().name().toLowerCase())
+                        .state("depth reached", dug + " blocks, now at y=" + cursor.getBlockY())
+                        .state("tool", host.describeHeldTool(player))
+                        .build());
+                stopQuietly(self);
             }
         });
     }
@@ -203,11 +224,26 @@ public class ShaftDigger {
     }
 
     private void finish(BukkitRunnable self) {
-        self.cancel();
-        host.taskDone(player, self);
+        stopQuietly(self);
         String note = sealed > 0 ? " Sealed " + sealed + " fluid pocket(s) on the way." : "";
         host.say(player, "Shaft complete, sir — " + dug + " blocks down to y="
                 + cursor.getBlockY() + "." + note
                 + (placeLadders ? " There are ladders, should you wish to return." : ""));
+    }
+
+    /**
+     * End the shaft without the completion line. Used where self-explain is
+     * about to speak: a diagnosis followed two seconds later by "Shaft
+     * complete, sir" reads as though he did not notice.
+     */
+    private void stopQuietly(BukkitRunnable self) {
+        self.cancel();
+        host.taskDone(player, self);
+    }
+
+    /** How far he got, folded into the line he says when the shaft stops early. */
+    private String progressNote() {
+        return " " + dug + " blocks down, to y=" + cursor.getBlockY() + "."
+                + (sealed > 0 ? " Sealed " + sealed + " fluid pocket(s) on the way." : "");
     }
 }

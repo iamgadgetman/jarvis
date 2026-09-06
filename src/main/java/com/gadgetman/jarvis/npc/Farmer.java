@@ -2,6 +2,7 @@ package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
 import com.gadgetman.jarvis.npc.provider.INPCProvider;
+import com.gadgetman.jarvis.recovery.TaskFailure;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
@@ -73,6 +74,8 @@ class Farmer {
 
     private final ArrayDeque<Location> targets = new ArrayDeque<>();
     private boolean working = false;
+    /** Set when self-explain decides to keep harvesting with nowhere to put the produce. */
+    private boolean depositsPaused = false;
     private int harvested = 0;
     private int unplanted = 0;
     private boolean warnedSeeds = false;
@@ -134,14 +137,29 @@ class Farmer {
         if (working) return;
 
         // Bags full? Deliver and continue (tend) or wrap up (sweep)
-        if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2 && deposits.hasChest(player)) {
+        if (!depositsPaused && host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2
+                && deposits.hasChest(player)) {
             host.say(player, "Bags full, sir — delivering the produce. Back shortly.");
             self.cancel();
             deposits.startDepositRun(player, deposits.getChest(player), () -> {
                 // v0.8.0: if the chest couldn't take it, don't loop forever
                 if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
-                    host.say(player, "The chest is full and so are my bags, sir. "
-                            + "Farming is paused until there's somewhere to put things.");
+                    host.reportFailure(TaskFailure.of(player, tendMode ? "tend" : "farm")
+                            .step("delivering a full load of produce to the deposit chest")
+                            .reason("the chest would not take the load and his own bags are still "
+                                    + "full, so nothing further can be picked up")
+                            .say("The chest is full and so are my bags, sir. "
+                                    + "Farming is paused until there's somewhere to put things.")
+                            .where(host.getCurrentLocation(player))
+                            .state("loot slots used", host.lootSlotsUsed(player)
+                                    + " of " + JarvisNPC.LOOT_CAPACITY)
+                            .state("crops harvested", harvested)
+                            .state("mode", tendMode ? "standing tend shift" : "one sweep")
+                            .option("harvest_without_collecting",
+                                    "carry on harvesting and replanting, leaving the produce on the "
+                                    + "ground for the player to collect",
+                                    () -> resumeWithoutDeposits())
+                            .build());
                     return;
                 }
                 host.applyNavigatorDefaults(player, null);
@@ -293,6 +311,15 @@ class Farmer {
         if (GOURDS.containsKey(type)) return cropFilter == null || type == cropFilter;
         if (!CROPS.containsKey(type)) return false;
         return b.getBlockData() instanceof Ageable age && age.getAge() >= age.getMaximumAge();
+    }
+
+    /** Keep harvesting with nowhere to put the produce. Drops stay in the field. */
+    private void resumeWithoutDeposits() {
+        if (!player.isOnline() || !provider.isSpawned(player)) return;
+        depositsPaused = true;
+        host.applyNavigatorDefaults(player, null);
+        host.equipTool(player, Material.DIAMOND_HOE);
+        start();
     }
 
     private void finish() {

@@ -1,5 +1,112 @@
 # Jarvis Changelog
 
+## v0.11.0 (2026-09-05) — the butler says why
+
+A job that stopped early told you *that* it stopped. "The chest is full and so
+are my bags, sir." "I seem to have lost the mine, sir. Stopping here." Both
+true, neither much use: the first does not say the chest is full of cobblestone
+you asked him to keep, and the second does not say the tunnel is still there,
+eight blocks behind him, with 92 cells of plan left in it.
+
+This is the third mechanism from the JARVIS-1 paper (arXiv:2311.05997) —
+self-explain — after memory-augmented planning and plan self-checking. When a
+job dies, the failure is packaged and sent to the LIGHT tier, which diagnoses
+it and picks a way out.
+
+### Added
+
+- **Self-explain recovery (`com.gadgetman.jarvis.recovery`).** A dead job hands
+  `TaskRecoveryHandler` what it was doing, where it got to, what broke, and the
+  moves it can still make. The model answers with a diagnosis for the log, an
+  action, and a follow-up line for the player. Config section `self-explain:`.
+
+- **The job's own line is said first, always, before a model is asked
+  anything.** The diagnosis is a follow-up, never a substitute. This is not
+  politeness — it is what the measurements demanded. A reference Ollama box
+  running a 70B on CPU took **over two minutes** to answer a trivial request,
+  against a five-second light-tier timeout. Had the message waited on the
+  diagnosis, every failure on that hardware would have been five seconds of
+  silence followed by the same line it says today. Said first, the worst case
+  is exactly the old behaviour and the best case is a second, better sentence.
+
+- **The model chooses between ways out; it does not invent one.** Each failure
+  site declares its own moves as `TaskFailure.Option`s, and only those are
+  offered. An action that is not on the list — including one the model made up
+  — is treated as `abort`, so nothing runs. This is the same allowlist
+  reasoning the console-command path already uses, and it means a recovery move
+  can only ever be code that was written for that exact site.
+
+  The moves that exist in this release:
+
+  | Job | Failure | Move offered |
+  |---|---|---|
+  | `branch_mine` | drifted past the 32-block limit, pathfinding lost the tunnel | `return_to_mine` — step back in at the cell he was walking to and carry on |
+  | `branch_mine` | opening segment blocked before any of it was dug | `skip_first_segment` — start the mine from the second segment |
+  | `branch_mine` | chest full and bags full | `mine_without_collecting` — keep excavating, leave the drops on the floor |
+  | `chop` | chest full and bags full | `fell_without_collecting` |
+  | `farm` / `tend` | chest full and bags full | `harvest_without_collecting` |
+  | `dig_down` | too much adjacent lava; the block will not break | none — explained only |
+  | `fish` | no water within the search radius | none — explained only |
+
+- **Sites with no way out still get explained.** Half of these failures cannot
+  be recovered from — the shaft is where the player sank it, the desert has no
+  pond. Those offer nothing, and the model's only action is `abort`; what it
+  contributes is a line that says why, with the surroundings in it instead of a
+  stock string. That was the half that was missing.
+
+- **The diagnosis is logged** at INFO alongside the chosen action
+  (`self-explain.log-diagnosis`), for the same reason 0.10.4 logs the site
+  note: without it there is no telling, afterwards, a diagnosis that was
+  ignored from one that never arrived.
+
+### Why this costs nothing
+
+It runs on the LIGHT tier, which is Ollama-first, so a server with no cloud
+keys at all gets the whole feature — and the servers most likely to be running
+Ollama-only are the ones where a failure most needs explaining. It is capped at
+two diagnoses per job. The budget resets when the player issues the command
+again, deliberately not when a recovery move restarts the job's tick loop: a
+job that cannot be saved would otherwise retry forever.
+
+### Changed
+
+- **`/jarvis dig` no longer says "Shaft complete, sir" after it has just
+  explained why it stopped.** The two early stops now end the shaft quietly and
+  fold the depth reached into the line they say. The bedrock stop is a genuine
+  completion and still reports as one.
+
+- `JarvisNPC.beginTask(player, type)` names a job at the point the player asks
+  for it, which is what gives the recovery budget something to key on.
+  `registerTask` no longer implies a fresh budget, because a recovery move
+  re-registers the tick loop.
+
+### Guards worth knowing about
+
+- A diagnosis takes a second or two. If the player runs `/jarvis stop`, or asks
+  for anything else, in that window, the recovery move is dropped — `stopTask`
+  bumps a generation counter that the move checks before it acts. He still says
+  his piece; he just does not take over the new job.
+- One diagnosis per player at a time, and the attempt is counted before the
+  call, so an Ollama box that is down cannot be retried into a loop.
+- Every path that is not a successful diagnosis leaves the player with exactly
+  what the job said before this release — which is also what a slow or absent
+  Ollama box produces. `self-explain.enabled: false` skips the call entirely.
+
+### A note on local model size
+
+This wants a **small** local chat model, not a large one. The light tier gives
+it five seconds (`ai.light-timeout-seconds`), and a 70B on CPU will not answer
+in five seconds — or in five minutes. Nothing breaks if it cannot: the call
+times out, the tier falls through or gives up, and the player keeps the line
+he already had. But the feature only earns its keep on a box that answers
+quickly.
+
+### Not done
+
+The paper's fourth mechanism — decomposing a build request into feature tags
+before matching it against the schematic library — is still open, as is the
+`/jarvis export-dataset` JSONL dump.
+
 ## v0.10.4 (2026-09-03) — say what was sent
 
 0.10.3 told the model when a site was enclosed. A cave build then came back
