@@ -1,5 +1,34 @@
 # Jarvis Changelog
 
+## v0.12.1 (2026-09-06) — hand back what the server has taught him
+
+Two tables have been quietly accumulating supervised training pairs this whole
+time and there was no way to get them out. `chat_interactions` holds (what the
+player said → the action actually taken), which is intent parsing with labels
+that cost nothing to collect. `build_experiences` holds (request → the plan that
+ran → whether it was kept).
+
+### Added
+
+- **`/jarvis export-dataset`** (admin; works from the console like `reload` and
+  `debug`, since anyone dumping training data is more likely at a terminal than
+  standing in the world). Writes two timestamped JSONL files to
+  `plugins/Jarvis/datasets/` and reports the row counts.
+
+  - `intents-<stamp>.jsonl` — request, action, response. Rows with no action are
+    skipped: those are the parses that failed, and an unlabelled example teaches
+    nothing.
+  - `builds-<stamp>.jsonl` — task, request, plan, outcome, situation, provider.
+    Failures are exported alongside successes and labelled. A fine-tune wants
+    both; retrieval, which only ever reads positives, is the one that does not.
+
+- **Player UUIDs are not written.** The pairs are what has value, and a dataset
+  meant to leave the server should not carry who said what.
+
+The query and the file write are off the main thread. This closes the stretch
+goal on the v0.9.0 plan; with 0.11.0 and 0.12.0 before it, all four JARVIS-1
+milestones and the stretch are now in.
+
 ## v0.12.0 (2026-09-05) — work out what was asked before searching for it
 
 Ask for *"somewhere to store my loot"* with `storage_shed` sitting in the

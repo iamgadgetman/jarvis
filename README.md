@@ -1,6 +1,6 @@
 # Jarvis — AI-Powered Minecraft Butler Plugin
 
-**Version 0.12.0** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
+**Version 0.12.1** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
 
 Jarvis is a feature-rich AI companion plugin that spawns a Citizens NPC who follows you, fights for you, mines for you, builds for you — and understands natural language via OpenAI, Claude, Grok, Gemini, or a local Ollama model.
 
@@ -112,6 +112,16 @@ worked for similar requests.
   unlocks itself once 20 successful builds are remembered — the examples carry
   the load the block was there to avoid
 - `/jarvis debug` shows how many builds are stored and whether the unlock has fired
+
+### Dataset Export (new in 0.12.1)
+`/jarvis export-dataset` (admin, works from console) dumps what this server has
+taught Jarvis as JSONL, into `plugins/Jarvis/datasets/`.
+- `intents-*.jsonl` — what players said paired with the action actually taken
+- `builds-*.jsonl` — build requests paired with the plan that ran and whether it
+  was kept, failures labelled and included
+- No gameplay feature: it is the raw material for fine-tuning a small local
+  model later, which is where the Ollama tier's ceiling actually sits
+- Player UUIDs are not written — the pairs are what has value
 
 ### Reasoning Before Retrieval (new in 0.12.0)
 Before searching the schematic library, Jarvis works out what you are actually

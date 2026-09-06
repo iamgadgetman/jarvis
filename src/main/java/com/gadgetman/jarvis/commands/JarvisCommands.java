@@ -57,6 +57,20 @@ public class JarvisCommands implements CommandExecutor {
             }
         }
 
+        // Console-friendly like reload and debug: an admin dumping training data
+        // is far more likely to be at a terminal than standing in the world.
+        if (args.length >= 1 && (args[0].equalsIgnoreCase("export-dataset")
+                || args[0].equalsIgnoreCase("exportdataset"))) {
+            if (sender.hasPermission("jarvis.admin") || sender instanceof ConsoleCommandSender) {
+                sender.sendMessage(ChatColor.GRAY + "Jarvis: Writing the datasets, sir. One moment.");
+                new com.gadgetman.jarvis.memory.DatasetExporter(plugin).exportAsync(sender);
+                return true;
+            } else {
+                sender.sendMessage(ChatColor.RED + "You don't have permission.");
+                return true;
+            }
+        }
+
         // All other commands are player-only
         if (!(sender instanceof Player)) {
             sender.sendMessage(ChatColor.RED + "Only players can use other Jarvis commands.");
@@ -772,6 +786,7 @@ public class JarvisCommands implements CommandExecutor {
             "build",
             "cancel",
             "cancelbuild",
+            "export-dataset",
             "chat",
             "chest",
             "chop",
@@ -972,6 +987,8 @@ public class JarvisCommands implements CommandExecutor {
             player.sendMessage(ChatColor.WHITE + "  /jarvis requests" + ChatColor.GRAY + " - View pending item requests");
             player.sendMessage(ChatColor.WHITE + "  /jarvis approve <id>" + ChatColor.GRAY + " - Approve item request");
             player.sendMessage(ChatColor.WHITE + "  /jarvis deny <id>" + ChatColor.GRAY + " - Deny item request");
+            player.sendMessage(ChatColor.WHITE + "  /jarvis export-dataset" + ChatColor.GRAY
+                    + " - Dump intent & build pairs as JSONL");
             player.sendMessage(ChatColor.GRAY + "  Console AI: 'jarvis, kill all creepers' — asks before executing");
         }
         
