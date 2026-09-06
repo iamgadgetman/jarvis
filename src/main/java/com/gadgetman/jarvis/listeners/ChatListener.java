@@ -286,7 +286,8 @@ public class ChatListener implements Listener {
             @Override public void run() {
                 String pick = null;
                 var schematics = plugin.getSchematicManager();
-                java.util.List<String> tags = java.util.List.of();
+                com.gadgetman.jarvis.schematics.RequestFeatures features =
+                        com.gadgetman.jarvis.schematics.RequestFeatures.none();
 
                 if (schematics != null) {
                     java.util.List<String> names = new java.util.ArrayList<>();
@@ -295,16 +296,15 @@ public class ChatListener implements Listener {
                     }
                     if (!names.isEmpty()) {
                         var decomposer = plugin.getRequestDecomposer();
-                        if (decomposer != null) tags = decomposer.decompose(desc);
+                        if (decomposer != null) features = decomposer.decompose(desc);
 
                         int threshold = plugin.getConfig()
-                                .getInt("schematics.feature-tags.match-threshold", 85);
-                        int score = schematics.bestMatchScore(desc, tags);
+                                .getInt("schematics.feature-tags.match-threshold", 90);
+                        int score = schematics.bestMatchScore(desc, features);
                         if (score >= threshold) {
-                            pick = schematics.bestMatchName(desc, tags);
-                            plugin.getLogger().fine("Feature-tag match for \"" + desc + "\": "
-                                    + pick + " (" + score + ", tags: "
-                                    + (tags.isEmpty() ? "none" : String.join(", ", tags)) + ")");
+                            pick = schematics.bestMatchName(desc, features);
+                            plugin.getLogger().fine("Feature match for \"" + desc + "\": "
+                                    + pick + " (" + score + ", asked for: " + features + ")");
                         }
 
                         if (pick == null) {
@@ -312,8 +312,9 @@ public class ChatListener implements Listener {
                             // alone. The tags still go with the request — the
                             // model is choosing from names, and knowing the
                             // request means "storage" helps it do that.
-                            String enriched = tags.isEmpty() ? desc
-                                    : desc + " (asking for: " + String.join(", ", tags) + ")";
+                            String enriched = features.isEmpty() ? desc
+                                    : desc + " (asking for: " + features.purpose()
+                                      + " — a " + features.kind() + ")";
                             try {
                                 pick = aiConnector.pickSchematic(enriched, names);
                             } catch (Exception e) {

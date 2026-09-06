@@ -1,5 +1,85 @@
 # Jarvis Changelog
 
+## v0.12.2 (2026-09-06) — measured against a model that will actually run it
+
+0.11.0 and 0.12.0 shipped two new prompts that had never met a model. A small
+local Ollama box turned up, and both were wrong in ways that no amount of
+reading them would have shown.
+
+The box: `llama3.2:3b`, answering in **0.7–2.5 s warm** and 6.7 s cold, against
+a five-second light-tier timeout. That is the size of model this tier is for,
+and `ai.ollama.keep-alive` already covers the cold case.
+
+### Fixed — self-explain never actually recovered anything
+
+The action rule read *"Pick 'abort' unless one of the other moves genuinely
+addresses the cause."* A 3B model answered **`abort` every single time**,
+including where it had just described the way out in its own message to the
+player:
+
+> "It seems the deposit chest has reached its capacity. You'll have to carry
+> those extra bags yourself, old chap. **Carry on.**" — action: `abort`
+
+Every recovery move in 0.11.0 was dead on arrival. Three changes, each measured:
+
+- **The rule is affirmative now** — *if one of them would let the job carry on,
+  CHOOSE IT.* Correct picks went from 1/3 to 3/3 on the case that never fired.
+- **The action rule comes LAST.** Moved into the middle of the prompt by the
+  other fixes, correct picks fell back to 2/4 on the same case. Order is not
+  cosmetic at this model size; it is worth more than the wording.
+- **All three fields are declared required.** The diagnosis came back empty in
+  half the answers, and the explain-only sites were the worst — because the
+  prompt told them *"what matters is that the message tells the player why"*,
+  which the model reasonably read as permission to skip the log line.
+
+Final: **15/16 fully correct**, and the one miss returned an empty action, which
+already reads as `abort` and was the right answer there anyway. The log line
+also now falls back to the player-facing message rather than being lost, for
+models that drop the diagnosis regardless.
+
+### Fixed — feature tags made two answers worse than no tags at all
+
+0.12.0 asked for a flat tag list and weighted every tag alike. Against a real
+model that is actively harmful, because a *style* word lands on a schematic name
+by coincidence:
+
+| Request | Tags returned | Picked | Raw wording alone |
+|---|---|---|---|
+| "build me a cosy little cottage" | `workshop, house, small, medieval` | `small_warehouse` | `oak_cottage` — correct |
+| "a spot by the lake for angling" | `decoration, bridge, medieval` | `medieval_tower` | nothing |
+
+"small" matching `small_warehouse` outscored the purpose that actually answered
+the request. The earlier 0.12.0 measurements did not catch this because the tags
+in them were written by hand — that tested the scorer, not the system.
+
+The decomposition is now **structured**: purpose, kind and style as named
+fields, so the scorer can weigh them.
+
+- **Kind outweighs purpose** — naming a structure is more specific than naming a
+  use. Kind 75, purpose 70, both 90. A/B'd over 21 real decompositions:
+  kind-weighted 18/21 against flat 16/21.
+- **Style cannot carry a match**, only break a tie between two names that
+  already matched (+4).
+- **A stale flat-tag cache row** no longer parses into three fields, so it reads
+  as a miss and is quietly re-decomposed rather than misread.
+
+End to end — real model output through the real scorer — **7/7 correct, zero
+answers worse than no decomposition**, against 2/7 on the raw wording alone.
+
+### Changed
+
+- `schematics.feature-tags.match-threshold` default **85 → 90**, following the
+  rescale: 90 now means "both what it is for and what it is are in the
+  schematic's own name". Of the seven measured requests only two clear it, so
+  five still go to the AI pick — a deliberately conservative default off seven
+  samples. All seven were correct at 75, and the config says so; drop it if you
+  would rather the library answer for itself.
+
+### Note
+
+None of this has run on a server. The prompts are measured, the scorers are
+tested against real model output, and no player has yet seen either.
+
 ## v0.12.1 (2026-09-06) — hand back what the server has taught him
 
 Two tables have been quietly accumulating supervised training pairs this whole

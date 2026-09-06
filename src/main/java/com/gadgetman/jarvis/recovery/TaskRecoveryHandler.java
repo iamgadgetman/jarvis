@@ -214,10 +214,17 @@ public class TaskRecoveryHandler {
         // Logged on the way out for the same reason the site note is: there was
         // no way, afterwards, to tell a diagnosis that was ignored from one that
         // never arrived.
-        if (logDiagnosis && !diagnosis.isEmpty()) {
-            plugin.getLogger().info("Task " + failure.getTaskType() + " failed for "
-                    + player.getName() + " (" + failure.getReason() + "). Diagnosis: "
-                    + diagnosis + " -> action: " + (action.isEmpty() ? "none" : action));
+        if (logDiagnosis) {
+            // Asked for explicitly, but a smaller model still drops it now and
+            // then, and the log line is the point of the exercise -- fall back
+            // to what it told the player rather than losing the record.
+            String logged = !diagnosis.isEmpty() ? diagnosis
+                    : (!message.isEmpty() ? "(no diagnosis given) " + message : "");
+            if (!logged.isEmpty()) {
+                plugin.getLogger().info("Task " + failure.getTaskType() + " failed for "
+                        + player.getName() + " (" + failure.getReason() + "). Diagnosis: "
+                        + logged + " -> action: " + (action.isEmpty() ? "none" : action));
+            }
         }
 
         TaskFailure.Option chosen = failure.findOption(action);
@@ -270,8 +277,11 @@ public class TaskRecoveryHandler {
         }
         sb.append("  abort — stop the task and explain to the player\n");
         if (failure.getOptions().isEmpty()) {
-            sb.append("There is no way to carry on from here, so the action is 'abort'. "
-                    + "What matters is that the message tells the player why.\n");
+            // The earlier wording of this said the message was what mattered,
+            // and the model duly stopped writing a diagnosis at all -- empty in
+            // every explain-only answer measured. Ask for both.
+            sb.append("Only 'abort' is listed, so that is the action. Still write the diagnosis "
+                    + "and the message: they are the only record of why this job stopped.\n");
         }
         return sb.toString();
     }

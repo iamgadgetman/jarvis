@@ -148,28 +148,40 @@ memory:
   # How much of a stored plan to show before truncating.
   max-plan-chars: 1200
 
-# ========== SCHEMATIC FEATURE TAGS ==========
+# ========== SCHEMATIC FEATURE MATCHING ==========
 # Reasoning before retrieval: work out what a build request is asking for
 # before matching it against the schematic library.
 #
 # "Somewhere to store my loot" shares not one word with storage_shed, so
-# matching the raw sentence never finds it. One LIGHT-tier call turns the
-# sentence into feature tags -- storage, shed, small -- and the library is
-# matched on those. A given request only ever decomposes one way, so the result
-# is cached in memory and in SQLite: asked twice, it costs one model call.
+# matching the raw sentence never finds it -- that schematic scores zero, which
+# is invisible rather than merely unlikely. One LIGHT-tier call names the
+# request's purpose (storage), kind (shed) and style (blank here), and the
+# library is matched on those. It then scores 90.
 #
-# Turn this off and matching goes back to the raw wording plus the AI pick.
+# A request only ever decomposes one way, so the answer is cached in memory and
+# in SQLite: asked twice, it costs one model call.
+#
+# This wants a small, fast chat model on the light tier -- measured at 0.7s per
+# decomposition on llama3.2:3b. Turn it off and matching goes back to the raw
+# wording plus the AI pick.
 schematics:
   feature-tags:
     enabled: true
 
-    # How well the tags must fit before the library answer is taken as-is.
-    # Below this, the AI is still asked to pick -- now with the tags in hand.
+    # How well the request must fit before the library answer is taken as-is.
+    # Below this the AI is still asked to pick -- now knowing what was asked for.
     #
-    # The scale: one tag answered scores 70, two 85, three or more 99. The
-    # default of 85 therefore means "two of the request's features are in the
-    # schematic's own name", which is a real match rather than a lead.
-    match-threshold: 85
+    # The scale, and why the parts differ: naming a STRUCTURE is more specific
+    # than naming a USE, so a kind that matches scores 75 and a purpose that
+    # matches scores 70; both together score 90. Style (small, wooden, medieval)
+    # adds 4 and can never carry a match on its own -- it landed on schematic
+    # names by coincidence often enough to beat the purpose that actually
+    # answered the request.
+    #
+    # The default of 90 therefore means "both what it is for AND what it is are
+    # in the schematic's own name". Drop it to 75 to accept a structure match
+    # alone; below 70 the library will answer nearly everything itself.
+    match-threshold: 90
 
 # ========== SELF-EXPLAIN RECOVERY ==========
 # When a job stops before it is finished, Jarvis works out why before he gives

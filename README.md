@@ -1,6 +1,6 @@
 # Jarvis — AI-Powered Minecraft Butler Plugin
 
-**Version 0.12.1** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
+**Version 0.12.2** | Paper / Purpur | Java 17 bytecode | Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
 
 Jarvis is a feature-rich AI companion plugin that spawns a Citizens NPC who follows you, fights for you, mines for you, builds for you — and understands natural language via OpenAI, Claude, Grok, Gemini, or a local Ollama model.
 
@@ -123,22 +123,28 @@ taught Jarvis as JSONL, into `plugins/Jarvis/datasets/`.
   model later, which is where the Ollama tier's ceiling actually sits
 - Player UUIDs are not written — the pairs are what has value
 
-### Reasoning Before Retrieval (new in 0.12.0)
+### Reasoning Before Retrieval (new in 0.12.0, retuned in 0.12.2)
 Before searching the schematic library, Jarvis works out what you are actually
 asking for.
 - *"Somewhere to store my loot"* shares not one word with `storage_shed`. On the
   raw wording that schematic scores **zero** — not ranked low, invisible
-- One small-model call turns the sentence into feature tags — `storage`, `shed`,
-  `small` — and the library is scored against those instead. The same schematic
-  now scores 85
-- **A confident tag match skips the AI pick entirely.** One feature answered
-  scores 70, two 85, three 99; at or above `schematics.feature-tags.
-  match-threshold` (85) the library answers on its own
+- One small-model call names the request's **purpose** (`storage`), **kind**
+  (`shed`) and **style** (blank here), and the library is scored on those. The
+  same schematic now scores 90
+- The parts are not worth the same. Naming a structure is more specific than
+  naming a use, so kind scores 75, purpose 70, both together 90. Style adds 4
+  and can never carry a match alone — measured, it landed on schematic names by
+  coincidence often enough to beat the purpose that actually answered
+- **A confident match skips the AI pick.** At or above
+  `schematics.feature-tags.match-threshold` (90) the library answers on its own
 - Decompositions are cached in memory and in SQLite, so a request asked twice
-  costs one model call and a server whose players ask for the same things
-  converges on costing nothing
-- A weak match still falls through to the AI pick — now with the tags in hand
-- Naming a schematic outright still wins over any tag score
+  costs one model call
+- A weak match still falls through to the AI pick — now knowing what was asked
+- Naming a schematic outright still wins over any feature score
+
+Measured end to end against `llama3.2:3b`, seven requests against a seven-name
+library: **7/7** correct, none worse than no decomposition at all, 0.7 s per
+decomposition. The same set on the raw wording alone got 2/7.
 
 ### Self-Explain Recovery (new in 0.11.0)
 When a job stops early, Jarvis works out why before he gives up.

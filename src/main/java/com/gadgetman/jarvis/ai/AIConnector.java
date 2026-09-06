@@ -873,18 +873,34 @@ public class AIConnector {
      * <p>LIGHT tier and heavily constrained, because this is exactly the shape
      * of task a small local model is good at.
      *
-     * @return raw JSON: {@code {"tags":["storage","small","enclosed"]}}
+     * @return raw JSON: {@code {"purpose":"storage","kind":"shed","style":""}}
      */
     public String decomposeBuildRequest(String description) throws Exception {
-        String systemPrompt = "You turn Minecraft build requests into feature tags for a "
-                + "library search. Respond ONLY with JSON: {\"tags\":[\"tag\", ...]}\n"
-                + "Give between 2 and 6 single-word lowercase tags naming what the player wants: "
-                + "its PURPOSE (storage, shelter, farm, defence, bridge, decoration, workshop), "
-                + "its KIND (house, tower, shed, barn, wall, keep, hut), "
-                + "and its SIZE or STYLE where the request implies one (small, large, medieval, "
-                + "modern, wooden, stone).\n"
-                + "Name what is asked for, never a material list and never a step. "
-                + "\"Somewhere to store my loot\" is {\"tags\":[\"storage\",\"shed\",\"small\"]}.";
+        // Structured, not a flat tag list. Measured against llama3.2:3b: asked
+        // for a list, the model mixed purpose words in with size and style
+        // words, and a style word matching a schematic NAME by coincidence
+        // ("small" hitting small_warehouse) outscored the purpose that actually
+        // answered the request -- "a cosy little cottage" resolved to
+        // small_warehouse when the plain name match had it right. Naming the
+        // fields separately lets the scorer weigh them properly, and took the
+        // set from 16/21 to 18/21 with no answer made worse than no tags at all.
+        String systemPrompt = "You read a Minecraft build request and name what it is for, so a "
+                + "library of existing builds can be searched.\n"
+                + "Respond ONLY with JSON: "
+                + "{\"purpose\":\"<one word>\",\"kind\":\"<one word>\",\"style\":\"<one word or empty>\"}\n"
+                + "purpose = what the player will USE it for: storage, shelter, farming, defence, "
+                + "crossing, decoration, crafting, fishing, mining, animals.\n"
+                + "kind = the STRUCTURE that serves that purpose: house, cottage, shed, warehouse, "
+                + "tower, keep, barn, hut, wall, bridge, farm.\n"
+                + "style = size or material ONLY if the request says so, otherwise \"\".\n"
+                + "Never name a material list and never name a step.\n"
+                + "Examples:\n"
+                + "\"somewhere to store my loot\" -> "
+                + "{\"purpose\":\"storage\",\"kind\":\"shed\",\"style\":\"\"}\n"
+                + "\"a cosy little cottage\" -> "
+                + "{\"purpose\":\"shelter\",\"kind\":\"cottage\",\"style\":\"small\"}\n"
+                + "\"a spot by the lake for angling\" -> "
+                + "{\"purpose\":\"fishing\",\"kind\":\"hut\",\"style\":\"\"}";
         return sendTiered(Tier.LIGHT, "Build request: \"" + description + "\"", systemPrompt, true);
     }
 
@@ -907,17 +923,36 @@ public class AIConnector {
         // failing job had no way to carry on.
         java.util.List<String> choices = new java.util.ArrayList<>(allowedActions);
         choices.add("abort");
+        // Every line of this was measured against llama3.2:3b, which is the size
+        // of model this tier is for. Three findings shaped it, and none of them
+        // were guessable: phrasing the action rule as "pick abort unless..."
+        // made a 3B model answer abort every single time, even where it had
+        // just described the way out in its own message; the rule has to be
+        // affirmative. Not saying the fields are required left the diagnosis
+        // empty in half the answers. And the action rule has to come LAST --
+        // moved into the middle, correct picks fell from 4/4 to 2/4 on the same
+        // case. Re-measure if you reword it.
         String systemPrompt = JARVIS_PERSONALITY + "\n\n"
-                + "TASK: A job you were carrying out has stopped. Work out why, then choose what to do.\n"
-                + "Respond ONLY with JSON: {\"diagnosis\":\"one sentence, mechanical, for the server log\","
-                + "\"action\":\"<one of: " + String.join(", ", choices) + ">\","
-                + "\"message\":\"one or two sentences to the player, in character, saying what went wrong "
-                + "and what you are doing about it\"}\n"
-                + "Pick 'abort' unless one of the other moves genuinely addresses the cause. "
-                + "Never invent an action that is not on the list. "
-                + "The player cannot see the diagnosis field. Your message is a FOLLOW-UP to the "
-                + "line you have already said -- add why it happened and what you are doing now, "
-                + "and do not repeat what they were already told.";
+                + "TASK: A job you were carrying out has stopped. Work out why, then choose what "
+                + "to do next.\n"
+                + "Respond ONLY with JSON. All three fields are REQUIRED and none may be left empty:\n"
+                + "{\"diagnosis\":\"one sentence, mechanical and specific, for the server log\","
+                + "\"action\":\"" + String.join("|", choices) + "\","
+                + "\"message\":\"one or two sentences to the player, in character\"}\n\n"
+                + "THE MESSAGE follows a line you have already said, so do not repeat that line. "
+                + "Say why it happened and what you are doing about it. The player never sees the "
+                + "diagnosis field, so the message must stand on its own. The fault is the world's "
+                + "or your own, never the player's.\n\n"
+                + "THE DIAGNOSIS is for the server operator reading the log, not the player. State "
+                + "the mechanical cause plainly, with the numbers from the state above where they "
+                + "apply. Write it even when the action is \"abort\" -- especially then, because it "
+                + "is the only record of why the job stopped.\n\n"
+                + "CHOOSING THE ACTION, which matters most. You are listed the moves you can still "
+                + "make. If one of them would let the job carry on, CHOOSE IT -- that is what it is "
+                + "there for, and stopping when you could have carried on is the worst answer you "
+                + "can give. Choose \"abort\" only when none of the listed moves addresses what went "
+                + "wrong, or when abort is the only move listed. Never answer with an action that "
+                + "is not listed.";
         return sendTiered(Tier.LIGHT, failureContext, systemPrompt, true);
     }
 
