@@ -860,6 +860,67 @@ public class AIConnector {
         }
     }
 
+
+    /**
+     * Reasoning before retrieval: turn a build request into the features it is
+     * actually asking for, before anything is matched against the library.
+     *
+     * <p>"Somewhere to store my loot" shares no word with `storage_shed`. The
+     * paper's finding is that decomposing the utterance first and matching on
+     * what it *means* measurably beats matching the raw wording, and the
+     * decomposition is cheap enough to cache forever.
+     *
+     * <p>LIGHT tier and heavily constrained, because this is exactly the shape
+     * of task a small local model is good at.
+     *
+     * @return raw JSON: {@code {"tags":["storage","small","enclosed"]}}
+     */
+    public String decomposeBuildRequest(String description) throws Exception {
+        String systemPrompt = "You turn Minecraft build requests into feature tags for a "
+                + "library search. Respond ONLY with JSON: {\"tags\":[\"tag\", ...]}\n"
+                + "Give between 2 and 6 single-word lowercase tags naming what the player wants: "
+                + "its PURPOSE (storage, shelter, farm, defence, bridge, decoration, workshop), "
+                + "its KIND (house, tower, shed, barn, wall, keep, hut), "
+                + "and its SIZE or STYLE where the request implies one (small, large, medieval, "
+                + "modern, wooden, stone).\n"
+                + "Name what is asked for, never a material list and never a step. "
+                + "\"Somewhere to store my loot\" is {\"tags\":[\"storage\",\"shed\",\"small\"]}.";
+        return sendTiered(Tier.LIGHT, "Build request: \"" + description + "\"", systemPrompt, true);
+    }
+
+    /**
+     * Self-explain: given a dead task, say why it died and pick a way out.
+     *
+     * <p>LIGHT tier on purpose. A diagnosis is short, wanted quickly, and must
+     * work on an Ollama-only server -- the failures worth explaining happen on
+     * exactly the servers least likely to be paying for a cloud key.
+     *
+     * @param failureContext what broke, from {@code TaskRecoveryHandler}
+     * @param allowedActions the only moves the failing task offered. Anything
+     *                       outside this list is treated as "abort" by the
+     *                       caller, so the model cannot invent an action.
+     * @return raw JSON: {@code {"diagnosis":..., "action":..., "message":...}}
+     */
+    public String diagnoseTaskFailure(String failureContext, java.util.List<String> allowedActions)
+            throws Exception {
+        // "abort" is always on the list, and is the whole of it where the
+        // failing job had no way to carry on.
+        java.util.List<String> choices = new java.util.ArrayList<>(allowedActions);
+        choices.add("abort");
+        String systemPrompt = JARVIS_PERSONALITY + "\n\n"
+                + "TASK: A job you were carrying out has stopped. Work out why, then choose what to do.\n"
+                + "Respond ONLY with JSON: {\"diagnosis\":\"one sentence, mechanical, for the server log\","
+                + "\"action\":\"<one of: " + String.join(", ", choices) + ">\","
+                + "\"message\":\"one or two sentences to the player, in character, saying what went wrong "
+                + "and what you are doing about it\"}\n"
+                + "Pick 'abort' unless one of the other moves genuinely addresses the cause. "
+                + "Never invent an action that is not on the list. "
+                + "The player cannot see the diagnosis field. Your message is a FOLLOW-UP to the "
+                + "line you have already said -- add why it happened and what you are doing now, "
+                + "and do not repeat what they were already told.";
+        return sendTiered(Tier.LIGHT, failureContext, systemPrompt, true);
+    }
+
     /**
      * Generate dialogue response with Jarvis personality
      */

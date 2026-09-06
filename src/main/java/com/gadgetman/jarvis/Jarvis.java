@@ -14,7 +14,9 @@ import com.gadgetman.jarvis.ui.UIManager;
 import com.gadgetman.jarvis.DatabaseManager;
 import com.gadgetman.jarvis.building.BuildingAssistant;
 import com.gadgetman.jarvis.memory.ExperienceMemory;
+import com.gadgetman.jarvis.recovery.TaskRecoveryHandler;
 import com.gadgetman.jarvis.schematics.SchematicManager;
+import com.gadgetman.jarvis.schematics.RequestDecomposer;
 import com.gadgetman.jarvis.listeners.ChatListener;
 import com.gadgetman.jarvis.steward.DutyScheduler;
 import com.gadgetman.jarvis.steward.MorningReport;
@@ -49,6 +51,8 @@ public class Jarvis extends JavaPlugin {
     private DutyScheduler dutyScheduler;
     private MorningReport morningReport;
     private ExperienceMemory experienceMemory;
+    private TaskRecoveryHandler taskRecoveryHandler;
+    private RequestDecomposer requestDecomposer;
 
     @Override
     public void onEnable() {
@@ -69,6 +73,7 @@ public class Jarvis extends JavaPlugin {
         databaseManager.initializeDatabaseConnections();
 
         experienceMemory = new ExperienceMemory(this);
+        taskRecoveryHandler = new TaskRecoveryHandler(this);
 
         if (getServer().getPluginManager().getPlugin("Citizens") != null) {
             jarvisNPC = new JarvisNPC(this);
@@ -85,6 +90,7 @@ public class Jarvis extends JavaPlugin {
         // Initialize systems
         buildingAssistant = new BuildingAssistant(this);
         schematicManager = new SchematicManager(this);
+        requestDecomposer = new RequestDecomposer(this);
         actionExecutor = new JarvisActionExecutor(this);
         confirmationManager = new ConfirmationManager(
                 getConfig().getLong("confirmation-timeout-seconds", 30));
@@ -141,6 +147,12 @@ public class Jarvis extends JavaPlugin {
         if (experienceMemory != null) {
             experienceMemory.reload();
         }
+        if (taskRecoveryHandler != null) {
+            taskRecoveryHandler.reload();
+        }
+        if (requestDecomposer != null) {
+            requestDecomposer.reload();
+        }
         getLogger().info("Jarvis v" + version + " reloaded!");
     }
 
@@ -188,6 +200,14 @@ public class Jarvis extends JavaPlugin {
 
     public ExperienceMemory getExperienceMemory() {
         return experienceMemory;
+    }
+
+    public TaskRecoveryHandler getTaskRecoveryHandler() {
+        return taskRecoveryHandler;
+    }
+
+    public RequestDecomposer getRequestDecomposer() {
+        return requestDecomposer;
     }
 
     public String getVersion() {
@@ -260,6 +280,19 @@ public class Jarvis extends JavaPlugin {
             var embedder = experienceMemory.getEmbeddingClient();
             requester.sendMessage("§7  embeddings: " + embedder.getModel() + " — "
                     + (embedder.isAvailable() ? "§aok" : "§ccooling down: " + embedder.getLastError()));
+        }
+
+        if (taskRecoveryHandler == null || !taskRecoveryHandler.isEnabled()) {
+            requester.sendMessage("§7Self-explain recovery: disabled");
+        } else {
+            requester.sendMessage("§aSelf-explain recovery: §fenabled");
+        }
+
+        if (requestDecomposer == null || !requestDecomposer.isEnabled()) {
+            requester.sendMessage("§7Schematic feature tags: disabled");
+        } else {
+            requester.sendMessage("§aSchematic feature tags: §fenabled §7("
+                    + requestDecomposer.getCachedCount() + " requests decomposed this session)");
         }
 
         // Show systems status

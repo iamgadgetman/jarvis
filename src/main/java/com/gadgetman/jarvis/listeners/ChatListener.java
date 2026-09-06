@@ -273,21 +273,52 @@ public class ChatListener implements Listener {
      * schematic library (a constrained choice small models handle well);
      * freeform AI block-planning is only the fallback — and is unavailable
      * in reduced mode.
+     *
+     * <p>v0.11.0: the request is decomposed into feature tags first, and the
+     * library is scored against those. A confident tag match is taken without
+     * asking a model to pick at all — which is the point, because that
+     * decomposition is cached and a repeat request then costs nothing. Only a
+     * weak match falls through to the AI pick, and it now goes with the tags
+     * in hand rather than the bare sentence.
      */
     private void startSchematicFirstBuild(Player player, String desc) {
         new BukkitRunnable() {
             @Override public void run() {
                 String pick = null;
-                if (plugin.getSchematicManager() != null) {
+                var schematics = plugin.getSchematicManager();
+                java.util.List<String> tags = java.util.List.of();
+
+                if (schematics != null) {
                     java.util.List<String> names = new java.util.ArrayList<>();
-                    for (var info : plugin.getSchematicManager().getSchematics()) {
+                    for (var info : schematics.getSchematics()) {
                         names.add(info.name);
                     }
                     if (!names.isEmpty()) {
-                        try {
-                            pick = aiConnector.pickSchematic(desc, names);
-                        } catch (Exception e) {
-                            plugin.getLogger().fine("Schematic pick failed: " + e.getMessage());
+                        var decomposer = plugin.getRequestDecomposer();
+                        if (decomposer != null) tags = decomposer.decompose(desc);
+
+                        int threshold = plugin.getConfig()
+                                .getInt("schematics.feature-tags.match-threshold", 85);
+                        int score = schematics.bestMatchScore(desc, tags);
+                        if (score >= threshold) {
+                            pick = schematics.bestMatchName(desc, tags);
+                            plugin.getLogger().fine("Feature-tag match for \"" + desc + "\": "
+                                    + pick + " (" + score + ", tags: "
+                                    + (tags.isEmpty() ? "none" : String.join(", ", tags)) + ")");
+                        }
+
+                        if (pick == null) {
+                            // Not confident enough to answer from the library
+                            // alone. The tags still go with the request — the
+                            // model is choosing from names, and knowing the
+                            // request means "storage" helps it do that.
+                            String enriched = tags.isEmpty() ? desc
+                                    : desc + " (asking for: " + String.join(", ", tags) + ")";
+                            try {
+                                pick = aiConnector.pickSchematic(enriched, names);
+                            } catch (Exception e) {
+                                plugin.getLogger().fine("Schematic pick failed: " + e.getMessage());
+                            }
                         }
                     }
                 }

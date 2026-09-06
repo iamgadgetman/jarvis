@@ -2,6 +2,7 @@ package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
 import com.gadgetman.jarvis.npc.provider.INPCProvider;
+import com.gadgetman.jarvis.recovery.TaskFailure;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
@@ -58,6 +59,8 @@ class Lumberjack {
     private int stalled = 0;
     private Location lastPos = null;
     private BukkitRunnable mainTask = null;   // v0.8.0: lets callbacks notice /jarvis stop
+    /** Set when self-explain decides to keep felling with nowhere to put the timber. */
+    private boolean depositsPaused = false;
 
     private static final int SEARCH_RADIUS = 24;
     private static final int MAX_TREE_LOGS = 80;
@@ -103,14 +106,28 @@ class Lumberjack {
             finish(self);
             return;
         }
-        if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2 && deposits.hasChest(player)) {
+        if (!depositsPaused && host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2
+                && deposits.hasChest(player)) {
             host.say(player, "Bags full of timber, sir — one delivery and I'll resume.");
             self.cancel();
             deposits.startDepositRun(player, deposits.getChest(player), () -> {
                 // v0.8.0: if the chest couldn't take it, don't loop forever
                 if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
-                    host.say(player, "The chest is full and so are my bags, sir. "
-                            + "The timber work is paused for now.");
+                    host.reportFailure(TaskFailure.of(player, "chop")
+                            .step("delivering a full load of timber to the deposit chest")
+                            .reason("the chest would not take the load and his own bags are still "
+                                    + "full, so nothing further can be picked up")
+                            .say("The chest is full and so are my bags, sir. "
+                                    + "The timber work is paused for now.")
+                            .where(host.getCurrentLocation(player))
+                            .state("loot slots used", host.lootSlotsUsed(player)
+                                    + " of " + JarvisNPC.LOOT_CAPACITY)
+                            .state("trees felled", treesFelled + " of " + treeQuota)
+                            .option("fell_without_collecting",
+                                    "carry on felling the remaining trees and leave the logs on the "
+                                    + "ground for the player to collect",
+                                    () -> resumeWithoutDeposits())
+                            .build());
                     return;
                 }
                 host.applyNavigatorDefaults(player, null);
@@ -280,6 +297,15 @@ class Lumberjack {
             }
         }
         return result;
+    }
+
+    /** Keep felling with nowhere to put the timber. Logs stay where they drop. */
+    private void resumeWithoutDeposits() {
+        if (!player.isOnline() || !provider.isSpawned(player)) return;
+        depositsPaused = true;
+        host.applyNavigatorDefaults(player, null);
+        host.equipTool(player, Material.DIAMOND_AXE);
+        start();
     }
 
     private void finish(BukkitRunnable self) {
