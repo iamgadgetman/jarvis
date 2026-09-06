@@ -894,11 +894,24 @@ public class AIConnector {
                 + "tower, keep, barn, hut, wall, bridge, farm.\n"
                 + "style = size or material ONLY if the request says so, otherwise \"\".\n"
                 + "Never name a material list and never name a step.\n"
+                // Three examples covered three of the ten purposes, and both
+                // models read "a place to keep my crops" as storage -- things do
+                // end up inside a barn. The rule and the farming example fixed
+                // it on both, and took llama3.2:3b from 5/7 to 6/7 while leaving
+                // qwen2.5:7b at 6/7. It also stopped the smaller model answering
+                // with a two-word purpose ("storing crops"), which no schematic
+                // name can ever match.
+                + "Pick the purpose from what the player will DO there, not from the fact that "
+                + "things end up inside it. Growing food is farming, not storage.\n"
                 + "Examples:\n"
                 + "\"somewhere to store my loot\" -> "
                 + "{\"purpose\":\"storage\",\"kind\":\"shed\",\"style\":\"\"}\n"
+                + "\"a place to keep my crops\" -> "
+                + "{\"purpose\":\"farming\",\"kind\":\"barn\",\"style\":\"\"}\n"
                 + "\"a cosy little cottage\" -> "
                 + "{\"purpose\":\"shelter\",\"kind\":\"cottage\",\"style\":\"small\"}\n"
+                + "\"somewhere to hold off a siege\" -> "
+                + "{\"purpose\":\"defence\",\"kind\":\"keep\",\"style\":\"\"}\n"
                 + "\"a spot by the lake for angling\" -> "
                 + "{\"purpose\":\"fishing\",\"kind\":\"hut\",\"style\":\"\"}";
         return sendTiered(Tier.LIGHT, "Build request: \"" + description + "\"", systemPrompt, true);

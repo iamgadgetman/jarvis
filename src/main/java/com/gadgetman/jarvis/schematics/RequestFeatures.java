@@ -60,6 +60,11 @@ public record RequestFeatures(String purpose, String kind, String style) {
      * One word, lowercase, letters and digits only. The scorer ignores anything
      * shorter than three characters, so those are dropped here rather than
      * carried around looking meaningful.
+     *
+     * <p>A model that answers with two words survives this as one run-together
+     * token ("storing crops" becomes "storingcrops"), which matches no
+     * schematic name and so costs a match rather than causing a wrong one. The
+     * prompt's examples are what stop it happening; this is only the backstop.
      */
     private static String clean(String word) {
         if (word == null) return "";

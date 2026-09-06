@@ -1,5 +1,43 @@
 # Jarvis Changelog
 
+## v0.12.3 (2026-09-06) — checked against the model the servers actually run
+
+0.12.2 was tuned on `llama3.2:3b`. The two live servers run **`qwen2.5:7b`**, so
+both prompts were re-measured against that before deploying.
+
+Self-explain carried over cleanly: **8/8 fully correct**, 2.5 s average — the
+affirmative action rule and the required-fields declaration hold on the larger
+model too.
+
+The decomposition did not, quite. Both models read *"a place to keep my crops"*
+as `storage`/`shed` rather than `farming`/`barn` — things do end up inside a
+barn — and on qwen that scored 90, clearing the threshold and being taken as the
+answer. A confident wrong answer is the worst shape a miss can take.
+
+### Changed
+
+- **The decomposition prompt covers more of its own vocabulary.** It offered ten
+  purposes and gave examples of three. Now five, adding farming and defence, plus
+  the rule that decides the crops case: *pick the purpose from what the player
+  will DO there, not from the fact that things end up inside it.*
+
+  Measured on both models, seven requests through the real scorer:
+
+  | | before | after |
+  |---|---|---|
+  | `qwen2.5:7b` (deployed) | 6/7 | 6/7 |
+  | `llama3.2:3b` | 5/7 | 6/7 |
+
+  No answer was made worse than no decomposition at all, in any of the four
+  combinations. Run-to-run variance on the same model is roughly one case, so
+  these are close together — the change is neutral-to-better rather than a
+  clear win, and it is being made for the defect it removes rather than the
+  score.
+
+- It also stopped the smaller model answering with a two-word purpose
+  ("storing crops"), which survives cleaning as one run-together token and can
+  match no schematic name at all.
+
 ## v0.12.2 (2026-09-06) — measured against a model that will actually run it
 
 0.11.0 and 0.12.0 shipped two new prompts that had never met a model. A small
