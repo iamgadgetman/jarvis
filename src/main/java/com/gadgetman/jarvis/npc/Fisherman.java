@@ -192,6 +192,7 @@ class Fisherman {
         item.setVelocity(toNpc.normalize().multiply(0.3).setY(0.35));
 
         catches++;
+        host.credit(player, com.gadgetman.jarvis.progression.ServiceRecord.Discipline.FISHING, 1);
         if (provider.getEntity(player) instanceof LivingEntity le) le.swingMainHand();
 
         if (treasure) {

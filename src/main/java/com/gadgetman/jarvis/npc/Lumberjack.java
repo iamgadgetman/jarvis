@@ -181,6 +181,7 @@ class Lumberjack {
             logsCollected++;
             timberCascade(tree, base, species, () -> {
                 treesFelled++;
+                host.credit(player, com.gadgetman.jarvis.progression.ServiceRecord.Discipline.FORESTRY, 1);
                 host.sayQuiet(player, "Timber! " + treesFelled + "/" + treeQuota + " down.");
                 if (replant) {
                     replantSapling(base, species);

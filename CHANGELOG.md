@@ -1,5 +1,32 @@
 # Jarvis Changelog
 
+## Unreleased
+
+### Changed
+
+- **The trident is an underwater weapon, not a permanent upgrade.** It replaced
+  the sword outright at the top rank, which made the best rank worse at ordinary
+  fighting than the one below it — Impaling does nothing to anything that walks,
+  and a trident is a poor melee weapon on dry land. He now draws it only when his
+  head is underwater and carries the netherite sword everywhere else, swapping as
+  he wades in and out. Throwing it is likewise underwater-only, where closing the
+  distance by swimming is slowest.
+- A weapon an operator placed by hand is never swapped away; only kit Jarvis
+  issued himself is exchanged.
+
+### Fixed
+
+- **Building never counted toward the service record.** `CONSTRUCTION` was
+  weighted in the service score and shown in the record UI, but nothing ever
+  credited it — "blocks laid" read zero permanently and building contributed
+  nothing to progression. Freeform builds now credit the blocks they place.
+  Schematic pastes still do not; see `ROADMAP.md`.
+
+### Notes
+
+- Archery and spears are planned as further weaponry expertise — see `ROADMAP.md`
+  for the constraints that will shape them.
+
 ## v0.12.3 (2026-09-06) — checked against the model the servers actually run
 
 0.12.2 was tuned on `llama3.2:3b`. The two live servers run **`qwen2.5:7b`**, so

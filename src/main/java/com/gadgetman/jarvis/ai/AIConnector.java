@@ -751,6 +751,11 @@ public class AIConnector {
                 "  mine_here - dig a full torch-lit branch mine at the current spot: it descends to\n" +
                 "              diamond level and then tunnels SIDEWAYS. Below that depth it has\n" +
                 "              nothing to descend to.\n" +
+                "  tunnel - drive a straight 3x3 passage in the direction he faces, lit as it goes.\n" +
+                "           Use for \"dig a tunnel\", \"tunnel that way\", \"cut me a passage\".\n" +
+                "           params: {length (optional): blocks, default 32,\n" +
+                "                    direction (optional): north|south|east|west -- only the four\n" +
+                "                    cardinals are dug; anything else is rounded onto one}\n" +
                 "  dig_down - sink a vertical shaft straight down from where he stands, ladder-lined\n" +
                 "             and lit. params: {depth (optional): blocks, default 20}\n" +
                 "             Use for \"dig down\", \"dig a shaft\", \"dig down 20 blocks\".\n" +
@@ -804,6 +809,8 @@ public class AIConnector {
                 "  'come here' -> {\"action\":\"summon\",\"response\":\"At your service. Again.\"}\n" +
                 "  'start mining' -> {\"action\":\"mine\",\"response\":\"Manual labour. How delightfully medieval.\"}\n" +
                 "  'dig a mine here' -> {\"action\":\"mine_here\",\"response\":\"One proper mine, coming up. Do admire the torchwork.\"}\n" +
+                "  'dig a tunnel 40 blocks that way' -> {\"action\":\"tunnel\",\"parameters\":{\"length\":40},\"response\":\"Forty blocks of passage, sir. Mind the dust.\"}\n" +
+                "  'tunnel north' -> {\"action\":\"tunnel\",\"parameters\":{\"direction\":\"north\"},\"response\":\"Northward, sir.\"}\n" +
                 "  'follow me' -> {\"action\":\"follow\",\"response\":\"Right behind you, sir. As always.\"}\n" +
                 "  'protect me' -> {\"action\":\"guard\",\"parameters\":{\"stance\":\"defensive\"},\"response\":\"At your side, sir. Nothing touches you.\"}\n" +
                 "  'weapons free' -> {\"action\":\"attack\",\"response\":\"With pleasure, sir.\"}\n" +

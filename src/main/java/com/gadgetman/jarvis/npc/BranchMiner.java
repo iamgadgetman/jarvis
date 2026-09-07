@@ -54,11 +54,31 @@ class BranchMiner {
     private final INPCProvider provider;
     private final DepositManager deposits;
 
+    /** What shape of excavation this run is. */
+    enum Layout {
+        /** Staircase to depth, long gallery, ribs off both sides. Narrow. */
+        BRANCH_MINE,
+        /** A straight 3x3 passage on the level, going where he is facing. */
+        TUNNEL
+    }
+
+    private final Layout layout;
+    private final int tunnelLength;
+    /** Forced heading as {dx, dz}, or null to use whichever way he is facing. */
+    private final int[] heading;
+
     private final List<Step> plan = new ArrayList<>();
     private int index = 0;
     private Mode mode = Mode.EXECUTING;
 
     private final ArrayDeque<Location> digQueue = new ArrayDeque<>();
+
+    /**
+     * 3x3 rather than 1x2. Always on for a tunnel — a passage you cannot see
+     * down is not what anyone means by "tunnel" — and never on for a branch
+     * mine, where narrow corridors are the whole point of the pattern.
+     */
+    private boolean wideBore;
     private Location stepCell = null;
     private Location resumeCell = null;
     private int advanceTicks = 0;
@@ -88,6 +108,14 @@ class BranchMiner {
     private static final double MAX_TRANSITION_DISTANCE = 32.0;
 
     BranchMiner(JarvisNPC host, Player player, DepositManager deposits) {
+        this(host, player, deposits, Layout.BRANCH_MINE, 0, null);
+    }
+
+    BranchMiner(JarvisNPC host, Player player, DepositManager deposits,
+                Layout layout, int tunnelLength, int[] heading) {
+        this.layout = layout;
+        this.tunnelLength = tunnelLength;
+        this.heading = heading;
         this.host = host;
         this.plugin = host.getPlugin();
         this.player = player;
@@ -106,6 +134,31 @@ class BranchMiner {
 
     // ==================== PLANNING ====================
 
+    /**
+     * The cells to clear for one step along a tunnel.
+     *
+     * <p>Ordinarily a 1-wide, 2-high corridor — enough to walk down. At
+     * Peerless it becomes the full 3x3: one block either side on the
+     * perpendicular axis, three high. Nine times the digging for a gallery you
+     * can actually see down, which is the point of earning it.
+     *
+     * @param pdx,pdz the perpendicular axis to widen along
+     */
+    private List<Location> bore(World world, int x, int y, int z, int pdx, int pdz) {
+        List<Location> cells = new ArrayList<>(wideBore ? 9 : 2);
+        if (!wideBore) {
+            cells.add(new Location(world, x, y, z));
+            cells.add(new Location(world, x, y + 1, z));
+            return cells;
+        }
+        for (int side = -1; side <= 1; side++) {
+            for (int up = 0; up <= 2; up++) {
+                cells.add(new Location(world, x + pdx * side, y + up, z + pdz * side));
+            }
+        }
+        return cells;
+    }
+
     /** Build the whole mine as a deterministic list of steps, then start digging. */
     void start() {
         Location anchor = host.getCurrentLocation(player);
@@ -115,16 +168,42 @@ class BranchMiner {
         int minY = world.getMinHeight() + 5;
         int depth = Math.max(targetY, minY);
 
-        // Facing: snap the NPC's yaw to a cardinal direction
-        float yaw = ((anchor.getYaw() % 360) + 360) % 360;
-        int dx = 0, dz = 0;
-        if (yaw >= 315 || yaw < 45) dz = 1;        // south
-        else if (yaw < 135) dx = -1;               // west
-        else if (yaw < 225) dz = -1;               // north
-        else dx = 1;                               // east
+        int dx, dz;
+        if (heading != null) {
+            dx = heading[0];
+            dz = heading[1];
+        } else {
+            // Facing: snap the NPC's yaw to a cardinal direction
+            float yaw = ((anchor.getYaw() % 360) + 360) % 360;
+            dx = 0; dz = 0;
+            if (yaw >= 315 || yaw < 45) dz = 1;        // south
+            else if (yaw < 135) dx = -1;               // west
+            else if (yaw < 225) dz = -1;               // north
+            else dx = 1;                               // east
+        }
+
+        // The rank gate lives on the /jarvis tunnel command, not here.
+        wideBore = layout == Layout.TUNNEL;
 
         int fx = anchor.getBlockX(), fy = anchor.getBlockY(), fz = anchor.getBlockZ();
         int segment = 0;
+
+        if (layout == Layout.TUNNEL) {
+            int tx = fx, ty = fy, tz = fz;
+            for (int i = 1; i <= tunnelLength; i++) {
+                tx += dx; tz += dz;
+                plan.add(new Step(new Location(world, tx, ty, tz),
+                        bore(world, tx, ty, tz, dz, dx),
+                        placeTorches && i % torchInterval == 0, 0));
+            }
+            host.say(player, "Very good, sir. A three-by-three passage, "
+                    + tunnelLength + " blocks, heading " + Compass.name(dx, dz)
+                    + ". I shall keep it lit.");
+            host.applyNavigatorDefaults(player, () -> navStuck = true);
+            host.giveStartingEquipment(player);
+            runLoop();
+            return;
+        }
 
         // 1) Staircase down to depth (3-high clearance for the diagonal walk)
         int px = fx, py = fy, pz = fz;
@@ -143,9 +222,7 @@ class BranchMiner {
         int branchCount = 0;
         for (int i = 1; i <= corridorLength; i++) {
             px += dx; pz += dz;
-            List<Location> digs = new ArrayList<>(2);
-            digs.add(new Location(world, px, py, pz));
-            digs.add(new Location(world, px, py + 1, pz));
+            List<Location> digs = bore(world, px, py, pz, dz, dx);
             plan.add(new Step(new Location(world, px, py, pz),
                     digs, i % torchInterval == 0, corridorSegment));
 
@@ -158,9 +235,8 @@ class BranchMiner {
                     int bx = px, bz = pz;
                     for (int j = 1; j <= branchLength; j++) {
                         bx += bdx * side; bz += bdz * side;
-                        List<Location> bdigs = new ArrayList<>(2);
-                        bdigs.add(new Location(world, bx, py, bz));
-                        bdigs.add(new Location(world, bx, py + 1, bz));
+                        // Perpendicular to a branch is the corridor's own axis.
+                        List<Location> bdigs = bore(world, bx, py, bz, dx, dz);
                         plan.add(new Step(new Location(world, bx, py, bz),
                                 bdigs, j % torchInterval == 0, segment));
                     }

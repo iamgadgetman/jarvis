@@ -17,6 +17,10 @@ import com.gadgetman.jarvis.memory.ExperienceMemory;
 import com.gadgetman.jarvis.recovery.TaskRecoveryHandler;
 import com.gadgetman.jarvis.schematics.SchematicManager;
 import com.gadgetman.jarvis.schematics.RequestDecomposer;
+import com.gadgetman.jarvis.intent.IntentPipeline;
+import com.gadgetman.jarvis.progression.ProgressionManager;
+import com.gadgetman.jarvis.ui.TaskMonitor;
+import com.gadgetman.jarvis.voice.VoiceBridge;
 import com.gadgetman.jarvis.listeners.ChatListener;
 import com.gadgetman.jarvis.steward.DutyScheduler;
 import com.gadgetman.jarvis.steward.MorningReport;
@@ -53,6 +57,10 @@ public class Jarvis extends JavaPlugin {
     private ExperienceMemory experienceMemory;
     private TaskRecoveryHandler taskRecoveryHandler;
     private RequestDecomposer requestDecomposer;
+    private IntentPipeline intentPipeline;
+    private VoiceBridge voiceBridge;
+    private TaskMonitor taskMonitor;
+    private ProgressionManager progressionManager;
 
     @Override
     public void onEnable() {
@@ -87,6 +95,9 @@ public class Jarvis extends JavaPlugin {
 
         uiManager = new UIManager(this);
 
+        // Service record — created before anything can issue him a tool.
+        progressionManager = new ProgressionManager(this);
+
         // Initialize systems
         buildingAssistant = new BuildingAssistant(this);
         schematicManager = new SchematicManager(this);
@@ -97,6 +108,17 @@ public class Jarvis extends JavaPlugin {
         playerRequestManager = new PlayerRequestManager();
         dutyScheduler = new DutyScheduler(this);
         morningReport = new MorningReport(this);
+
+        // The one road from an utterance to an action; chat and voice both use it.
+        intentPipeline = new IntentPipeline(this);
+
+        // Ears. No-ops unless voice.enabled and Simple Voice Chat is installed.
+        voiceBridge = new VoiceBridge(this);
+        voiceBridge.register();
+
+        // Boss bar for long jobs, plus the order queue.
+        taskMonitor = new TaskMonitor(this);
+        taskMonitor.start();
 
         // Register listeners
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
@@ -127,6 +149,15 @@ public class Jarvis extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (progressionManager != null) {
+            progressionManager.saveAll();
+        }
+        if (taskMonitor != null) {
+            taskMonitor.shutdown();
+        }
+        if (voiceBridge != null) {
+            voiceBridge.shutdown();
+        }
         if (jarvisNPC != null) {
             jarvisNPC.dismissAll();
         }
@@ -208,6 +239,22 @@ public class Jarvis extends JavaPlugin {
 
     public RequestDecomposer getRequestDecomposer() {
         return requestDecomposer;
+    }
+
+    public ProgressionManager getProgressionManager() {
+        return progressionManager;
+    }
+
+    public TaskMonitor getTaskMonitor() {
+        return taskMonitor;
+    }
+
+    public VoiceBridge getVoiceBridge() {
+        return voiceBridge;
+    }
+
+    public IntentPipeline getIntentPipeline() {
+        return intentPipeline;
     }
 
     public String getVersion() {

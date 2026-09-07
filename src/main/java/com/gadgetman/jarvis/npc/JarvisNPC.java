@@ -265,6 +265,11 @@ public class JarvisNPC implements Listener {
 
     // ==================== BUTLER MESSAGING ====================
 
+    /** Public entry point for subsystems outside this package that need him to speak. */
+    public void speakTo(Player player, String text) {
+        say(player, text);
+    }
+
     void say(Player player, String text) {
         player.sendMessage(Component.text("Jarvis: ", NamedTextColor.GOLD)
                 .append(Component.text(text, NamedTextColor.WHITE)));
@@ -863,6 +868,7 @@ public class JarvisNPC implements Listener {
 
             if (success) {
                 state.oresMined++;
+                credit(player, com.gadgetman.jarvis.progression.ServiceRecord.Discipline.MINING, 1);
                 sayQuiet(player, "Mined " + formatOre(oreType) + " — " + state.oresMined + " so far.");
                 if (state.oresMined % 10 == 0) {
                     say(player, state.oresMined + " ores and counting, sir. The collection grows.");
@@ -1177,6 +1183,116 @@ public class JarvisNPC implements Listener {
             Material.DIAMOND_PICKAXE, Material.DIAMOND_SWORD, Material.DIAMOND_AXE,
             Material.DIAMOND_HOE, Material.FISHING_ROD);
 
+    // ==================== PROGRESSION ====================
+
+    /** Credit work toward the owner's service record. */
+    void credit(Player player, com.gadgetman.jarvis.progression.ServiceRecord.Discipline d, int amount) {
+        var progression = plugin.getProgressionManager();
+        if (progression != null && player != null) progression.record(player, d, amount);
+    }
+
+    /**
+     * A tool we issued carries our name on it. Anything else in his hand was
+     * put there deliberately — by an operator swapping his kit, say — and must
+     * not be silently replaced the next time a task starts.
+     */
+    static boolean isIssuedKit(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return false;
+        String name = item.getItemMeta().getDisplayName();
+        return name != null && name.contains("Jarvis's");
+    }
+
+    private static com.gadgetman.jarvis.progression.Rank.ToolKind kindOf(Material material) {
+        String n = material.name();
+        if (n.endsWith("_PICKAXE")) return com.gadgetman.jarvis.progression.Rank.ToolKind.PICKAXE;
+        if (n.endsWith("_SWORD"))   return com.gadgetman.jarvis.progression.Rank.ToolKind.SWORD;
+        if (n.endsWith("_AXE"))     return com.gadgetman.jarvis.progression.Rank.ToolKind.AXE;
+        if (n.endsWith("_HOE"))     return com.gadgetman.jarvis.progression.Rank.ToolKind.HOE;
+        return com.gadgetman.jarvis.progression.Rank.ToolKind.ROD;
+    }
+
+    /** Is his head underwater? The condition that decides trident vs sword. */
+    public boolean isSubmerged(Player player) {
+        NPC npc = getNPC(player);
+        if (npc == null || !npc.isSpawned()) return false;
+        if (!(npc.getEntity() instanceof LivingEntity le)) return false;
+        return le.getEyeLocation().getBlock().getType() == Material.WATER;
+    }
+
+    /**
+     * Draw the right weapon for where he is standing.
+     *
+     * <p>Trident in the water, sword on land. Impaling only does anything to
+     * things that swim, and a trident is a poor melee weapon everywhere else,
+     * so carrying it permanently made the top rank worse at ordinary fighting
+     * than the one below it.
+     *
+     * <p>Only ever swaps a weapon we issued. If an operator has handed him
+     * something of their own, that is a deliberate choice and it stays put.
+     */
+    void syncWeaponToSurroundings(Player player) {
+        var progression = plugin.getProgressionManager();
+        if (progression == null
+                || !progression.has(player, com.gadgetman.jarvis.progression.Rank.Capability.TRIDENT)) {
+            return;
+        }
+        NPC npc = getNPC(player);
+        if (npc == null) return;
+
+        ItemStack held = getToolInHand(npc);
+        if (held != null && held.getType() != Material.AIR && !isIssuedKit(held)) return;
+
+        boolean wet = isSubmerged(player);
+        Material want = wet
+                ? Material.TRIDENT
+                : progression.rankOf(player).toolFor(
+                        com.gadgetman.jarvis.progression.Rank.ToolKind.SWORD);
+        if (held != null && held.getType() == want) return;
+
+        equipKit(player, wet
+                ? com.gadgetman.jarvis.progression.Rank.ToolKind.TRIDENT
+                : com.gadgetman.jarvis.progression.Rank.ToolKind.SWORD);
+    }
+
+    /** Re-issue whatever he is holding, at the owner's current standing. */
+    public void refreshKit(Player player) {
+        NPC npc = getNPC(player);
+        if (npc == null) return;
+        ItemStack held = getToolInHand(npc);
+        equipKit(player, kindOf(held.getType() == Material.AIR
+                ? Material.DIAMOND_PICKAXE : held.getType()));
+    }
+
+    /**
+     * Put the rank-appropriate version of a tool in his hand.
+     *
+     * <p>If he is already holding that kind of tool and we did not issue it,
+     * it stays — an operator's hand-picked netherite axe is not something to
+     * overwrite at the start of every chopping run.
+     */
+    void equipKit(Player player, com.gadgetman.jarvis.progression.Rank.ToolKind kind) {
+        NPC npc = getNPC(player);
+        if (npc == null) return;
+
+        ItemStack held = getToolInHand(npc);
+        if (held != null && held.getType() != Material.AIR
+                && kindOf(held.getType()) == kind && !isIssuedKit(held)) {
+            return;                                  // player's own choice; leave it
+        }
+
+        var progression = plugin.getProgressionManager();
+        ItemStack item = progression != null
+                ? progression.kitItem(player, kind)
+                : new ItemStack(kind == com.gadgetman.jarvis.progression.Rank.ToolKind.ROD
+                        ? Material.FISHING_ROD : Material.DIAMOND_PICKAXE);
+
+        Inventory inv = npc.getOrAddTrait(Inventory.class);
+        ItemStack[] contents = inv.getContents();
+        contents[0] = item;
+        inv.setContents(contents);
+        npc.getOrAddTrait(Equipment.class).set(Equipment.EquipmentSlot.HAND, item);
+    }
+
     /** Put a tool in Jarvis's hand (slot 0 IS the held slot for player NPCs). */
     void equipTool(NPC npc, Material tool) {
         ItemStack item = new ItemStack(tool);
@@ -1195,7 +1311,13 @@ public class JarvisNPC implements Listener {
 
     /** Guard-mode loadout: sword in hand. The pickaxe returns when mining does. */
     void giveGuardEquipment(NPC npc) {
-        equipTool(npc, Material.DIAMOND_SWORD);
+        Player owner = ownerOf(npc);
+        if (owner != null) {
+            equipKit(owner, com.gadgetman.jarvis.progression.Rank.ToolKind.SWORD);
+            syncWeaponToSurroundings(owner);
+        } else {
+            equipTool(npc, Material.DIAMOND_SWORD);
+        }
     }
 
     // ==================== v0.7.0 ACTIVITIES ====================
@@ -1300,6 +1422,20 @@ public class JarvisNPC implements Listener {
 
     // ==================== OTHER COMMANDS ====================
 
+    /**
+     * Recall him to your side.
+     *
+     * <p>This used to set a navigation target once and hope. It had no arrival
+     * check, no stall handling, and passed {@code null} as the stuck callback —
+     * and since the navigator defaults deliberately replace Citizens'
+     * teleport-on-stuck, a blocked path meant he stopped walking and stood
+     * there silently forever. Coming out of a fresh mine, that is the common
+     * case rather than the rare one.
+     *
+     * <p>A recall must always succeed, so this watches him the way
+     * {@code follow} does: re-target a moving player, re-path once on a stall,
+     * and teleport as a last resort rather than give up.
+     */
     public void returnToPlayer(Player player) {
         NPC npc = getNPC(player);
         if (npc == null) return;
@@ -1309,17 +1445,99 @@ public class JarvisNPC implements Listener {
         Location npcLoc = getCurrentLocation(npc);
         Location playerLoc = player.getLocation();
 
-        // Walk when reasonable; teleport only across real distance
-        if (npcLoc.getWorld() == playerLoc.getWorld()
-                && npcLoc.distance(playerLoc) <= LAST_RESORT_TELEPORT_DISTANCE) {
-            applyNavigatorDefaults(npc, null);
-            npc.getNavigator().setTarget(playerLoc);
-            say(player, "On my way, sir.");
-        } else {
-            Location safeLoc = findSafeSpawnLocation(playerLoc);
-            npc.teleport(safeLoc, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+        // Another world, or too far to walk: hop straight there.
+        if (npcLoc.getWorld() != playerLoc.getWorld()
+                || npcLoc.distance(playerLoc) > LAST_RESORT_TELEPORT_DISTANCE) {
+            npc.teleport(findSafeSpawnLocation(playerLoc),
+                    org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
             say(player, "Right behind you, sir.");
+            return;
         }
+
+        applyNavigatorDefaults(npc, null);
+        npc.getNavigator().setTarget(player, false);
+        say(player, "On my way, sir.");
+
+        BukkitRunnable task = new BukkitRunnable() {
+            Location lastPos = null;
+            int stallTicks = 0;
+            int elapsed = 0;
+
+            @Override
+            public void run() {
+                if (!npc.isSpawned() || !player.isOnline()) {
+                    cancel();
+                    taskDone(player, this);
+                    return;
+                }
+
+                Location here = getCurrentLocation(npc);
+                Location there = player.getLocation();
+                elapsed++;
+
+                // Arrived.
+                if (here.getWorld() == there.getWorld() && here.distance(there) <= 3.0) {
+                    npc.getNavigator().cancelNavigation();
+                    sayQuiet(player, "At your side, sir.");
+                    cancel();
+                    taskDone(player, this);
+                    return;
+                }
+
+                // Followed you through a portal, or you ran off.
+                if (here.getWorld() != there.getWorld()
+                        || here.distance(there) > LAST_RESORT_TELEPORT_DISTANCE) {
+                    npc.getNavigator().cancelNavigation();
+                    npc.teleport(findSafeSpawnLocation(there),
+                            org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                    sayQuiet(player, "Caught up, sir.");
+                    cancel();
+                    taskDone(player, this);
+                    return;
+                }
+
+                // Not moving = stuck. Re-path once, then stop being precious
+                // about it and teleport: you asked him to come here.
+                if (lastPos != null && lastPos.getWorld() == here.getWorld()
+                        && here.distanceSquared(lastPos) < 0.09) {
+                    stallTicks++;
+                    if (stallTicks == 2) {
+                        npc.getNavigator().cancelNavigation();
+                        npc.getNavigator().setTarget(player, false);
+                    } else if (stallTicks >= 4) {
+                        npc.getNavigator().cancelNavigation();
+                        npc.teleport(findSafeSpawnLocation(there),
+                                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                        say(player, "The path was blocked, sir — I let myself through.");
+                        cancel();
+                        taskDone(player, this);
+                        return;
+                    }
+                } else {
+                    stallTicks = 0;
+                }
+                lastPos = here.clone();
+
+                // Keep chasing a moving player.
+                if (!npc.getNavigator().isNavigating()) {
+                    npc.getNavigator().setTarget(player, false);
+                }
+
+                // Hard ceiling, so a recall can never hang about indefinitely.
+                if (elapsed >= 30) {
+                    npc.getNavigator().cancelNavigation();
+                    npc.teleport(findSafeSpawnLocation(there),
+                            org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+                    say(player, "That was taking too long, sir. Here I am.");
+                    cancel();
+                    taskDone(player, this);
+                }
+            }
+        };
+
+        task.runTaskTimer(plugin, 20L, 20L);
+        beginTask(player, "return");
+        registerTask(player, task);
     }
 
     public void openInventory(Player player) {
@@ -1379,6 +1597,60 @@ public class JarvisNPC implements Listener {
      *
      * @param depth blocks down, or 0 for the configured default
      */
+    /**
+     * Drive a straight 3x3 passage where he is facing.
+     *
+     * <p>Gated on the Peerless rank. A 3x3 is nine times the digging of the
+     * corridor he starts out able to cut, so it is the first thing on the
+     * ladder that is a new job rather than a faster one.
+     */
+    public void tunnel(Player player, int length) {
+        tunnel(player, length, null);
+    }
+
+    public void tunnel(Player player, int length, String direction) {
+        NPC npc = getNPC(player);
+        if (npc == null) {
+            say(player, "Summon me first, sir — /jarvis summon.");
+            return;
+        }
+        var progression = plugin.getProgressionManager();
+        if (progression != null
+                && !progression.has(player, com.gadgetman.jarvis.progression.Rank.Capability.WIDE_BORE)) {
+            var need = com.gadgetman.jarvis.progression.Rank.PEERLESS;
+            say(player, "I'm not yet equal to a passage that size, sir. "
+                    + "Ask me again at " + need.title() + " — "
+                    + Math.max(0, need.serviceRequired() - progression.recordOf(player).service())
+                    + " more service.");
+            return;
+        }
+
+        stopTask(player);
+        miningStates.remove(player.getUniqueId());
+        int len = length > 0 ? length
+                : plugin.getConfig().getInt("mining.tunnel.default-length", 32);
+        len = Math.max(2, Math.min(len, plugin.getConfig().getInt("mining.tunnel.max-length", 128)));
+
+        int[] heading = null;
+        if (direction != null && !direction.isBlank()) {
+            Compass.Heading parsed = Compass.parse(direction);
+            if (parsed == null) {
+                say(player, "I don't know which way \"" + direction + "\" is, sir. "
+                        + "North, south, east or west.");
+                return;
+            }
+            if (parsed.rounded()) {
+                say(player, "I only cut square passages on the compass points, sir — "
+                        + parsed.name() + " it is.");
+            }
+            heading = new int[]{ parsed.dx(), parsed.dz() };
+        }
+
+        BranchMiner tunneller = new BranchMiner(this, player, depositManager,
+                BranchMiner.Layout.TUNNEL, len, heading);
+        tunneller.start();
+    }
+
     public void digDown(Player player, int depth) {
         if (getNPC(player) == null) {
             say(player, "Summon me first, sir — /jarvis summon.");
@@ -1668,8 +1940,15 @@ public class JarvisNPC implements Listener {
      * nothing else may be written to slot 0, ever).
      */
     void giveStartingEquipment(NPC npc) {
-        ItemStack pickaxe = new ItemStack(Material.DIAMOND_PICKAXE);
-        pickaxe.addUnsafeEnchantment(Enchantment.FORTUNE, 3);
+        Player owner = ownerOf(npc);
+        var progression = plugin.getProgressionManager();
+        ItemStack pickaxe;
+        if (owner != null && progression != null) {
+            pickaxe = progression.kitItem(owner, com.gadgetman.jarvis.progression.Rank.ToolKind.PICKAXE);
+        } else {
+            pickaxe = new ItemStack(Material.DIAMOND_PICKAXE);
+            pickaxe.addUnsafeEnchantment(Enchantment.FORTUNE, 3);
+        }
 
         Inventory inv = npc.getOrAddTrait(Inventory.class);
         ItemStack[] contents = inv.getContents();
@@ -1716,6 +1995,34 @@ public class JarvisNPC implements Listener {
         return activeTasks.size();
     }
 
+    /**
+     * A short human phrase for what Jarvis is doing for this player right now,
+     * or {@code null} when he is idle.
+     *
+     * <p>Derived from live state rather than a label each task has to remember
+     * to set — the menu needed a status line and a label field would have meant
+     * touching every task starter, with a stale string the first time one
+     * forgot.
+     */
+    public String describeCurrentTask(UUID playerId) {
+        Defender defender = activeDefenders.get(playerId);
+        if (defender != null) {
+            return switch (defender.getMode()) {
+                case BODYGUARD -> "Guarding you";
+                case SENTRY    -> "Standing watch";
+                case PATROL    -> "Walking the patrol";
+            };
+        }
+        MiningState mining = miningStates.get(playerId);
+        if (mining != null) {
+            return mining.targetOreType != null
+                    ? "Mining " + formatOre(mining.targetOreType)
+                    : "Mining";
+        }
+        if (activeTasks.containsKey(playerId)) return "Working";
+        return null;
+    }
+
     // ==================== PLAYER-KEYED OVERLOADS ====================
     //
     // The helper classes (Farmer, Fisherman, Defender, ...) used to be handed a
@@ -1740,6 +2047,11 @@ public class JarvisNPC implements Listener {
     }
 
     void equipTool(Player player, Material tool) {
+        // Callers name a diamond tool; what he is actually handed depends on
+        // the owner's standing. Routed here so every task site gained
+        // progression without changing any of them.
+        equipKit(player, kindOf(tool));
+        if (true) return;
         NPC npc = getNPC(player);
         if (npc != null) equipTool(npc, tool);
     }

@@ -228,6 +228,7 @@ class Farmer {
         Material type = crop.getType();
         crop.breakNaturally(host.getToolInHand(player));
         harvested++;
+        host.credit(player, com.gadgetman.jarvis.progression.ServiceRecord.Discipline.FARMING, 1);
         loc.getWorld().playSound(target, Sound.BLOCK_CROP_BREAK, 0.8f, 1.0f);
 
         // Replant after the drops have spawned and been swept

@@ -882,6 +882,15 @@ public class BuildingAssistant {
             history.addLast(new UndoEntry(state.actions, state.aiGenerated, experience));
         }
 
+        // Building is a discipline like any other — credit it, or the service
+        // record shows a permanent zero for blocks laid while the score that
+        // uses it silently never moves.
+        if (plugin.getProgressionManager() != null && state.placedBlocks > 0) {
+            plugin.getProgressionManager().record(player,
+                    com.gadgetman.jarvis.progression.ServiceRecord.Discipline.CONSTRUCTION,
+                    state.placedBlocks);
+        }
+
         // Log to database
         try {
             Location loc = player.getLocation();

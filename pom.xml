@@ -22,6 +22,7 @@
              bundles it instead, for a server that cannot resolve it at start. -->
         <graaljs.version>25.3.4.1</graaljs.version>
         <graaljs.scope>provided</graaljs.scope>
+        <voicechat.api.version>2.6.20</voicechat.api.version>
     </properties>
 
     <repositories>
@@ -36,6 +37,10 @@
         <repository>
             <id>enginehub</id>
             <url>https://maven.enginehub.org/repo/</url>
+        </repository>
+        <repository>
+            <id>maxhenkel</id>
+            <url>https://maven.maxhenkel.de/repository/public</url>
         </repository>
     </repositories>
 
@@ -56,6 +61,18 @@
             <groupId>com.sk89q.worldedit</groupId>
             <artifactId>worldedit-bukkit</artifactId>
             <version>7.3.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <!--
+            Simple Voice Chat. API only, and pinned to the version the servers
+            actually run: the plugin is a soft dependency, so a Jarvis built
+            against a newer API than the installed jar would load fine and then
+            fail at the first call.
+        -->
+        <dependency>
+            <groupId>de.maxhenkel.voicechat</groupId>
+            <artifactId>voicechat-api</artifactId>
+            <version>${voicechat.api.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>

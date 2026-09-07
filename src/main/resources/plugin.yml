@@ -3,7 +3,7 @@ version: ${project.version}
 main: com.gadgetman.jarvis.Jarvis
 api-version: 1.21
 depend: [Citizens]
-softdepend: [WorldEdit, WorldGuard]
+softdepend: [WorldEdit, WorldGuard, voicechat]
 # GraalJS, which runs the model-written build scripts. Downloaded once on first
 # start and cached in the server's libraries/ folder, which keeps this jar at
 # ~1 MB rather than ~60 MB. If it cannot be resolved the plugin still loads and

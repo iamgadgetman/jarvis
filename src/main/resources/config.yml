@@ -244,6 +244,14 @@ mining:
   tunnel-height: 2            # Height of mining tunnels
   
   # Torch placement (DISABLED by default in 0.0.7)
+  # /jarvis tunnel [length] -- a straight 3x3 passage, unlocked at Peerless.
+  # Branch mines stay 1x2 on purpose: narrow corridors are the whole point of
+  # that pattern, and a 3x3 gallery would be nine times the digging for no
+  # more ore.
+  tunnel:
+    default-length: 32
+    max-length: 128
+
   place-torches: false        # Auto-place torches while mining
   torch-spacing: 8            # Blocks between torches
   torch-on-floor: true        # Place torches on floor vs walls
@@ -349,6 +357,109 @@ mining:
     torch-interval: 8            # Torch every N blocks
 
 # ========== NATURAL LANGUAGE CONFIGURATION ==========
+# ========== PROGRESSION ==========
+# Jarvis earns his kit. Work done for a player raises that player's service
+# record; the record decides his rank; the rank decides his tools. He starts at
+# iron and can never end up worse -- service only ever goes up, and every tool
+# he is issued is unbreakable, so his kit is never a maintenance chore.
+#
+# The ladder is front-loaded on purpose. The early ranks land quickly, while
+# you are still learning what he can do; the last ones are the long haul.
+progression:
+  enabled: true
+  # Operators skip the ladder and get the top kit. They already equip him by
+  # dropping tools into his kit slot, and that still works either way.
+  op-bypass: true
+  # Multiplier on everything credited. Raise to make the climb quicker.
+  rate: 1.0
+  # What rank an exempt operator is treated as. Blank = the top of the ladder,
+  # which is what you almost always want: a bypass that stops short silently
+  # withholds the capabilities above it. Set a name or number to pin it lower
+  # for testing, e.g. "Peerless" or 9.
+  op-rank: ""
+
+# ========== UI ==========
+ui:
+  # Boss bar above the hotbar while Jarvis is working: what he's doing, how
+  # full his pockets are, and how many orders are still queued. Long jobs then
+  # report themselves without filling the chat box.
+  task-bar: true
+  # /jarvis queue <order> -- line orders up instead of issuing them one at a
+  # time. The next starts when the current one finishes.
+  task-queue: true
+
+# ========== VOICE (Simple Voice Chat) ==========
+# Jarvis listens on the voice chat channel and runs what he hears through the
+# same intent pipeline as chat. Needs the Simple Voice Chat server plugin
+# installed, plus a speech endpoint (see voice.endpoint).
+#
+# Measured on the reference deployment, from the moment you stop speaking:
+#   transcription ~1.1s (base.en, int8, 8-thread CPU)
+#   intent parse  ~0.4s (warm local model)
+#   -> he starts moving in about a second and a half.
+voice:
+  enabled: false                 # Off until an endpoint is configured
+
+  # How Jarvis knows an utterance is for him:
+  #   whisper  hold the voice chat whisper key (default -- costs nothing,
+  #            never mistakes a conversation with another player for an order)
+  #   always   every transmission is treated as an order. Fine playing solo.
+  #   wake-word  transcribe everything, but only act on sentences that open
+  #            with a name from wake-words below. No keybind needed, and since
+  #            transcription is local the ignored sentences cost nothing.
+  gate: wake-word
+
+  # Matched loosely, and that is deliberate. Speech recognition mangles
+  # uncommon proper nouns: "Jarvis" came back from a real session as "garibas"
+  # and "garbous" every single time, so an exact match rejected every order
+  # given. Pick a common, phonetically distinct word -- "computer" is in every
+  # recogniser's vocabulary and is never misheard.
+  # Phrases may be several words, and the multi-word ones are the reliable
+  # ones -- a bare proper noun has no context for the recogniser to anchor on.
+  # Longest phrase is matched first, so "hey jarvis" strips both words.
+  wake-words:
+    - hey jarvis
+    - jarvis
+    - computer
+  wake-fuzz: 2                   # Max edit distance; only applied to words of 5+ letters
+  # How far into the sentence to look for the wake phrase. Recognition often
+  # prepends filler -- "hey jarvis build a shelter" arrived once as "Again, a
+  # Jarvis build a shelter", with the name third -- so requiring it to be the
+  # very first word drops real orders.
+  wake-scan-words: 4
+
+  # Passed to the recogniser to bias it toward names it would otherwise
+  # mangle. Costs nothing and measurably helps with proper nouns.
+  hotwords: "Jarvis"
+
+  # An OpenAI-compatible speech server (/v1/audio/transcriptions).
+  endpoint: "http://127.0.0.1:8000"
+  api-key: ""                    # Only if your endpoint requires one
+  timeout-seconds: 20
+
+  # base.en transcribed test orders verbatim in 1.1s where small.en took 3.0s
+  # for identical text. Short imperative sentences do not need the bigger
+  # model; move up only if you are misheard.
+  stt-model: "guillaumekln/faster-whisper-base.en"
+
+  silence-ms: 700                # Quiet gap that ends a sentence
+  min-seconds: 0.4               # Shorter than this is a cough, not an order
+  max-seconds: 15.0              # Hard cap on one utterance
+  echo-transcript: true          # Show what he heard, so mishears are obvious
+
+  # ---- Jarvis speaking back ----
+  # Positional when he is standing with you (the voice comes out of the NPC),
+  # and straight into your ear when he is away working and would otherwise be
+  # out of earshot.
+  speak-replies: true
+  echo-spoken-text: true         # Also print what he says, for noisy rooms
+  # A 24 kHz voice upsamples to 48 kHz exactly, with no resampling artefacts.
+  tts-model: "speaches-ai/piper-en_GB-alan-medium"
+  tts-voice: "alan"
+  require-summoned: false        # Only listen when Jarvis is actually out
+  debug: false                   # Log every mic packet (throttled) and every
+                                 # transcript the wake word rejected
+
 natural-language:
   enabled: true                  # Enable chat commands
   prefix: "jarvis"               # Command prefix
@@ -433,6 +544,8 @@ steward:
 farming:
   field-radius: 16               # Crop scan radius around where he starts
   replant-saplings: true         # Lumberjack replants after felling
+  chop-count: 5                  # Trees per "Fell N trees" order from the bell
+                                 # menu (1-32). /jarvis chop <n> still overrides.
 
 # ========== LIGHTING (v0.8.0) ==========
 # /jarvis light [radius] [type] [spacing] — spawn-proof the area.

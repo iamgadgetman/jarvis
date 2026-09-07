@@ -3,6 +3,7 @@ package com.gadgetman.jarvis.commands;
 import com.gadgetman.jarvis.ConfirmationManager;
 import com.gadgetman.jarvis.JarvisActionExecutor;
 import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.intent.IntentPipeline;
 import com.gadgetman.jarvis.building.BuildingAssistant;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
@@ -445,6 +446,19 @@ public class JarvisCommands implements CommandExecutor {
                     player.sendMessage(ChatColor.RED + "Invalid request ID.");
                 }
             }
+            case "tunnel" -> {
+                // Either order: "tunnel north 40" and "tunnel 40 north" both read
+                // naturally, so take whichever argument parses as a number.
+                int len = 0;
+                String dir = null;
+                for (int i = 1; i < args.length; i++) {
+                    try { len = Integer.parseInt(args[i]); }
+                    catch (NumberFormatException ignored) { dir = args[i]; }
+                }
+                plugin.getJarvisNPC().tunnel(player, len, dir);
+            }
+            case "rank", "service" -> handleRank(player, args);
+            case "queue" -> handleQueue(player, args);
             case "help"      -> showHelp(player);
 
             default -> {
@@ -469,45 +483,125 @@ public class JarvisCommands implements CommandExecutor {
                 // Unknown subcommand — treat entire input as natural language
                 String nlInput = String.join(" ", args);
                 player.sendMessage(ChatColor.GOLD + "Jarvis: Very good, sir. On it...");
-                // v0.8.0: gather the Bukkit-API context HERE, on the main
-                // thread, before handing off to the async AI call.
-                final String context = "Location: " + player.getWorld().getName()
-                        + ", Health: " + (int) player.getHealth() + "/20"
-                        + ", Jarvis summoned: " + (plugin.getJarvisNPC().getNPC(player) != null);
-                new BukkitRunnable() {
-                    @Override public void run() {
-                        try {
-                            String resp = plugin.getAIConnector().parseNaturalLanguage(
-                                    nlInput, player.getName(), context);
-                            JSONObject action = new JSONObject(resp);
-                            String actionType  = action.optString("action", "unknown");
-                            JSONObject params   = action.optJSONObject("parameters");
-                            String aiResponse  = action.optString("response", "");
-
-                            new BukkitRunnable() {
-                                @Override public void run() {
-                                    if (!aiResponse.isEmpty()) {
-                                        player.sendMessage(ChatColor.AQUA + "Jarvis: " + ChatColor.WHITE + aiResponse);
-                                    }
-                                    if (!actionType.isEmpty() && !actionType.equals("unknown")) {
-                                        executeNLAction(player, actionType, params);
-                                    } else if (aiResponse.isEmpty()) {
-                                        player.sendMessage(ChatColor.GRAY + "Jarvis: Not sure what you mean — try /jarvis help");
-                                    }
-                                }
-                            }.runTask(plugin);
-                        } catch (Exception e) {
-                            new BukkitRunnable() {
-                                @Override public void run() {
-                                    player.sendMessage(ChatColor.RED + "Jarvis: Couldn't process that. Try /jarvis help");
-                                }
-                            }.runTask(plugin);
-                        }
-                    }
-                }.runTaskAsynchronously(plugin);
+                // Was a third copy of the chat dispatch, drifted: it had a
+                // thinner world context, no conversation memory, no
+                // reduced-mode guard, and silently lacked build/report/
+                // recover/home. One road now.
+                plugin.getIntentPipeline().submit(
+                        player, nlInput, IntentPipeline.Source.CONSOLE);
             }
         }
         return true;
+    }
+
+    /**
+     * /jarvis rank — how he has earned his kit.
+     * /jarvis rank set &lt;name|number&gt; | reset  (admin)
+     */
+    private void handleRank(Player player, String[] args) {
+        var progression = plugin.getProgressionManager();
+        if (progression == null || !progression.isEnabled()) {
+            player.sendMessage(ChatColor.GRAY + "Jarvis: Progression is switched off, sir.");
+            return;
+        }
+        var record = progression.recordOf(player);
+        var rank   = progression.rankOf(player);
+
+        if (args.length >= 2 && (args[1].equalsIgnoreCase("set") || args[1].equalsIgnoreCase("reset"))) {
+            if (!player.hasPermission("jarvis.admin")) {
+                player.sendMessage(ChatColor.RED + "Jarvis: That is not yours to decide, sir.");
+                return;
+            }
+            if (args[1].equalsIgnoreCase("reset")) {
+                progression.save(player.getUniqueId(),
+                        new com.gadgetman.jarvis.progression.ServiceRecord());
+                player.sendMessage(ChatColor.YELLOW + "Service record cleared. Reconnect to reload it.");
+                return;
+            }
+            if (args.length < 3) {
+                player.sendMessage(ChatColor.RED + "Usage: /jarvis rank set <name|1-"
+                        + RANKS.length + ">");
+                return;
+            }
+            com.gadgetman.jarvis.progression.Rank target = null;
+            try {
+                int n = Integer.parseInt(args[2]);
+                if (n >= 1 && n <= RANKS.length) target = RANKS[n - 1];
+            } catch (NumberFormatException ignored) {
+                for (var r : RANKS) {
+                    if (r.name().equalsIgnoreCase(args[2]) || r.title().equalsIgnoreCase(args[2])) target = r;
+                }
+            }
+            if (target == null) {
+                player.sendMessage(ChatColor.RED + "No such rank: " + args[2]);
+                return;
+            }
+            record.setServiceFloor(target);
+            progression.save(player.getUniqueId(), record);
+            progression.reissueKit(player);
+            player.sendMessage(ChatColor.GREEN + "Jarvis is now " + target.title() + ".");
+            return;
+        }
+
+        player.sendMessage(ChatColor.GOLD + "=== Jarvis - Service Record ===");
+        player.sendMessage(ChatColor.WHITE + "  Rank " + rank.number() + "/" + RANKS.length
+                + ChatColor.GRAY + " - " + ChatColor.YELLOW + rank.title());
+        if (progression.isExempt(player)) {
+            player.sendMessage(ChatColor.LIGHT_PURPLE
+                    + "  Operator: issued the top kit without the climb.");
+        } else {
+            player.sendMessage(ChatColor.GRAY + "  Service: " + ChatColor.WHITE + record.service());
+            var next = rank.next();
+            if (next != null) {
+                player.sendMessage(ChatColor.GRAY + "  Next: " + ChatColor.AQUA + next.title()
+                        + ChatColor.GRAY + " in " + ChatColor.WHITE + record.serviceToNext()
+                        + ChatColor.GRAY + " more - brings " + ChatColor.WHITE + next.whatIsNew());
+            } else {
+                player.sendMessage(ChatColor.GRAY + "  Nothing left to earn, sir.");
+            }
+        }
+        player.sendMessage(ChatColor.GRAY + "  Ore " + record.oresMined()
+                + " | Trees " + record.treesFelled()
+                + " | Crops " + record.cropsHarvested()
+                + " | Fish " + record.fishCaught()
+                + " | Threats " + record.threatsFelled()
+                + " | Blocks " + record.blocksPlaced());
+    }
+
+    private static final com.gadgetman.jarvis.progression.Rank[] RANKS =
+            com.gadgetman.jarvis.progression.Rank.values();
+
+    /**
+     * /jarvis queue &lt;order&gt; | list | clear — line up orders.
+     *
+     * <p>The point is not to type less, it is to stop standing about waiting
+     * for one job to finish before giving the next.
+     */
+    private void handleQueue(Player player, String[] args) {
+        var monitor = plugin.getTaskMonitor();
+        if (monitor == null) {
+            player.sendMessage(ChatColor.RED + "Jarvis: The queue is not running, sir.");
+            return;
+        }
+        if (args.length < 2 || args[1].equalsIgnoreCase("list")) {
+            var pending = monitor.queued(player.getUniqueId());
+            if (pending.isEmpty()) {
+                player.sendMessage(ChatColor.GRAY + "Jarvis: Nothing on the list, sir.");
+                return;
+            }
+            player.sendMessage(ChatColor.GOLD + "Jarvis — orders in hand:");
+            int n = 1;
+            for (String order : pending) {
+                player.sendMessage(ChatColor.GRAY + "  " + (n++) + ". " + ChatColor.WHITE + order);
+            }
+            return;
+        }
+        if (args[1].equalsIgnoreCase("clear")) {
+            monitor.clearQueue(player);
+            return;
+        }
+        String order = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
+        monitor.enqueue(player, "jarvis " + order);
     }
 
     /** v0.5.0: /jarvis duty add <interval_minutes> <message...> | remove <id> */
@@ -696,72 +790,6 @@ public class JarvisCommands implements CommandExecutor {
         admin.sendMessage(ChatColor.GRAY + "Denied request #" + id + " from " + req.playerName + ".");
     }
 
-    /** Execute an action resolved from natural language input in /jarvis <...> */
-    private void executeNLAction(Player player, String actionType, JSONObject params) {
-        JarvisActionExecutor executor = plugin.getActionExecutor();
-
-        // Check if this is an extended world action
-        boolean isExtended = switch (actionType) {
-            case "give_item", "enchant", "potion_effect", "heal", "feed",
-                 "set_gamemode", "teleport", "set_time", "set_weather", "set_gamerule",
-                 "broadcast", "server_say", "lp_group_add", "lp_group_remove",
-                 "warp", "discord_broadcast", "paste_schematic" -> true;
-            default -> false;
-        };
-
-        if (executor != null && isExtended) {
-            if (JarvisActionExecutor.DANGEROUS_ACTIONS.contains(actionType)) {
-                String desc = executor.describe(actionType, params);
-                plugin.getConfirmationManager().setPending(
-                        player.getUniqueId(), actionType, params, desc);
-                player.sendMessage(ChatColor.YELLOW + "Jarvis: I want to — " + desc);
-                Component confirm = Component.text("[Confirm]", NamedTextColor.GREEN)
-                        .clickEvent(ClickEvent.runCommand("/jarvis confirm"))
-                        .hoverEvent(HoverEvent.showText(Component.text("Execute: " + desc)));
-                Component cancel = Component.text(" [Cancel]", NamedTextColor.RED)
-                        .clickEvent(ClickEvent.runCommand("/jarvis cancel"))
-                        .hoverEvent(HoverEvent.showText(Component.text("Cancel this action")));
-                player.sendMessage(confirm.append(cancel));
-            } else {
-                String result = executor.execute(actionType, params, player);
-                if (result != null) player.sendMessage(ChatColor.GREEN + "[Jarvis] " + result);
-            }
-            return;
-        }
-
-        // NPC / core actions
-        switch (actionType.toLowerCase()) {
-            case "summon"                   -> plugin.getJarvisNPC().summon(player);
-            case "dismiss"                  -> plugin.getJarvisNPC().dismiss(player);
-            case "return", "come"           -> plugin.getJarvisNPC().returnToPlayer(player);
-            case "follow"                   -> plugin.getJarvisNPC().follow(player);
-            case "attack", "fight"          -> plugin.getJarvisNPC().guard(player, "aggressive");
-            case "guard", "defend", "protect"-> plugin.getJarvisNPC().guard(player, "defensive");
-            case "watch", "sentry"          -> plugin.getJarvisNPC().watch(player, null);
-            case "farm"                     -> plugin.getJarvisNPC().farm(player,
-                    params != null ? params.optString("crop", null) : null, false);
-            case "tend"                     -> plugin.getJarvisNPC().farm(player,
-                    params != null ? params.optString("crop", null) : null, true);
-            case "chop", "chop_trees"       -> plugin.getJarvisNPC().chop(player,
-                    params != null ? params.optInt("count", 5) : 5);
-            case "fish"                     -> plugin.getJarvisNPC().fish(player);
-            case "dance"                    -> plugin.getJarvisNPC().dance(player);
-            case "light", "light_area"      -> plugin.getJarvisNPC().light(player,
-                    params != null ? params.optInt("radius", -1) : -1,
-                    params != null ? params.optString("type", null) : null,
-                    params != null ? params.optInt("spacing", -1) : -1);
-            case "patrol"                   -> plugin.getJarvisNPC().patrol(player, "start");
-            case "stand_down"               -> plugin.getJarvisNPC().guard(player, "passive");
-            case "mine", "mining"           -> plugin.getJarvisNPC().mine(player);
-            case "mine_here", "branch_mine" -> plugin.getJarvisNPC().startBranchMining(player);
-            case "deposit"                  -> plugin.getJarvisNPC().getDepositManager().deposit(player);
-            case "set_chest"                -> plugin.getJarvisNPC().getDepositManager().setChest(player);
-            case "stop"                     -> plugin.getJarvisNPC().stop(player);
-            case "loot", "inventory"        -> plugin.getJarvisNPC().openInventory(player);
-            case "chat", "talk"             -> {} // AI response already shown above
-        }
-    }
-
     /**
      * What is actually running.
      *
@@ -777,6 +805,9 @@ public class JarvisCommands implements CommandExecutor {
             "add",
             "ai",
             "approve",
+            "queue",
+            "rank",
+            "tunnel",
             "ask",
             "attack",
             "bell",
@@ -952,6 +983,10 @@ public class JarvisCommands implements CommandExecutor {
         player.sendMessage(ChatColor.WHITE + "  /jarvis report" + ChatColor.GRAY + " - Server status briefing");
         player.sendMessage(ChatColor.WHITE + "  /jarvis duties" + ChatColor.GRAY + " - Standing scheduled duties");
         player.sendMessage(ChatColor.WHITE + "  /jarvis recover" + ChatColor.GRAY + " - Retrieve your death drops");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis tunnel [n|s|e|w] [length]" + ChatColor.GRAY + " - Drive a 3x3 passage (Peerless rank)");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis rank" + ChatColor.GRAY + " - Service record and what he has earned");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis queue <order>" + ChatColor.GRAY + " - Line up an order for when he's free");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis queue list|clear" + ChatColor.GRAY + " - Review or tear up the list");
         player.sendMessage(ChatColor.WHITE + "  /jarvis home set" + ChatColor.GRAY + " - Save this spot as home");
         player.sendMessage(ChatColor.WHITE + "  /jarvis home" + ChatColor.GRAY + " - Have Jarvis escort you home");
         

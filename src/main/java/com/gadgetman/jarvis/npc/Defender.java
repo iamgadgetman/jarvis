@@ -3,6 +3,9 @@ package com.gadgetman.jarvis.npc;
 import com.gadgetman.jarvis.Jarvis;
 import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.enchantments.Enchantment;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.Sound;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Enemy;
@@ -143,6 +146,108 @@ class Defender {
         host.registerTask(player, task);
     }
 
+    /** How far he'll throw, and how often. Beyond this he closes on foot. */
+    private static final double THROW_RANGE = 24.0;
+    private static final long   THROW_COOLDOWN_MS = 2500;
+    private long lastThrowMs = 0;
+
+    /**
+     * Throw the trident at something out of reach.
+     *
+     * <p>Thrown only while he is in the water — that is where a trident earns
+     * its place, and where closing the distance on foot is slowest.
+     *
+     * <p>The trident is spawned rather than taken from his hand: he never
+     * loses it, never has to walk back for it, and the Loyalty on the item is
+     * therefore decorative. Pickup is disallowed so a thrown trident cannot
+     * become loot on the floor and duplicate his kit.
+     *
+     * @return true if he threw, meaning he should hold position this tick
+     */
+    private boolean tryThrowTrident(LivingEntity target, double dist) {
+        var progression = host.getPlugin().getProgressionManager();
+        if (progression == null
+                || !progression.has(player, com.gadgetman.jarvis.progression.Rank.Capability.TRIDENT)) {
+            return false;
+        }
+        if (dist > THROW_RANGE) return false;
+
+        long now = System.currentTimeMillis();
+        if (now - lastThrowMs < THROW_COOLDOWN_MS) return true;   // winding up; stand still
+        lastThrowMs = now;
+
+        Entity self = provider.getEntity(player);
+        if (self == null) return false;
+
+        Location from = self.getLocation().add(0, 1.4, 0);
+        Vector toward = target.getLocation().add(0, 0.9, 0).toVector()
+                .subtract(from.toVector()).normalize();
+
+        provider.lookAt(player, target.getLocation());
+        if (self instanceof LivingEntity le) le.swingMainHand();
+
+        org.bukkit.entity.Trident spear =
+                from.getWorld().spawn(from, org.bukkit.entity.Trident.class, t -> {
+                    t.setShooter(self instanceof org.bukkit.projectiles.ProjectileSource src ? src : null);
+                    t.setVelocity(toward.multiply(2.5));
+                    t.setPickupStatus(org.bukkit.entity.AbstractArrow.PickupStatus.DISALLOWED);
+                    t.setDamage(9.0);
+                });
+        from.getWorld().playSound(from, Sound.ITEM_TRIDENT_THROW, 1f, 1f);
+
+        // Never leave it lying in the world if it misses everything.
+        final org.bukkit.entity.Trident thrown = spear;
+        new BukkitRunnable() {
+            @Override public void run() {
+                if (thrown.isValid()) thrown.remove();
+            }
+        }.runTaskLater(host.getPlugin(), 200L);
+
+        return true;
+    }
+
+    /**
+     * What his sword is actually worth.
+     *
+     * <p>Damage used to be a flat {@code defender.attack-damage} regardless of
+     * what he was holding, which made every weapon upgrade — and the whole
+     * Sharpness half of the service ladder — purely cosmetic in a fight. Now a
+     * netherite sword hits like one.
+     *
+     * <p>Values follow vanilla: sword base by tier, plus Sharpness at
+     * 1 + 0.5 per level beyond the first. The configured value is the floor,
+     * so a bare-handed Jarvis is no weaker than he used to be.
+     */
+    private double weaponDamage(ItemStack weapon) {
+        if (weapon == null || weapon.getType() == Material.AIR) return attackDamage;
+
+        double base = switch (weapon.getType()) {
+            case NETHERITE_SWORD  -> 8.0;
+            case DIAMOND_SWORD    -> 7.0;
+            case IRON_SWORD       -> 6.0;
+            case STONE_SWORD      -> 5.0;
+            case GOLDEN_SWORD, WOODEN_SWORD -> 4.0;
+            case NETHERITE_AXE    -> 10.0;
+            case DIAMOND_AXE      -> 9.0;
+            case IRON_AXE         -> 9.0;
+            case TRIDENT          -> 9.0;
+            default               -> attackDamage;
+        };
+
+        int sharpness = weapon.getEnchantmentLevel(Enchantment.SHARPNESS);
+        if (sharpness > 0) base += 1.0 + 0.5 * (sharpness - 1);
+
+        // Never worse than the old flat value.
+        return Math.max(base, attackDamage);
+    }
+
+    /** Fire Aspect is a real enchantment on his sword, so let it burn. */
+    private void applyFireAspect(ItemStack weapon, LivingEntity target) {
+        if (weapon == null) return;
+        int level = weapon.getEnchantmentLevel(Enchantment.FIRE_ASPECT);
+        if (level > 0) target.setFireTicks(Math.max(target.getFireTicks(), level * 80));
+    }
+
     /** Called by JarvisNPC's damage listener: someone hurt the player or Jarvis. */
     void recordThreat(Entity damager) {
         if (damager instanceof LivingEntity living && damager instanceof Enemy) {
@@ -229,6 +334,9 @@ class Defender {
         double dist = npcLoc.distance(target.getLocation());
 
         if (dist > ATTACK_REACH) {
+            // Underwater only: swimming to a guardian is slow and he is a
+            // sitting duck doing it. On land he closes and uses the sword.
+            if (host.isSubmerged(player) && tryThrowTrident(target, dist)) return;
             if (!navBusy || !provider.isNavigating(player)) {
                 provider.navigateTo(player, target, true);
                 navBusy = true;
@@ -239,6 +347,7 @@ class Defender {
         provider.cancelNavigation(player);
         navBusy = false;
         provider.lookAt(player, target.getLocation());
+        host.syncWeaponToSurroundings(player);
 
         long now = System.currentTimeMillis();
         if (now - lastAttackMs >= attackCooldownMs) {
@@ -246,10 +355,13 @@ class Defender {
             if (provider.getEntity(player) instanceof LivingEntity le) {
                 le.swingMainHand();
             }
-            target.damage(attackDamage, provider.getEntity(player));
+            ItemStack weapon = host.getToolInHand(player);
+            target.damage(weaponDamage(weapon), provider.getEntity(player));
+            applyFireAspect(weapon, target);
             npcLoc.getWorld().playSound(npcLoc, Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1f, 1f);
 
             if (target.isDead() || !target.isValid()) {
+                host.credit(player, com.gadgetman.jarvis.progression.ServiceRecord.Discipline.COMBAT, 1);
                 host.sayQuiet(player, "Threat neutralised.");
                 disengage();
             }
