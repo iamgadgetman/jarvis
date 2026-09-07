@@ -45,6 +45,20 @@
     </repositories>
 
     <dependencies>
+        <!--
+            Tests. The combat doctrine is a pure function of its situation and
+            was written that way on purpose, so the whole archery decision
+            table can be exercised without a server, a world, or a mock. That
+            is the only thing under test here. Anything needing a live Bukkit
+            registry is verified by deploying it, not by pretending.
+        -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.11.3</version>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.purpurmc.purpur</groupId>
             <artifactId>purpur-api</artifactId>
@@ -147,6 +161,14 @@
             </resource>
         </resources>
         <plugins>
+            <!-- Maven's default surefire predates JUnit 5 and would silently
+                 run no tests at all. Pin one that knows about it. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
