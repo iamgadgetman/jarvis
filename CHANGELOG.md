@@ -1,18 +1,96 @@
 # Jarvis Changelog
 
-## Unreleased
+## v0.13.0 (2026-09-07) — he hears you, and he earns his kit
+
+Most of what Jarvis could do was reachable only by typing, and his abilities did
+not change from the first hour to the hundredth. This release gives him ears and
+a voice, opens the rest of his repertoire to a menu, and makes his equipment
+something earned rather than issued.
+
+### Added — voice
+
+- **He listens, and he answers.** Simple Voice Chat hands over Opus frames;
+  `VoiceBridge` decodes them, treats a gap in packets as the end of a sentence,
+  transcribes, and feeds the result to the same intent pipeline chat uses. He
+  speaks back through the NPC when he is standing beside you and straight into
+  your ear when he is away working and would be out of earshot.
+- Measured on the reference deployment, from the moment you stop speaking:
+  transcription ~1.1 s (`base.en`, int8, 8-thread CPU), intent parse ~0.4 s — so
+  he starts moving in about a second and a half. `base.en` transcribed test
+  orders verbatim where `small.en` took 3.0 s for identical text.
+- Three ways to tell him an utterance is for him (`voice.gate`): `whisper` holds
+  the voice-chat whisper key and never mistakes a conversation with another
+  player for an order; `always` suits solo play; `wake-word` transcribes
+  everything and acts only on sentences carrying a wake phrase.
+- **The wake word is matched loosely on purpose.** Recognition mangles uncommon
+  proper nouns — "Jarvis" came back from a real session as *"garibas"* and
+  *"garbous"*, every time, so an exact match rejected every order given. Phrases
+  may be several words, and the multi-word ones are the reliable ones; "hey
+  jarvis" survives a degraded signal where a bare name does not. The phrase need
+  not open the sentence, because recognition prepends filler — "hey jarvis build
+  a shelter" arrived once as *"Again, a Jarvis build a shelter"*, with the name
+  third. Longest phrase matches first; `wake-fuzz` applies only to words of five
+  letters or more.
+- Speech is queued per player, so a reply that arrives in two parts is not
+  spoken over itself. Off by default (`voice.enabled: false`) until a speech
+  endpoint is configured; the endpoint is any OpenAI-compatible
+  `/v1/audio/transcriptions` server.
+- Simple Voice Chat is a **soft dependency**, and the API is pinned to the
+  version the servers actually run — built against a newer API than the
+  installed jar, Jarvis would load fine and then fail at the first call.
+
+### Added — progression
+
+- **Work raises a service record, the record sets a rank, the rank sets his
+  kit.** Iron through netherite over eight ranks, front-loaded so the early ones
+  land while you are still learning what he can do.
+- He cannot end up worse off: service only ever rises, and every tool he is
+  issued is unbreakable, so his kit is never a maintenance chore.
+- The last two ranks buy **capability rather than metal** — a 3x3 tunnel command
+  at Peerless, and a trident.
+- Combat damage now derives from the weapon rather than a flat constant.
+  Without that, the entire Sharpness half of the ladder was cosmetic.
+- Operators bypass the ladder (`progression.op-bypass`) and keep equipping him
+  by hand. A tool an operator placed is never overwritten by one he issued
+  himself.
+
+### Added — the bell menu
+
+- Fourteen of forty-odd capabilities were reachable from the menu; the rest were
+  command-only. Adds groundskeeping, guard stances, patrol, a paginated
+  schematic picker, the household services, the steward, and a
+  permission-gated admin page.
+- Menus are identified by a **holder** rather than by comparing title strings,
+  so renaming one cannot silently stop its clicks working.
+- Items reflect live state — a greyed-out "Deposit" saying no chest is
+  registered beats a button that fails when pressed.
+- `jarvis.menu.use` is now actually checked. It was declared and never enforced.
 
 ### Changed
 
+- **One intent pipeline.** The chat listener owned the road from an utterance to
+  an action, so chat was the only way in. That logic moves to `IntentPipeline`,
+  carrying a `Source` and a pluggable `Responder` — the only seam between typing
+  and speaking.
+- It turned out there were **three** copies of that dispatch, not one.
+  `JarvisCommands` had its own, drifted: a thinner world context, no
+  conversation memory, no reduced-mode guard, and silently missing build,
+  report, recover, home and dig_down. `/jarvis build me a house` did nothing
+  while the same words in chat worked. All three paths now run the same code.
 - **The trident is an underwater weapon, not a permanent upgrade.** It replaced
   the sword outright at the top rank, which made the best rank worse at ordinary
   fighting than the one below it — Impaling does nothing to anything that walks,
-  and a trident is a poor melee weapon on dry land. He now draws it only when his
-  head is underwater and carries the netherite sword everywhere else, swapping as
-  he wades in and out. Throwing it is likewise underwater-only, where closing the
-  distance by swimming is slowest.
-- A weapon an operator placed by hand is never swapped away; only kit Jarvis
-  issued himself is exchanged.
+  and a trident is a poor melee weapon on dry land. He now draws it only when
+  his head is underwater and carries the netherite sword everywhere else,
+  swapping as he wades in and out. Throwing it is likewise underwater-only,
+  where closing the distance by swimming is slowest.
+- A boss bar above the hotbar reports what he is doing, how full his pockets
+  are, and how many orders are queued; long jobs now report themselves without
+  filling the chat box. Both it and the order queue are driven from live state,
+  so no task class had to learn to report itself.
+- `/jarvis queue <order>` lines orders up instead of issuing them one at a time.
+- Tunnels take a cardinal direction and round an intercardinal onto the nearest
+  axis — a 3x3 bore does not tile on a diagonal.
 
 ### Fixed
 
@@ -21,11 +99,20 @@
   credited it — "blocks laid" read zero permanently and building contributed
   nothing to progression. Freeform builds now credit the blocks they place.
   Schematic pastes still do not; see `ROADMAP.md`.
+- `natural-language.cooldown-ms` was ignored in favour of a hardcoded value.
+- Model replies wrapped in a markdown fence failed to parse and fell back
+  silently to keyword matching.
+- The keyword fallback said nothing at all when it matched nothing.
+- **"Return" could leave him standing still indefinitely.** It set a target once
+  with no arrival check, no stall handling and a null stuck callback, so a
+  blocked path stranded him.
 
 ### Notes
 
-- Archery and spears are planned as further weaponry expertise — see `ROADMAP.md`
-  for the constraints that will shape them.
+- Archery and spears are planned as further weaponry expertise — see
+  `ROADMAP.md`, added this release, for the constraints that will shape them and
+  for what is known-unverified (3x3 stuck recovery, two or more players at once,
+  looting on projectile kills).
 
 ## v0.12.3 (2026-09-06) — checked against the model the servers actually run
 
