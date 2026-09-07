@@ -1208,6 +1208,8 @@ public class JarvisNPC implements Listener {
         if (n.endsWith("_SWORD"))   return com.gadgetman.jarvis.progression.Rank.ToolKind.SWORD;
         if (n.endsWith("_AXE"))     return com.gadgetman.jarvis.progression.Rank.ToolKind.AXE;
         if (n.endsWith("_HOE"))     return com.gadgetman.jarvis.progression.Rank.ToolKind.HOE;
+        if (material == Material.BOW)     return com.gadgetman.jarvis.progression.Rank.ToolKind.BOW;
+        if (material == Material.TRIDENT) return com.gadgetman.jarvis.progression.Rank.ToolKind.TRIDENT;
         return com.gadgetman.jarvis.progression.Rank.ToolKind.ROD;
     }
 
@@ -1232,26 +1234,41 @@ public class JarvisNPC implements Listener {
      */
     void syncWeaponToSurroundings(Player player) {
         var progression = plugin.getProgressionManager();
-        if (progression == null
-                || !progression.has(player, com.gadgetman.jarvis.progression.Rank.Capability.TRIDENT)) {
-            return;
-        }
+        if (progression == null) return;
+        boolean spear = isSubmerged(player)
+                && progression.has(player, com.gadgetman.jarvis.progression.Rank.Capability.TRIDENT);
+        // Also the way back from a bow: without the trident this used to bail
+        // out early, which was harmless when the sword was the only
+        // alternative and is not now that he can be holding one.
+        drawWeapon(player, spear
+                ? com.gadgetman.jarvis.progression.Rank.ToolKind.TRIDENT
+                : com.gadgetman.jarvis.progression.Rank.ToolKind.SWORD);
+    }
+
+    /**
+     * Put a specific weapon in his hand, if that is ours to decide.
+     *
+     * <p>Split out of {@link #syncWeaponToSurroundings} so the combat doctrine
+     * can ask for a bow as readily as the water check can ask for a trident.
+     * Two guards matter here and both are load-bearing: a weapon an operator
+     * placed by hand is never swapped away, and a weapon he is already holding
+     * is never re-issued — this runs inside a combat tick, and building an
+     * ItemStack every 10 ticks to hand him the sword he is already swinging is
+     * pure waste.
+     */
+    void drawWeapon(Player player, com.gadgetman.jarvis.progression.Rank.ToolKind kind) {
+        var progression = plugin.getProgressionManager();
+        if (progression == null) return;
         NPC npc = getNPC(player);
         if (npc == null) return;
 
         ItemStack held = getToolInHand(npc);
         if (held != null && held.getType() != Material.AIR && !isIssuedKit(held)) return;
 
-        boolean wet = isSubmerged(player);
-        Material want = wet
-                ? Material.TRIDENT
-                : progression.rankOf(player).toolFor(
-                        com.gadgetman.jarvis.progression.Rank.ToolKind.SWORD);
+        Material want = progression.rankOf(player).toolFor(kind);
         if (held != null && held.getType() == want) return;
 
-        equipKit(player, wet
-                ? com.gadgetman.jarvis.progression.Rank.ToolKind.TRIDENT
-                : com.gadgetman.jarvis.progression.Rank.ToolKind.SWORD);
+        equipKit(player, kind);
     }
 
     /** Re-issue whatever he is holding, at the owner's current standing. */

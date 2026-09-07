@@ -44,21 +44,26 @@ public enum Rank {
             Map.of(Enchantment.EFFICIENCY, 5, Enchantment.SHARPNESS, 3,
                    Enchantment.FORTUNE, 2, Enchantment.LOOTING, 2)),
 
+    /** Where combat stops being one escalating melee stat and gains a second shape. */
     INDISPENSABLE("Indispensable", 1500, Material.NETHERITE_PICKAXE,
             Map.of(Enchantment.EFFICIENCY, 5, Enchantment.SHARPNESS, 4,
-                   Enchantment.FORTUNE, 3, Enchantment.LOOTING, 3)),
+                   Enchantment.FORTUNE, 3, Enchantment.LOOTING, 3,
+                   Enchantment.POWER, 3),
+            java.util.EnumSet.of(Capability.ARCHERY)),
 
     /** The first rank that buys a capability rather than a better metal. */
     PEERLESS("Peerless", 2500, Material.NETHERITE_PICKAXE,
             Map.of(Enchantment.EFFICIENCY, 5, Enchantment.SHARPNESS, 5,
-                   Enchantment.FORTUNE, 3, Enchantment.LOOTING, 3),
-            java.util.EnumSet.of(Capability.WIDE_BORE)),
+                   Enchantment.FORTUNE, 3, Enchantment.LOOTING, 3,
+                   Enchantment.POWER, 4, Enchantment.PUNCH, 1),
+            java.util.EnumSet.of(Capability.ARCHERY, Capability.WIDE_BORE)),
 
     WITHOUT_EQUAL("Without Equal", 4000, Material.NETHERITE_PICKAXE,
             Map.of(Enchantment.EFFICIENCY, 5, Enchantment.SHARPNESS, 5,
                    Enchantment.FORTUNE, 3, Enchantment.LOOTING, 3,
-                   Enchantment.FIRE_ASPECT, 2),
-            java.util.EnumSet.of(Capability.WIDE_BORE, Capability.TRIDENT));
+                   Enchantment.FIRE_ASPECT, 2,
+                   Enchantment.POWER, 5, Enchantment.PUNCH, 2, Enchantment.FLAME, 1),
+            java.util.EnumSet.of(Capability.ARCHERY, Capability.WIDE_BORE, Capability.TRIDENT));
 
     /**
      * Things a rank grants that are not simply better equipment. These are the
@@ -68,7 +73,13 @@ public enum Rank {
         /** Branch mines are carved 3x3 instead of 1x2. */
         WIDE_BORE,
         /** A returning trident, and the reach to use it. */
-        TRIDENT
+        TRIDENT,
+        /**
+         * A bow, and the sense to stand off with it. Granted before the
+         * trident: it is the broader skill, and useful everywhere, where the
+         * trident only earns its place in water.
+         */
+        ARCHERY
     }
 
     private final String title;
@@ -110,6 +121,7 @@ public enum Rank {
             case PICKAXE -> Material.valueOf(tier + "_PICKAXE");
             case SWORD   -> Material.valueOf(tier + "_SWORD");
             case TRIDENT -> Material.TRIDENT;
+            case BOW     -> Material.BOW;               // has no tiers either
             case AXE     -> Material.valueOf(tier + "_AXE");
             case HOE     -> Material.valueOf(tier + "_HOE");
             case ROD     -> Material.FISHING_ROD;      // has no tiers
@@ -121,7 +133,7 @@ public enum Rank {
      * only underwater, where Impaling actually applies, and the sword is what
      * he carries on dry land.
      */
-    public enum ToolKind { PICKAXE, SWORD, AXE, HOE, ROD, TRIDENT }
+    public enum ToolKind { PICKAXE, SWORD, AXE, HOE, ROD, TRIDENT, BOW }
 
     /** The top of the ladder, whatever it currently is. */
     public static Rank top() {
@@ -184,6 +196,7 @@ public enum Rank {
             sb.append(switch (c) {
                 case WIDE_BORE -> "3x3 excavation";
                 case TRIDENT   -> "a trident, for fighting in water";
+                case ARCHERY   -> "a bow, and the sense to stand off with it";
             });
         }
         return sb.length() == 0 ? "nothing he'll admit to" : sb.toString();

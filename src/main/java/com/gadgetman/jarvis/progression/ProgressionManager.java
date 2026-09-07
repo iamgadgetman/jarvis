@@ -160,6 +160,7 @@ public class ProgressionManager {
             case HOE     -> "Hoe";
             case ROD     -> "Rod";
             case TRIDENT -> "Trident";
+            case BOW     -> "Bow";
         };
     }
 
@@ -183,6 +184,10 @@ public class ProgressionManager {
             case ROD          -> false;
             case TRIDENT      -> id.equals("impaling") || id.equals("loyalty")
                                  || id.equals("channeling");
+            // Infinity is deliberately absent: his arrows are conjured rather
+            // than drawn from a quiver, so there is nothing for it to save.
+            case BOW          -> id.equals("power") || id.equals("punch")
+                                 || id.equals("flame");
         };
     }
 

@@ -5,46 +5,40 @@ reasoning survives alongside the code that will have to honour it.
 
 ## Weaponry expertise
 
-The service ladder currently ends at a trident. Combat is meant to broaden into
-a discipline of its own rather than a single escalating melee stat.
+The service ladder ended at a trident. Combat is meant to broaden into a
+discipline of its own rather than a single escalating melee stat.
 
-### Archery
-
-A bow, and later a crossbow, as a genuine ranged option — not the stopgap the
-thrown trident is.
-
-Worth knowing before starting:
-
-- `Defender` closes to `ATTACK_REACH` and swings. Archery needs a *stand-off*
-  mode: hold at range, keep line of sight, and retreat when a target closes.
-  That is a different movement policy, not a different damage number.
-- Arrows are real entities with real drop over distance. Leading a moving
-  target is the hard part; a naive straight-line shot will miss anything that
-  is walking.
-- Ammunition is a design decision that has not been made. Infinite arrows are
-  simplest and match the unbreakable-tools rule (a butler who runs out mid-fight
-  is a chore). Consuming from his loot is more honest but needs a resupply path.
-- Enchantments map cleanly onto the existing rank table: Power, Punch, Flame,
-  and Infinity if ammunition is finite.
+**Archery shipped in v0.14.0.** `WeaponDoctrine` now decides weapon and stance
+together as one pure function of the situation, `Armament` carries per-weapon
+reach and stand-off band, and `Defender` asks the doctrine rather than
+branching. The two things that were flagged as hard both had to be solved:
+arrows are led by the target's own velocity over the flight time and raised by
+the drop that flight accrues, and the stand-off policy gives ground rather than
+closing. Ammunition went the way the note predicted — conjured, not drawn from a
+quiver, with pickup disallowed so it can never become finite loot.
 
 ### Spears
 
 Reach weapons between sword and bow. Minecraft has no native spear, so this
 means either a modelled trident variant or a custom item with an extended
-attack reach — the latter interacts with `ATTACK_REACH`, which is currently a
-single constant shared by every weapon.
+attack reach.
 
-### Shape of the change
+The prerequisite is now in place: **reach belongs to the `Armament`, not to a
+constant shared by every weapon.** A spear is a new enum value with a longer
+`reach()` and its own band, plus whatever item modelling is chosen — not a new
+branch in the tick loop.
 
-Weapon choice is currently two lines in `Defender` plus
-`JarvisNPC.syncWeaponToSurroundings`. Three or four weapon classes with
-different engagement ranges wants a small strategy object — pick a weapon and
-a stance from (target type, distance, terrain, whether he is in water) — rather
-than more branches in the tick loop.
+The remaining question is the item itself, which is a modelling decision rather
+than a combat one, and has not been made.
 
-The trident already establishes the principle: **the right weapon depends on
-where he is standing, not only on what rank he has reached.** Archery extends
-that to distance, spears to crowding.
+### Still open
+
+- The doctrine picks from (distance, terrain, water, target type, whether he
+  can give ground). It does not consider **crowding** — the case spears are
+  supposed to answer — and has no notion of being flanked by several things at
+  once.
+- `Armament` bands are chosen, not fitted. Nobody has measured whether 8–28 m
+  is the right window for a bow in practice.
 
 ## Progression
 
@@ -122,5 +116,5 @@ These are known-unverified rather than known-broken.
 
 ## Elsewhere
 
-- `Defender.ATTACK_REACH` is one constant for all weapons; per-weapon reach is a
-  prerequisite for spears.
+- Nothing outstanding here. `Defender.ATTACK_REACH` — one constant for all
+  weapons — is gone; reach moved onto `Armament` in v0.14.0.

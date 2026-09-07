@@ -1,5 +1,78 @@
 # Jarvis Changelog
 
+## v0.14.0 (2026-09-07) — he learns to shoot, and to keep his distance
+
+The service ladder ended at a trident, and every rank below it bought the same
+thing: a bigger melee number. This is the first weapon that changes *where he
+stands* rather than how hard he hits.
+
+### Added — archery
+
+- **A bow, unlocked at Indispensable.** Granted before the trident on purpose:
+  it is the broader skill and useful everywhere, where the trident only earns
+  its place in water. Power III at Indispensable, Power IV and Punch I at
+  Peerless, Power V, Punch II and Flame I at Without Equal.
+- **He holds at range instead of closing.** `Defender` used to know one shape
+  of fight — walk at it until you can hit it. A bow needs the opposite: hold
+  the band, keep line of sight, and give ground when something gets inside it.
+- **Arrows are led, not pointed.** They take real time to arrive, so a target
+  that is walking will not be where it was when he let go; and they fall, so a
+  flat shot lands short. The aim point is the target's position advanced by its
+  own velocity over the flight time, raised by the drop that flight will
+  accrue. Flight time depends on the distance to a point that depends on flight
+  time, so it is solved twice.
+- **Ammunition is conjured, not carried.** Same reasoning as unbreakable tools:
+  a butler who runs out mid-fight is a chore. Pickup is disallowed so his
+  infinite arrows can never become finite loot on the floor — the trick the
+  thrown trident already uses. Infinity is therefore deliberately absent from
+  the bow's enchantments; there is nothing for it to save.
+- **He will not shoot you in the back of the head.** If the player is within
+  1.2 m of the shot line, between bow and target, he holds fire and waits.
+- Without line of sight a bow is worse than useless — he would stand at range
+  plinking a wall — so he falls back to the sword and closes.
+- Cornered, he draws the sword rather than shooting from a bad position, with
+  one exception: against a creeper, shooting badly still beats standing next to
+  the blast.
+- Not used underwater. Arrows are spent almost immediately in water, which is
+  precisely what the trident is for.
+
+### Changed
+
+- **Weapon choice is a strategy object, not a branch.** `WeaponDoctrine.choose`
+  is one pure function of the situation — distance, terrain, water, target
+  type, and whether there is anywhere to give ground — returning a weapon and a
+  tactic together. They have to be decided together: drawing a bow without
+  backing off is how you get a butler shot at point-blank range, and backing
+  off without drawing one is just running away. Being pure, it can be reasoned
+  about without a server running.
+- **Reach belongs to the weapon.** `Defender.ATTACK_REACH`, one constant shared
+  by everything he could hold, is gone; each `Armament` carries its own reach
+  and stand-off band. This was the stated prerequisite for spears, which are
+  now a new enum value rather than another branch in the tick loop.
+- `fight()` is now two steps — ask the doctrine, do what it says. Adding a
+  weapon is a case in the doctrine, not an edit to the tick loop.
+- He puts the bow away when the fight ends and walks back to his post with a
+  sword.
+
+### Fixed
+
+- **Kills at range earned him nothing.** Combat standing was credited at the
+  moment he landed a melee blow, so a kill by thrown trident already credited
+  nothing — a narrow gap while the trident was a rare underwater tool, and one
+  that would have swallowed his whole combat progression once archery became
+  his main weapon. A target that dies while he is engaged is now credited
+  whatever killed it.
+- `syncWeaponToSurroundings` bailed out early for anyone without the trident.
+  That was harmless while the sword was the only alternative and is not now
+  that he can be holding a bow.
+
+### Notes
+
+- The bands (8–28 m for a bow) are chosen, not fitted. Nobody has measured
+  whether that is the right window in practice.
+- The doctrine has no notion of crowding or of being flanked by several things
+  at once — see `ROADMAP.md`, where that is now what spears are for.
+
 ## v0.13.0 (2026-09-07) — he hears you, and he earns his kit
 
 Most of what Jarvis could do was reachable only by typing, and his abilities did

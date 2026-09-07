@@ -529,6 +529,20 @@ defender:
   attack-cooldown-ticks: 12      # Ticks between swings
   callouts: true                 # "Creeper, behind you, sir."
 
+  # ---- Archery (v0.14.0) ----
+  # Unlocked at Indispensable. A bow is not a sword with a longer number: he
+  # holds at range, keeps line of sight, and gives ground when something gets
+  # inside his band rather than trading blows with it. Where he cannot back
+  # away he draws the sword instead -- except against a creeper, where shooting
+  # from a bad position still beats standing next to the blast.
+  archery:
+    enabled: true
+    # Ticks between shots. Roughly a full draw; lower is a faster, weaker-
+    # feeling stream of arrows rather than a more dangerous archer.
+    draw-ticks: 24
+    # Damage of one full-draw arrow before Power. 6.0 matches a vanilla bow.
+    arrow-damage: 6.0
+
 # ========== STEWARD (v0.5.0) ==========
 steward:
   report-on-join: true           # Briefing when a player joins

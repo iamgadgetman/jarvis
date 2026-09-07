@@ -1,8 +1,12 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.npc.combat.Armament;
+import com.gadgetman.jarvis.npc.combat.Engagement;
+import com.gadgetman.jarvis.npc.combat.WeaponDoctrine;
 import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
+import org.bukkit.block.Block;
 import org.bukkit.Material;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.ItemStack;
@@ -68,8 +72,13 @@ class Defender {
     private final double attackDamage;
     private final long attackCooldownMs;
     private final boolean callouts;
+    private final boolean archery;
+    private final long shotCooldownMs;
+    private final double arrowDamage;
+    private long lastShotMs = 0;
 
-    private static final double ATTACK_REACH = 2.7;
+    // Reach used to live here as a single constant shared by every weapon.
+    // It now belongs to the weapon -- see Armament.reach().
     private static final long THREAT_MEMORY_MS = 30_000;
     private static final long CALLOUT_COOLDOWN_MS = 8_000;
     private static final double CALLOUT_RADIUS = 10.0;
@@ -90,6 +99,9 @@ class Defender {
         this.attackDamage = cfg.getDouble("defender.attack-damage", 7.0);
         this.attackCooldownMs = cfg.getLong("defender.attack-cooldown-ticks", 12L) * 50L;
         this.callouts = cfg.getBoolean("defender.callouts", true);
+        this.archery = cfg.getBoolean("defender.archery.enabled", true);
+        this.shotCooldownMs = cfg.getLong("defender.archery.draw-ticks", 24L) * 50L;
+        this.arrowDamage = cfg.getDouble("defender.archery.arrow-damage", 6.0);
     }
 
     void setPatrolRoute(java.util.List<Location> route) {
@@ -206,6 +218,148 @@ class Defender {
         return true;
     }
 
+    // ==================== ARCHERY ====================
+
+    /** Blocks per tick at full draw, and the acceleration that pulls it down. */
+    private static final double ARROW_SPEED   = 3.0;
+    private static final double ARROW_GRAVITY = 0.05;
+    /** How far he gives ground in one step when something gets inside his band. */
+    private static final double RETREAT_STEP  = 4.0;
+
+    /**
+     * Loose an arrow at something out of reach.
+     *
+     * <p>Two things make this more than "spawn a projectile pointing at it".
+     * Arrows take real time to arrive, so a target that is walking will not be
+     * where it was when he let go; and they fall, so a flat shot lands short.
+     * The aim point is therefore the target's position advanced by its own
+     * velocity over the flight time, raised by the drop that flight will
+     * accrue. Flight time depends on the distance to a point that depends on
+     * flight time, so it is solved twice — one refinement is plenty at these
+     * ranges and it is cheap.
+     *
+     * <p>Ammunition is conjured rather than drawn from a quiver, for the same
+     * reason his tools are unbreakable: a butler who runs out mid-fight is a
+     * chore. Pickup is disallowed so his infinite arrows can never become
+     * finite loot on the floor.
+     *
+     * @return true if he loosed or is mid-draw, meaning he should hold his ground
+     */
+    private boolean tryShoot(LivingEntity mark, double dist) {
+        if (dist > Armament.BOW.standOffMax()) return false;
+
+        Entity self = provider.getEntity(player);
+        if (self == null) return false;
+
+        long now = System.currentTimeMillis();
+        if (now - lastShotMs < shotCooldownMs) return true;   // still drawing; stand still
+
+        Location from = self.getLocation().add(0, 1.4, 0);
+        Location centre = mark.getEyeLocation().subtract(0, 0.4, 0);
+
+        Vector drift = mark.getVelocity().clone();
+        Location predicted = centre.clone();
+        double flight = 0;
+        for (int pass = 0; pass < 2; pass++) {
+            flight = from.distance(predicted) / ARROW_SPEED;
+            predicted = centre.clone().add(drift.clone().multiply(flight));
+        }
+        predicted.add(0, 0.5 * ARROW_GRAVITY * flight * flight, 0);
+
+        Vector dir = predicted.toVector().subtract(from.toVector());
+        if (dir.lengthSquared() < 0.01) return false;
+        dir.normalize();
+
+        // A butler does not shoot his employer in the back of the head.
+        if (inLineOfFire(from, dir, dist)) return true;
+
+        provider.lookAt(player, mark.getLocation());
+        lastShotMs = now;
+
+        ItemStack bow = host.getToolInHand(player);
+        int power = bow == null ? 0 : bow.getEnchantmentLevel(Enchantment.POWER);
+        int punch = bow == null ? 0 : bow.getEnchantmentLevel(Enchantment.PUNCH);
+        boolean flame = bow != null && bow.getEnchantmentLevel(Enchantment.FLAME) > 0;
+
+        // Vanilla resolves an arrow's damage as base x speed, so the base is
+        // the damage he wants divided by the speed he throws it at. Power adds
+        // 25% per level over a level-0 shot, as it does for a player.
+        double scaled = arrowDamage / ARROW_SPEED;
+        if (power > 0) scaled *= 1.0 + 0.25 * (power + 1);
+        final double base = scaled;
+
+        Location muzzle = from.clone().add(dir.clone().multiply(0.8));
+        org.bukkit.entity.Arrow arrow = muzzle.getWorld().spawn(
+                muzzle, org.bukkit.entity.Arrow.class, a -> {
+                    a.setShooter(self instanceof org.bukkit.projectiles.ProjectileSource src ? src : null);
+                    a.setVelocity(dir.clone().multiply(ARROW_SPEED));
+                    a.setDamage(base);
+                    a.setKnockbackStrength(punch);
+                    a.setCritical(true);
+                    a.setPickupStatus(org.bukkit.entity.AbstractArrow.PickupStatus.DISALLOWED);
+                    if (flame) a.setFireTicks(100);
+                });
+        muzzle.getWorld().playSound(muzzle, Sound.ENTITY_ARROW_SHOOT, 1f, 1f);
+
+        // Never leave a shaft lying in the world if it misses everything.
+        new BukkitRunnable() {
+            @Override public void run() {
+                if (arrow.isValid()) arrow.remove();
+            }
+        }.runTaskLater(host.getPlugin(), 200L);
+
+        return true;
+    }
+
+    /**
+     * Is the player standing in the way? Measured as perpendicular distance
+     * from the shot line, considered only between the bow and the target.
+     */
+    private boolean inLineOfFire(Location from, Vector dir, double dist) {
+        Vector toPlayer = player.getEyeLocation().toVector().subtract(from.toVector());
+        double along = toPlayer.dot(dir);
+        if (along <= 0 || along >= dist) return false;
+        double offAxis = toPlayer.clone().subtract(dir.clone().multiply(along)).length();
+        return offAxis < 1.2;
+    }
+
+    // ==================== GIVING GROUND ====================
+
+    /**
+     * Where he would step back to. Directly away from the target, on the level
+     * — a retreat that walks him off a ledge is not a retreat.
+     */
+    private Location retreatPoint(Location npcLoc) {
+        Vector away = npcLoc.toVector().subtract(target.getLocation().toVector()).setY(0);
+        if (away.lengthSquared() < 0.01) return null;
+        return npcLoc.clone().add(away.normalize().multiply(RETREAT_STEP));
+    }
+
+    /**
+     * Backing off is only an option if there is somewhere to back off to, and
+     * if it does not take him off his leash — a bodyguard who retreats out of
+     * the fight has stopped guarding.
+     */
+    private boolean canGiveGround(Location npcLoc, Location anchor) {
+        Location back = retreatPoint(npcLoc);
+        if (back == null) return false;
+        if (anchor != null && anchor.getWorld() == back.getWorld()
+                && back.distance(anchor) > leashRange) return false;
+
+        Block feet = back.getBlock();
+        return feet.isPassable()
+                && feet.getRelative(0, 1, 0).isPassable()
+                && feet.getRelative(0, -1, 0).getType().isSolid();
+    }
+
+    private void giveGround(Location npcLoc) {
+        if (provider.isNavigating(player)) return;   // already moving; let him finish
+        Location back = retreatPoint(npcLoc);
+        if (back == null) return;
+        provider.navigateTo(player, back);
+        navBusy = true;
+    }
+
     /**
      * What his sword is actually worth.
      *
@@ -282,12 +436,22 @@ class Defender {
         // ---- In combat ----
         if (target != null) {
             if (!target.isValid() || target.isDead() || target.getWorld() != npcLoc.getWorld()) {
+                // A melee kill credits itself the moment he lands the blow. An
+                // arrow lands after he has already moved on, so a target that
+                // dies while he is engaged is credited here instead --
+                // otherwise archery, once it becomes his main weapon, would
+                // silently stop earning him any standing at all.
+                if (target.isDead()) {
+                    host.credit(player,
+                            com.gadgetman.jarvis.progression.ServiceRecord.Discipline.COMBAT, 1);
+                    host.sayQuiet(player, "Threat neutralised.");
+                }
                 disengage();
             } else if (target.getLocation().distance(anchor) > leashRange + 6) {
                 // Target fled beyond the leash — let it go, return to post
                 disengage();
             } else {
-                fight(npcLoc);
+                fight(npcLoc, anchor);
                 return;
             }
         }
@@ -330,24 +494,67 @@ class Defender {
 
     // ==================== COMBAT ====================
 
-    private void fight(Location npcLoc) {
+    /**
+     * One tick of a fight.
+     *
+     * <p>This used to be a distance check with the trident bolted onto it. It
+     * is now two steps: ask the doctrine what to do, then do that. Adding a
+     * weapon is a case in {@link WeaponDoctrine}, not another branch here.
+     */
+    private void fight(Location npcLoc, Location anchor) {
         double dist = npcLoc.distance(target.getLocation());
 
-        if (dist > ATTACK_REACH) {
-            // Underwater only: swimming to a guardian is slow and he is a
-            // sitting duck doing it. On land he closes and uses the sword.
-            if (host.isSubmerged(player) && tryThrowTrident(target, dist)) return;
-            if (!navBusy || !provider.isNavigating(player)) {
-                provider.navigateTo(player, target, true);
-                navBusy = true;
-            }
-            return;
-        }
+        Engagement plan = WeaponDoctrine.choose(assess(npcLoc, dist, anchor));
+        host.drawWeapon(player, plan.weapon().kind());
 
+        switch (plan.tactic()) {
+            case STRIKE   -> strike(npcLoc);
+            case CLOSE    -> closeOn();
+            case LOOSE    -> {
+                provider.cancelNavigation(player);
+                navBusy = false;
+                provider.lookAt(player, target.getLocation());
+                boolean loosed = plan.weapon() == Armament.TRIDENT
+                        ? tryThrowTrident(target, dist)
+                        : tryShoot(target, dist);
+                if (!loosed) closeOn();          // could not shoot; do it the old way
+            }
+            case WITHDRAW -> {
+                provider.lookAt(player, target.getLocation());
+                tryShoot(target, dist);          // a fighting retreat, not a rout
+                giveGround(npcLoc);
+            }
+        }
+    }
+
+    /** Read off everything the weapon choice depends on. */
+    private WeaponDoctrine.Situation assess(Location npcLoc, double dist, Location anchor) {
+        var progression = host.getPlugin().getProgressionManager();
+        boolean bow = archery && progression != null
+                && progression.has(player, com.gadgetman.jarvis.progression.Rank.Capability.ARCHERY);
+        boolean trident = progression != null
+                && progression.has(player, com.gadgetman.jarvis.progression.Rank.Capability.TRIDENT);
+
+        // An arrow will not go round a corner. Without sight of the target a
+        // bow is worse than useless -- he would stand at range plinking a wall.
+        boolean sight = provider.getEntity(player) instanceof LivingEntity le
+                && le.hasLineOfSight(target);
+
+        return new WeaponDoctrine.Situation(dist, host.isSubmerged(player), bow, trident,
+                sight, target instanceof Creeper, canGiveGround(npcLoc, anchor));
+    }
+
+    private void closeOn() {
+        if (!navBusy || !provider.isNavigating(player)) {
+            provider.navigateTo(player, target, true);
+            navBusy = true;
+        }
+    }
+
+    private void strike(Location npcLoc) {
         provider.cancelNavigation(player);
         navBusy = false;
         provider.lookAt(player, target.getLocation());
-        host.syncWeaponToSurroundings(player);
 
         long now = System.currentTimeMillis();
         if (now - lastAttackMs >= attackCooldownMs) {
@@ -359,12 +566,15 @@ class Defender {
             target.damage(weaponDamage(weapon), provider.getEntity(player));
             applyFireAspect(weapon, target);
             npcLoc.getWorld().playSound(npcLoc, Sound.ENTITY_PLAYER_ATTACK_SWEEP, 1f, 1f);
+            creditIfDead();
+        }
+    }
 
-            if (target.isDead() || !target.isValid()) {
-                host.credit(player, com.gadgetman.jarvis.progression.ServiceRecord.Discipline.COMBAT, 1);
-                host.sayQuiet(player, "Threat neutralised.");
-                disengage();
-            }
+    private void creditIfDead() {
+        if (target != null && (target.isDead() || !target.isValid())) {
+            host.credit(player, com.gadgetman.jarvis.progression.ServiceRecord.Discipline.COMBAT, 1);
+            host.sayQuiet(player, "Threat neutralised.");
+            disengage();
         }
     }
 
@@ -373,6 +583,9 @@ class Defender {
         navBusy = false;
         returning = true;
         provider.cancelNavigation(player);
+        // Put the bow away. He walks back to his post with a sword, as a
+        // butler should, rather than carrying a drawn weapon around the house.
+        host.syncWeaponToSurroundings(player);
     }
 
     /** Choose the most pressing hostile per stance. Creepers first — they explode. */
