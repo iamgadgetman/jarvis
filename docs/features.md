@@ -1,0 +1,218 @@
+# Features
+
+*[← README](../README.md) · [Features](features.md) · [Commands](commands.md) · [Configuration](configuration.md) · [Troubleshooting](troubleshooting.md)*
+
+---
+
+### AI Natural Language Understanding
+Speak to Jarvis in plain English — in chat or via command. Jarvis routes your request through an AI model, picks the right action, and executes it (with a witty response).
+
+Supports multiple AI backends with **tiered, Ollama-first routing** (new in 0.3.0):
+- Light work (chat intents, banter) runs on your local Ollama box when configured
+- Heavy work (build planning) prefers your cloud provider (Claude, OpenAI, Grok, Gemini)
+- Per-provider health tracking with automatic failover between tiers
+- **Ollama-only "reduced mode"**: fully usable with zero cloud keys — freeform build
+  planning turns off and risky console actions require opt-in
+- Jarvis remembers your recent conversation (butler memory)
+- `/jarvis ai` shows routes, provider health, and who answered last
+
+### NPC Companion
+- **Summon / Dismiss** — Jarvis appears at your side or disappears on demand
+- **Follow** — stays close and teleports if you get too far away
+- **Right-click Menu** — opens a GUI for quick access to all Jarvis actions
+- **Custom skin & name** — configurable in `config.yml`
+
+### Branch Mining (new in 0.2.0)
+- `/jarvis mine here` — Jarvis digs a full torch-lit branch mine: staircase to diamond level, main gallery, branch tunnels on a grid
+- Harvests every ore the tunnels expose, follows veins, seals lava pockets with cobblestone
+- The mine stays lit and walkable for you afterwards
+
+### Butler Services (new in 0.2.0)
+- `/jarvis follow` — trails behind you, picking up loot as you go
+- `/jarvis chest` — register the chest you're looking at as his deposit chest
+- `/jarvis deposit` — he carries the loot over and unloads it; auto-delivers when his bags fill mid-mine
+
+### Smart Mining (reworked in 0.1.0)
+- **Real movement** — Citizens A* pathfinding, no more teleport-hopping
+- **Real mining** — vanilla break timing with arm swings and crack animations (Citizens BlockBreaker)
+- **Digs like a player** — when a path is blocked, Jarvis mines through the obstruction instead of warping
+- **Async ore scanning** — chunk-snapshot scans off the main thread, no TPS hit
+- `mine` — mines the nearest ore; `mine diamond` / `mine iron` / `mine ancient debris` — targets a type
+- Understands: diamond, emerald, gold, iron, copper, redstone, lapis, quartz, coal, netherite/ancient debris
+- Collects drops automatically, filters out junk (cobblestone, dirt, gravel, etc.)
+
+### Defender (reworked in 0.4.0)
+- `/jarvis guard [passive|defensive|aggressive]` — bodyguard with stances; anchor-and-leash combat (he never chases into the night)
+- `/jarvis watch` — night watch: holds a fixed post, clears spawns, returns after every fight
+- Threat callouts: "Creeper, behind you, sir!" for hostiles outside your view
+- Diamond sword in guard mode, creeper-priority targeting, retaliation memory
+
+### Groundskeeping (new in 0.7.0)
+- `/jarvis farm [crop]` / `/jarvis tend [crop]` — harvest & replant the field once, or stay on as a farmhand
+- `/jarvis chop [n]` — fells whole trees (timber cascade!), collects logs, replants saplings
+- `/jarvis fish` — casts from the water's edge with real sounds and vanilla-ish loot odds
+- `/jarvis dance` — the performance; short victory bops on big milestones too
+- `/jarvis patrol add` + `/jarvis patrol` — he walks a saved waypoint circuit as an armed sentry
+- Waves and greets you when you return; glances at what you're doing when idle
+
+### Butler Services (new in 0.6.0)
+- `/jarvis recover` — he fetches your death drops: travels to where you died, collects everything, brings it back
+- `/jarvis home set` + `/jarvis home` — saved home point; he escorts you back, torch-lighting the road and waiting when you lag behind
+- Supply handoff — hungry or your tool nearly broken? He hands over food or a spare from his own bags
+
+### Steward (new in 0.5.0)
+- `/jarvis report` — the briefing: TPS/ms-tick with health coloring, players online, his cargo, pending requests; compact version on join
+- `/jarvis duty add <minutes> <message>` — standing broadcasts that survive restarts; `/jarvis duties` to review
+- "Jarvis, build me a house" picks the best schematic from your library (works even on local-only AI); freeform AI building takes over when nothing matches
+
+### Nether Portals (new in 0.16.0)
+- `/jarvis portal` — he leads you to the nearest portal he has seen, with the same waiting and torch-lighting as the walk home
+- `/jarvis portals` — what he has noted in this world, nearest first, with distance and bearing
+- `/jarvis portal where` — **where this portal comes out on the other side.** Pure 1:8 arithmetic, so it works anywhere, at any distance, having seen nothing; it also tells you the 128-block linking radius, which is why two portals close together in the Nether share an exit
+- `/jarvis portal mark` / `forget` — note the one you are standing at, or clear the list
+- He notices portals as you pass them (a sweep of loaded chunks, skipped when you have not moved) and remembers up to twelve, merged so a frame counts once
+- **Two honest limits:** he cannot see into unloaded chunks, so "none nearby" never means "there are none"; and he leads you *to* a portal, not through one — Citizens NPCs do not change dimension with you
+
+### Idle Remarks (new in 0.15.0)
+- He notices things while he is summoned and standing about: what you are carrying, how deep you have got, that it has started to thunder
+- Everything he says is read off a plain getter — **no action log, no database, no model call.** The lines are written, not generated, so a feature that fires on a timer costs nothing to run
+- The filter is the point: 72 iron ore is worth a sentence, 41 cobblestone is not, and 384 cobblestone is worth a different sentence entirely
+- Cooldowns are keyed on the *subject*, so he cannot come back four minutes later with the same observation in new words
+- **Off by default** (`steward.remarks.enabled`), and `/jarvis quiet` mutes him without a config edit
+
+### Building Assistant (rebuilt in 0.9.0)
+- Describe a structure in natural language and Jarvis designs it, writing the build
+  as a **JavaScript program** that calls `fill` and `setBlock` rather than listing
+  every block. A wall is one call instead of four hundred coordinates, so the model
+  spends its reasoning on the shape. Live builds run 200–38,000 blocks; the old
+  block-list planner topped out around 168 — a footprint with no walls
+- The script runs sandboxed with no host access, under a block budget, a wall-clock
+  watchdog and bounds limits. It never touches the world: it returns a block list,
+  which goes through the same placement, undo and memory path as everything else
+- A script that will not run is sent back to the model with the error attached, so
+  an invented block id comes back as *"did you mean red_bed, pink_bed…"* and is
+  usually fixed in one round
+- Common mistakes are repaired rather than described: block ids are checked against
+  the server registry, glass panes and fences are joined to their neighbours, bed
+  halves are made to agree, and a torch that would delete the wall it hangs on is
+  moved into the room instead
+- `build.planner: json` restores the pre-0.9.0 block-list planner, which is also the
+  automatic fallback if GraalJS cannot be loaded
+- Paste WorldEdit schematics by name (fuzzy matching — no need for exact filenames)
+
+### Lamplighter (new in 0.8.3)
+`/jarvis light [radius] [type] [spacing]` — Jarvis lights an area against mob
+spawns, on the actual spawn rule (hostiles spawn at block light 0) rather than a
+guess.
+- Torches, end rods or lanterns; ground placement by default, `lighting.placement: wall` for walls
+- Skips spots already bright enough, and drops sea lanterns for grid points that land in shallow water
+- Works from chat: *"jarvis, light this place up"*
+- He swims now, with a lifeguard monitor watching for a submerged NPC
+
+### Experience Memory (new in 0.8.0)
+Jarvis remembers how past builds turned out and shows the AI the plans that
+worked for similar requests.
+- Labels come from what you do, not a rating prompt: a build you let finish is a
+  success, one you cancel or undo is not
+- Retrieval matches your wording first, then re-ranks on where you are — the
+  same request underground and on the surface pulls up different examples
+- Embeddings run on your Ollama box and never fall back to a paid provider, so
+  the feature costs nothing to run. If Ollama is down it falls back to keyword
+  matching rather than failing
+- **Ollama-only servers:** freeform build planning is normally disabled, but it
+  unlocks itself once 20 successful builds are remembered — the examples carry
+  the load the block was there to avoid
+- `/jarvis debug` shows how many builds are stored and whether the unlock has fired
+
+### Dataset Export (new in 0.12.1)
+`/jarvis export-dataset` (admin, works from console) dumps what this server has
+taught Jarvis as JSONL, into `plugins/Jarvis/datasets/`.
+- `intents-*.jsonl` — what players said paired with the action actually taken
+- `builds-*.jsonl` — build requests paired with the plan that ran and whether it
+  was kept, failures labelled and included
+- No gameplay feature: it is the raw material for fine-tuning a small local
+  model later, which is where the Ollama tier's ceiling actually sits
+- Player UUIDs are not written — the pairs are what has value
+
+### Reasoning Before Retrieval (new in 0.12.0, retuned in 0.12.2)
+Before searching the schematic library, Jarvis works out what you are actually
+asking for.
+- *"Somewhere to store my loot"* shares not one word with `storage_shed`. On the
+  raw wording that schematic scores **zero** — not ranked low, invisible
+- One small-model call names the request's **purpose** (`storage`), **kind**
+  (`shed`) and **style** (blank here), and the library is scored on those. The
+  same schematic now scores 90
+- The parts are not worth the same. Naming a structure is more specific than
+  naming a use, so kind scores 75, purpose 70, both together 90. Style adds 4
+  and can never carry a match alone — measured, it landed on schematic names by
+  coincidence often enough to beat the purpose that actually answered
+- **A confident match skips the AI pick.** At or above
+  `schematics.feature-tags.match-threshold` (90) the library answers on its own
+- Decompositions are cached in memory and in SQLite, so a request asked twice
+  costs one model call
+- A weak match still falls through to the AI pick — now knowing what was asked
+- Naming a schematic outright still wins over any feature score
+
+Measured end to end against `llama3.2:3b`, seven requests against a seven-name
+library: **7/7** correct, none worse than no decomposition at all, 0.7 s per
+decomposition. The same set on the raw wording alone got 2/7.
+
+### Self-Explain Recovery (new in 0.11.0)
+When a job stops early, Jarvis works out why before he gives up.
+- The old behaviour was a stock line — *"The chest is full and so are my bags,
+  sir"* — that said a job had stopped but not what to do about it
+- He says the job's own line immediately, then follows up once the local model
+  has worked out why — you never wait on it, and if the model is slow or absent
+  you simply get the message you would have got before
+- **He picks between ways out; he never invents one.** Each failure declares the
+  moves it can make, and anything else is treated as "stop". A lost branch mine
+  can offer to step back into its own tunnel; a full chest can offer to keep
+  digging and leave the drops on the floor
+- Failures with no way out — lava under the shaft, no pond in the desert — are
+  explained rather than recovered, which was the half that was missing
+- Runs on the LIGHT tier, so it works on an Ollama-only server and costs
+  nothing. Capped at two diagnoses per job
+- Wants a **small** local chat model: the light tier allows five seconds, which
+  a 70B on CPU will not meet. Nothing breaks if it cannot answer — you just keep
+  the plain message
+- `self-explain.enabled: false` restores the old messages exactly
+
+### Inventory Management
+- Jarvis has his own NPC inventory
+- Right-click him or use `/jarvis loot` to browse / take items
+- `/jarvis clearloot` to clear his inventory
+
+### Admin Butler Actions (v0.0.9)
+Jarvis can execute powerful server management actions, all gated behind a click-to-confirm prompt for dangerous operations:
+
+| Action | Description |
+|---|---|
+| `give_item` | Give a player an item |
+| `enchant` | Enchant a player's held item |
+| `potion_effect` | Apply a potion effect |
+| `heal` / `feed` | Restore player health or hunger |
+| `set_gamemode` | Change a player's game mode |
+| `teleport` | Teleport a player |
+| `set_time` | Set the world time |
+| `set_weather` | Set the weather |
+| `set_gamerule` | Change a game rule |
+| `set_difficulty` | Change the world difficulty |
+| `broadcast` / `announce_all` | Send a message to all players (chat + title) |
+| `schedule_broadcast` | Schedule a recurring or delayed server message |
+| `clear_mobs` | Remove mobs near a player or in a radius |
+| `clear_drops` | Remove all item drops from the world |
+| `save_world` | Force save all worlds |
+| `console_command` | Execute a single server console command |
+| `console_commands` | Execute multiple server console commands |
+| `warp` | Warp a player to a named location |
+| `paste_schematic` | Paste a WorldEdit schematic |
+| `discord_broadcast` | Send a message to a Discord webhook |
+| `lp_group_add` / `lp_group_remove` | Manage LuckPerms groups |
+
+### Player Request System (v0.0.9)
+Players can ask Jarvis for items ("Jarvis, can I get 64 iron ingots?"). Jarvis queues the request and notifies online admins. Admins review and approve or deny with a single click.
+
+### Butler Events (v0.0.9)
+- **Auto-Greet** — Jarvis greets players when they join with an AI-generated personalized welcome
+- **Death Commentary** — Jarvis provides witty AI-generated commentary when a player dies
+- **TPS Monitor** — Jarvis warns admins in-game when server TPS drops below a configurable threshold
