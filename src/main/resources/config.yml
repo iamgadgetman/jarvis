@@ -549,6 +549,28 @@ steward:
   report-join-delay-ticks: 60    # Delay before the join briefing (3s)
   supply-handoff: true           # Offer food / replacement tools from his bags
   charm: true                    # Waves, greetings after time away, idle glances
+                                 # (also the master switch for remarks, below)
+
+  # ---- Idle remarks (v0.15.0) ----
+  # He notices things: what you are carrying, how deep you have got, that it
+  # has started to thunder. Everything he says here is read off a getter --
+  # no model call, no event log, no storage -- so it is free to run and the
+  # lines are written rather than generated.
+  #
+  # OFF by default, and that is deliberate. This is the only thing he says
+  # without being asked, and nobody files a complaint that the butler is
+  # tiresome; they just turn him off. /jarvis quiet mutes him per player
+  # without a config edit.
+  remarks:
+    enabled: false               # Requires charm: true as well
+    interval-seconds: 90         # How often he considers saying something
+    quiet-seconds: 180           # Minimum gap between any two remarks
+    # Cooldown per SUBJECT, not per sentence. "72 iron ore" and "68 iron ore"
+    # are the same observation twice, so the cooldown is keyed on what the
+    # remark is about; otherwise rephrasing walks straight around it.
+    subject-cooldown-seconds: 900
+    max-distance: 10.0           # He does not comment on what he cannot see
+    require-idle: true           # Only while standing about, never mid-task
   celebrations: true             # Short victory bop after big milestones
   recovery:
     auto: false                  # true = fetch death drops without being asked

@@ -69,6 +69,13 @@ Supports multiple AI backends with **tiered, Ollama-first routing** (new in 0.3.
 - `/jarvis duty add <minutes> <message>` — standing broadcasts that survive restarts; `/jarvis duties` to review
 - "Jarvis, build me a house" picks the best schematic from your library (works even on local-only AI); freeform AI building takes over when nothing matches
 
+### Idle Remarks (new in 0.15.0)
+- He notices things while he is summoned and standing about: what you are carrying, how deep you have got, that it has started to thunder
+- Everything he says is read off a plain getter — **no action log, no database, no model call.** The lines are written, not generated, so a feature that fires on a timer costs nothing to run
+- The filter is the point: 72 iron ore is worth a sentence, 41 cobblestone is not, and 384 cobblestone is worth a different sentence entirely
+- Cooldowns are keyed on the *subject*, so he cannot come back four minutes later with the same observation in new words
+- **Off by default** (`steward.remarks.enabled`), and `/jarvis quiet` mutes him without a config edit
+
 ### Building Assistant (rebuilt in 0.9.0)
 - Describe a structure in natural language and Jarvis designs it, writing the build
   as a **JavaScript program** that calls `fill` and `setBlock` rather than listing
@@ -234,6 +241,7 @@ Players can ask Jarvis for items ("Jarvis, can I get 64 iron ingots?"). Jarvis q
 | `/jarvis deny <id>` | Deny a player item request | `jarvis.admin` |
 | `/jarvis confirm` | Confirm a pending dangerous action | `jarvis.use` |
 | `/jarvis cancel` | Cancel a pending dangerous action | `jarvis.use` |
+| `/jarvis quiet` | Mute (or unmute) his idle remarks, for you | `jarvis.use` |
 | `/jarvis <anything>` | Natural language — Jarvis figures it out | `jarvis.use` |
 
 You can also just **type in chat** (no command needed) — if your message mentions Jarvis or contains a recognized keyword, he'll respond.

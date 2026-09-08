@@ -87,83 +87,40 @@ you have already changed your mind. Needs a stop path that cancels the active
 
 ## Remarks
 
-He speaks when spoken to, when a task ends, and when something is about to
-explode behind you. He never simply *notices* anything. The idea is idle
-commentary while he is summoned and standing about — a remark every minute or
-two on what you are carrying, what you are building, where you are heading.
+**Shipped in v0.15.0.** He remarks on what he can see while standing about —
+tier 1 only, and that turned out to be enough to carry the feature. No
+dependency, no action log, nothing on disk, and no model call: `Observer` reads
+plain getters, `RemarkDoctrine` decides as a pure function, `Remarks` runs the
+timer. The judgement the note called the real work — seventy-two iron ore is
+worth a line, forty-one cobblestone is not — is a threshold table that can be
+read and argued with, and is pinned by tests.
 
-> "I see you have seventy-two iron ore, sir. Your pockets must be quite heavy."
+Cooldowns are keyed on the subject rather than the wording, which is what stops
+the cousin remark about sixty-eight iron ore. Hunger and tool wear were left out
+on purpose: the valet already speaks to both, and two subsystems noticing the
+same fact is how this becomes tiresome.
 
-### No, this does not need an action log
+### Still open
 
-The instinct is to reach for something like CoreProtect and have him read it.
-That is not necessary, and would be the wrong shape. What he would remark on
-falls into three tiers, and only the third needs events at all.
-
-**Tier 1 — state he can already read, for nothing.** Inventory contents, held
-item, armour, health, hunger, XP level, biome, altitude, light level, time of
-day, weather, distance from bed or spawn, what is standing nearby. All of it is
-a plain getter on `Player` or `Location`, available any tick, costing nothing
-and storing nothing. **The iron-ore example is entirely tier 1** — no events, no
-log, no persistence. `SituationSnapshot.capture` already assembles part of this
-for build memory and is the obvious thing to widen.
-
-**Tier 2 — change, which is diffing, not logging.** "You have been at that hole
-for twenty minutes." "That is the third pickaxe today." Sampling state on a
-timer and comparing against the previous sample gets all of this. One previous
-snapshot per player, held in memory. Still no plugin and still nothing on disk.
-
-**Tier 3 — moments that exist only as they happen.** A block placed, a mob
-killed, an item crafted, a death. These genuinely need Bukkit event handlers —
-but that is perhaps five `@EventHandler` methods feeding a bounded ring buffer
-of recent events per player, discarded on logout. It is not an audit log, and
-nothing about it wants a database.
-
-So: no new dependency, no world-action log, no storage growth. Tier 1 alone
-would carry the feature; tiers 2 and 3 are what stop it sounding like a
-read-out.
-
-### Worth knowing before starting
-
-- **The hard problem is repetition, not generation.** Producing a line about
-  seventy-two iron ore is trivial. Not producing it again four minutes later,
-  and not producing its cousin about sixty-eight iron ore, is the entire
-  design. Needs a memory of what he has recently remarked on, keyed by
-  *subject* rather than by wording — otherwise a model rephrases its way around
-  every cooldown you set.
-- **This is the first thing he would do that costs money while idle.**
-  Everything else is user-triggered; this fires on a timer for every summoned
-  player, forever. A model call every ninety seconds per player is a standing
-  bill for a cosmetic feature. It wants to be template-first with the model as
-  garnish, or pinned to the local tier in `ai.provider-priority` and never
-  allowed to fall through to a paid provider — the way `memory.embedding-model`
-  already is.
-- **The annoyance budget is small and the failure is silent.** Nobody files a
-  bug saying the butler is tiresome; they turn him off. Off by default, a
-  generous cooldown, and an obvious mute. `steward.charm` is the right gate —
-  this is the same family as the greetings and idle glances.
-- **He should not remark on what he cannot see.** An NPC forty blocks away
-  commenting on your inventory is unsettling rather than charming.
-  `startCharmMonitor` already gates on same-world and within ten blocks; reuse
-  that judgement rather than inventing a second one.
-- **Voice changes the calculus entirely.** Once `voice.speak-replies` is on,
-  these stop being text in the chat box and become a man talking at you every
-  ninety seconds. What is charming to read is grating to hear. Assume the
-  spoken cadence must be far slower than the written one, and that they may
-  need to be separately controlled.
-
-### Shape of the change
-
-`startCharmMonitor` in `JarvisNPC` is already this feature's skeleton: a timer,
-per-player cooldown maps, distance and world gates, and arrays of canned lines.
-A `Remarks` module would follow it — observe, decide whether anything is worth
-saying, pick a subject not recently used, then render it either from a template
-or a local model call.
-
-The judgement worth getting right is **what deserves a remark**, and that is not
-a model's job. Seventy-two iron ore is worth a line; forty-one cobblestone is
-not. That filter is ordinary code, and it is what separates a butler from a
-status bar.
+- **Tier 2 — change, which is diffing.** "You have been at that hole for twenty
+  minutes." "That is the third pickaxe today." One previous `Observation` per
+  player held in memory, compared against the current one. Still no plugin and
+  still nothing on disk. The shape is already there; nothing holds the previous
+  sample yet.
+- **Tier 3 — moments that exist only as they happen.** A block placed, a mob
+  killed, an item crafted, a death. Perhaps five `@EventHandler` methods feeding
+  a bounded ring buffer per player, discarded on logout. Not an audit log, and
+  nothing about it wants a database.
+- **The model as garnish.** Deliberately absent. If it is ever added it wants
+  pinning to the local tier in `ai.provider-priority` and never allowed to fall
+  through to a paid provider — the way `memory.embedding-model` already is —
+  because this is the only thing he does on a timer rather than on an order.
+- **Speech.** Remarks are text. Once `voice.speak-replies` is on they would
+  become a man talking at you every ninety seconds, and what is charming to read
+  is grating to hear; assume a far slower cadence and a separate switch.
+- **The thresholds are chosen, not fitted.** 32 for ore, 128 for copper, 384 for
+  cobblestone, ninety seconds and fifteen minutes for the cooldowns. Nobody has
+  played a session with them yet.
 
 ## Interface
 
@@ -191,6 +148,9 @@ These are known-unverified rather than known-broken.
 - **Two or more players at once.** Progression is per-player by design, but
   concurrent NPCs, voice channels and audio players have only ever been
   exercised by one.
+- **Remarks in a live session.** The decision table is pinned by tests and the
+  timer is trivial, but nobody has yet played for an hour with them on. The
+  thing to watch for is not a wrong line — it is the cadence being wearing.
 - **Looting on projectile kills.** It applies via the killer's held item;
   whether that survives a thrown trident is unconfirmed.
 

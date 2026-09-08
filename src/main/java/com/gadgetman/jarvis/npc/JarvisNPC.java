@@ -1909,6 +1909,24 @@ public class JarvisNPC implements Listener {
         return npc.getStoredLocation();
     }
 
+    /**
+     * Metres from this player's Jarvis to the player, or {@link Double#MAX_VALUE}
+     * when the question does not apply — not summoned, not spawned, or a world
+     * away.
+     *
+     * <p>One answer to "is he near enough to have noticed?", shared by the charm
+     * monitor and by the idle remarks, so the two can never drift apart on what
+     * counts as being present.
+     */
+    public double distanceToOwner(Player owner) {
+        if (owner == null || !owner.isOnline()) return Double.MAX_VALUE;
+        NPC npc = playerNPCs.get(owner.getUniqueId());
+        if (npc == null || !npc.isSpawned()) return Double.MAX_VALUE;
+        Location npcLoc = getCurrentLocation(npc);
+        if (npcLoc == null || npcLoc.getWorld() != owner.getWorld()) return Double.MAX_VALUE;
+        return npcLoc.distance(owner.getLocation());
+    }
+
     private Location findSafeSpawnLocation(Location center) {
         for (int dx = 0; dx <= 3; dx++) {
             for (int dz = 0; dz <= 3; dz++) {
@@ -2156,9 +2174,8 @@ public class JarvisNPC implements Listener {
                     NPC npc = entry.getValue();
                     if (owner == null || !owner.isOnline() || !npc.isSpawned()) continue;
 
-                    Location npcLoc = getCurrentLocation(npc);
-                    if (owner.getWorld() != npcLoc.getWorld()) continue;
-                    double dist = npcLoc.distance(owner.getLocation());
+                    double dist = distanceToOwner(owner);
+                    if (dist == Double.MAX_VALUE) continue;
 
                     if (dist > 40) {
                         ownerAwaySince.putIfAbsent(entry.getKey(), now);

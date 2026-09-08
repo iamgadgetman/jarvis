@@ -457,6 +457,7 @@ public class JarvisCommands implements CommandExecutor {
                 }
                 plugin.getJarvisNPC().tunnel(player, len, dir);
             }
+            case "quiet", "hush" -> handleQuiet(player);
             case "rank", "service" -> handleRank(player, args);
             case "queue" -> handleQueue(player, args);
             case "help"      -> showHelp(player);
@@ -948,6 +949,24 @@ public class JarvisCommands implements CommandExecutor {
                 + plugin.getAIConnector().getProvider() + "/" + plugin.getAIConnector().getModel());
     }
 
+    /**
+     * The mute. Idle remarks are the one thing he says without being asked, so
+     * turning them off has to be a sentence rather than a config edit and a
+     * reload — the whole failure mode is a player being quietly annoyed and
+     * never saying so.
+     */
+    private void handleQuiet(Player player) {
+        var remarks = plugin.getRemarks();
+        if (remarks == null || !remarks.isEnabled()) {
+            player.sendMessage(ChatColor.GRAY + "Jarvis: I keep my observations to myself already, sir.");
+            return;
+        }
+        boolean nowMuted = remarks.toggleMute(player);
+        player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
+                + (nowMuted ? "Very good, sir. I shall hold my tongue."
+                            : "As you wish, sir. I shall speak up when something warrants it."));
+    }
+
     private void showHelp(Player player) {
         player.sendMessage(ChatColor.GOLD + "═══════════════════════════════");
         // Read from the plugin, never typed in: this line said v0.8.2 from 0.8.3
@@ -984,6 +1003,7 @@ public class JarvisCommands implements CommandExecutor {
         player.sendMessage(ChatColor.WHITE + "  /jarvis duties" + ChatColor.GRAY + " - Standing scheduled duties");
         player.sendMessage(ChatColor.WHITE + "  /jarvis recover" + ChatColor.GRAY + " - Retrieve your death drops");
         player.sendMessage(ChatColor.WHITE + "  /jarvis tunnel [n|s|e|w] [length]" + ChatColor.GRAY + " - Drive a 3x3 passage (Peerless rank)");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis quiet" + ChatColor.GRAY + " - Stop the idle remarks (toggle)");
         player.sendMessage(ChatColor.WHITE + "  /jarvis rank" + ChatColor.GRAY + " - Service record and what he has earned");
         player.sendMessage(ChatColor.WHITE + "  /jarvis queue <order>" + ChatColor.GRAY + " - Line up an order for when he's free");
         player.sendMessage(ChatColor.WHITE + "  /jarvis queue list|clear" + ChatColor.GRAY + " - Review or tear up the list");

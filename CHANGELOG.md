@@ -1,5 +1,63 @@
 # Jarvis Changelog
 
+## v0.15.0 (2026-09-08) — he notices things
+
+He spoke when spoken to, when a task ended, and when something was about to
+explode behind you. He never simply *noticed* anything. This is the first thing
+he says because he felt like it.
+
+### Added — idle remarks
+
+- **A remark every few minutes while he is standing about.** What you are
+  carrying, how deep you have got, that it has started to thunder. Off by
+  default under `steward.remarks.enabled`, and gated by `steward.charm` like
+  the rest of that family.
+- **Nothing is logged and nothing is generated.** Every line comes off a plain
+  getter — inventory, altitude, block light, weather, what is standing nearby.
+  The instinct here is to reach for an action log and a model; both were
+  refused. An action log is a dependency and a database for something a
+  `Player` getter already answers, and a model call every ninety seconds per
+  player, forever, is a standing bill for a cosmetic feature. The lines are
+  written.
+- **The filter is the feature.** Seventy-two iron ore is worth a sentence;
+  forty-one cobblestone is not. `RemarkDoctrine` holds the thresholds — ore and
+  gems at 32, copper and coal at 128, cobblestone and its cousins only once the
+  quantity is absurd enough to be funny, and building blocks never — as a pure
+  function that returns nothing far more often than it returns a line. That
+  judgement is ordinary code, and it is what separates a butler from a status
+  bar.
+- **Cooldowns are keyed on the subject, not the wording.** "72 iron ore" and
+  "68 iron ore" are the same observation twice; a cooldown on the sentence is
+  no cooldown at all, and anything that generates phrasing will rephrase its
+  way around one. Fifteen minutes per subject, three minutes between any two
+  remarks.
+- **He does not remark on what he cannot see.** Same judgement the charm
+  monitor makes — summoned, same world, within ten metres — now a single
+  `distanceToOwner` both call, so the two cannot drift apart on what counts as
+  being present.
+- **Only while he is idle.** A butler halfway down a mine shaft on your orders
+  is working, not making conversation. `require-idle` reuses
+  `describeCurrentTask`.
+- **`/jarvis quiet`** mutes him for you, without a config edit and a reload.
+  Nobody reports that the butler is tiresome; they turn him off, so turning him
+  off had to be a sentence.
+
+### Deliberately not done
+
+- **Hunger and tool wear are never remarked on.** The valet already speaks to
+  both and hands over food or a replacement while doing it. Two subsystems
+  observing the same fact is exactly how a charming feature becomes a tiresome
+  one.
+- **Remarks are text, not speech.** What is charming to read every few minutes
+  is grating to hear, and the spoken cadence would have to be far slower than
+  the written one. Left for its own decision rather than inherited from
+  `voice.speak-replies`.
+
+### Changed
+
+- `JarvisNPC.distanceToOwner(Player)` is new and public; the charm monitor's
+  three lines of world-compare-and-measure now go through it.
+
 ## v0.14.0 (2026-09-07) — he learns to shoot, and to keep his distance
 
 The service ladder ended at a trident, and every rank below it bought the same

@@ -24,6 +24,7 @@ import com.gadgetman.jarvis.voice.VoiceBridge;
 import com.gadgetman.jarvis.listeners.ChatListener;
 import com.gadgetman.jarvis.steward.DutyScheduler;
 import com.gadgetman.jarvis.steward.MorningReport;
+import com.gadgetman.jarvis.steward.remarks.Remarks;
 import com.gadgetman.jarvis.listeners.PlayerConnectionListener;
 import com.gadgetman.jarvis.listeners.PlayerEventListener;
 import org.bukkit.command.CommandSender;
@@ -61,6 +62,7 @@ public class Jarvis extends JavaPlugin {
     private VoiceBridge voiceBridge;
     private TaskMonitor taskMonitor;
     private ProgressionManager progressionManager;
+    private Remarks remarks;
 
     @Override
     public void onEnable() {
@@ -109,6 +111,11 @@ public class Jarvis extends JavaPlugin {
         dutyScheduler = new DutyScheduler(this);
         morningReport = new MorningReport(this);
 
+        // Idle commentary. Off unless steward.remarks.enabled; start() is a
+        // no-op otherwise, so nothing ticks for a server that has not asked.
+        remarks = new Remarks(this);
+        remarks.start();
+
         // The one road from an utterance to an action; chat and voice both use it.
         intentPipeline = new IntentPipeline(this);
 
@@ -155,6 +162,9 @@ public class Jarvis extends JavaPlugin {
         if (taskMonitor != null) {
             taskMonitor.shutdown();
         }
+        if (remarks != null) {
+            remarks.shutdown();
+        }
         if (voiceBridge != null) {
             voiceBridge.shutdown();
         }
@@ -183,6 +193,9 @@ public class Jarvis extends JavaPlugin {
         }
         if (requestDecomposer != null) {
             requestDecomposer.reload();
+        }
+        if (remarks != null) {
+            remarks.reload();
         }
         getLogger().info("Jarvis v" + version + " reloaded!");
     }
@@ -251,6 +264,10 @@ public class Jarvis extends JavaPlugin {
 
     public VoiceBridge getVoiceBridge() {
         return voiceBridge;
+    }
+
+    public Remarks getRemarks() {
+        return remarks;
     }
 
     public IntentPipeline getIntentPipeline() {
