@@ -24,6 +24,7 @@ import com.gadgetman.jarvis.voice.VoiceBridge;
 import com.gadgetman.jarvis.listeners.ChatListener;
 import com.gadgetman.jarvis.steward.DutyScheduler;
 import com.gadgetman.jarvis.steward.MorningReport;
+import com.gadgetman.jarvis.npc.portal.PortalScout;
 import com.gadgetman.jarvis.steward.remarks.Remarks;
 import com.gadgetman.jarvis.listeners.PlayerConnectionListener;
 import com.gadgetman.jarvis.listeners.PlayerEventListener;
@@ -63,6 +64,7 @@ public class Jarvis extends JavaPlugin {
     private TaskMonitor taskMonitor;
     private ProgressionManager progressionManager;
     private Remarks remarks;
+    private PortalScout portalScout;
 
     @Override
     public void onEnable() {
@@ -116,6 +118,11 @@ public class Jarvis extends JavaPlugin {
         remarks = new Remarks(this);
         remarks.start();
 
+        // Portals: he notes the ones we pass, and can do the 1:8 arithmetic
+        // whether or not he has ever seen one.
+        portalScout = new PortalScout(this);
+        portalScout.start();
+
         // The one road from an utterance to an action; chat and voice both use it.
         intentPipeline = new IntentPipeline(this);
 
@@ -132,6 +139,7 @@ public class Jarvis extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerConnectionListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerEventListener(this), this);
         getServer().getPluginManager().registerEvents(morningReport, this);
+        getServer().getPluginManager().registerEvents(portalScout, this);
 
         // Periodic cleanup of old requests (every 5 minutes)
         getServer().getScheduler().runTaskTimer(this,
@@ -165,6 +173,9 @@ public class Jarvis extends JavaPlugin {
         if (remarks != null) {
             remarks.shutdown();
         }
+        if (portalScout != null) {
+            portalScout.shutdown();
+        }
         if (voiceBridge != null) {
             voiceBridge.shutdown();
         }
@@ -196,6 +207,9 @@ public class Jarvis extends JavaPlugin {
         }
         if (remarks != null) {
             remarks.reload();
+        }
+        if (portalScout != null) {
+            portalScout.reload();
         }
         getLogger().info("Jarvis v" + version + " reloaded!");
     }
@@ -264,6 +278,10 @@ public class Jarvis extends JavaPlugin {
 
     public VoiceBridge getVoiceBridge() {
         return voiceBridge;
+    }
+
+    public PortalScout getPortalScout() {
+        return portalScout;
     }
 
     public Remarks getRemarks() {

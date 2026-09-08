@@ -1,6 +1,7 @@
 package com.gadgetman.jarvis.npc;
 
 import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.npc.portal.PortalSighting;
 import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -35,6 +36,7 @@ public class DepositManager {
     private final Map<UUID, Location> chests = new ConcurrentHashMap<>();
     private final Map<UUID, Location> homes = new ConcurrentHashMap<>();
     private final Map<UUID, java.util.List<Location>> patrols = new ConcurrentHashMap<>();
+    private final Map<UUID, java.util.List<PortalSighting>> portals = new ConcurrentHashMap<>();
     private final File dataFile;
 
     private static final double CHEST_REACH = 2.8;
@@ -282,6 +284,38 @@ public class DepositManager {
         return best;
     }
 
+    // ==================== PORTAL REGISTRY (v0.16.0) ====================
+
+    /** Everything he has seen for this player, newest last. Never null. */
+    public java.util.List<PortalSighting> getPortals(UUID playerId) {
+        return portals.getOrDefault(playerId, java.util.List.of());
+    }
+
+    /**
+     * Record a sighting. Merging and the size cap live in
+     * {@link PortalSighting#remember}; this only decides whether the result was
+     * worth writing to disk.
+     *
+     * @return true if this was a portal he did not already know
+     */
+    public boolean rememberPortal(UUID playerId, PortalSighting sighting, int limit) {
+        java.util.List<PortalSighting> known = getPortals(playerId);
+        boolean isNew = PortalSighting.isNew(known, sighting, PortalSighting.MERGE_RADIUS);
+        portals.put(playerId, PortalSighting.remember(known, sighting, limit,
+                PortalSighting.MERGE_RADIUS));
+        // A merge only refreshes a timestamp, which is not worth a disk write on
+        // every scan; a genuinely new portal is.
+        if (isNew) save();
+        return isNew;
+    }
+
+    public int forgetPortals(UUID playerId) {
+        java.util.List<PortalSighting> gone = portals.remove(playerId);
+        if (gone == null || gone.isEmpty()) return 0;
+        save();
+        return gone.size();
+    }
+
     // ==================== PERSISTENCE ====================
 
     private void load() {
@@ -289,6 +323,29 @@ public class DepositManager {
         YamlConfiguration yaml = YamlConfiguration.loadConfiguration(dataFile);
         loadSection(yaml, "deposit-chests", chests, false);
         loadSection(yaml, "homes", homes, true);
+
+        var portalSection = yaml.getConfigurationSection("portals");
+        if (portalSection != null) {
+            for (String key : portalSection.getKeys(false)) {
+                try {
+                    UUID id = UUID.fromString(key);
+                    java.util.List<PortalSighting> seen = new java.util.ArrayList<>();
+                    var entries = portalSection.getConfigurationSection(key);
+                    if (entries == null) continue;
+                    for (String idx : entries.getKeys(false)) {
+                        String worldName = entries.getString(idx + ".world");
+                        if (worldName == null) continue;
+                        seen.add(new PortalSighting(worldName,
+                                entries.getInt(idx + ".x"),
+                                entries.getInt(idx + ".y"),
+                                entries.getInt(idx + ".z"),
+                                entries.getLong(idx + ".seen")));
+                    }
+                    if (!seen.isEmpty()) portals.put(id, seen);
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        }
 
         var patrolSection = yaml.getConfigurationSection("patrols");
         if (patrolSection != null) {
@@ -367,6 +424,17 @@ public class DepositManager {
                 yaml.set(base + ".x", l.getX());
                 yaml.set(base + ".y", l.getY());
                 yaml.set(base + ".z", l.getZ());
+            }
+        }
+        for (Map.Entry<UUID, java.util.List<PortalSighting>> e : new HashMap<>(portals).entrySet()) {
+            int i = 0;
+            for (PortalSighting sighting : e.getValue()) {
+                String base = "portals." + e.getKey() + "." + i++;
+                yaml.set(base + ".world", sighting.world());
+                yaml.set(base + ".x", sighting.x());
+                yaml.set(base + ".y", sighting.y());
+                yaml.set(base + ".z", sighting.z());
+                yaml.set(base + ".seen", sighting.seenAt());
             }
         }
         try {

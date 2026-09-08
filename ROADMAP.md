@@ -139,6 +139,30 @@ entry would cost a model call per queued item at dispatch time, which is why it
 was left out — but "chop twenty trees then deposit" is the obvious way to want
 to use it.
 
+## Nether portals
+
+**Shipped in v0.16.0** — sighting, memory, the 1:8 arithmetic and the escort.
+What was deliberately left out, and why:
+
+- **Searching beyond loaded chunks.** A sweep sees what the server has in
+  memory. Reaching further means force-loading terrain, which is a server hitch
+  in exchange for a convenience, and a synchronous one at that. If this is ever
+  wanted, the shape is an async chunk load of a ring at a time with a hard
+  budget — not a bigger radius.
+- **Following you through.** Citizens NPCs do not change dimension with the
+  player. Doing it properly means despawning him on this side and respawning at
+  the counterpart position, with his inventory carried across and the escort
+  resumed — a piece of work in its own right, and one that wants the arithmetic
+  above to decide *where* to reappear.
+- **Building a portal.** He has the obsidian question already solved elsewhere
+  (`BuildingAssistant` places blocks, the ladder grants him tools); what is
+  missing is a decision about whether a butler who conjures a way home is still
+  playing the same game.
+- **Unlit frames.** A scan finds `NETHER_PORTAL` blocks, which means lit
+  portals only. An obsidian ring standing dark is invisible to him, and
+  distinguishing "a portal frame" from "someone's obsidian wall" is a shape
+  problem rather than a block problem.
+
 ## Untested
 
 These are known-unverified rather than known-broken.
@@ -148,6 +172,9 @@ These are known-unverified rather than known-broken.
 - **Two or more players at once.** Progression is per-player by design, but
   concurrent NPCs, voice channels and audio players have only ever been
   exercised by one.
+- **The portal sweep's cost on a busy server.** One async pass over a
+  96x96x80 box per summoned player every twenty seconds, skipped when nobody
+  has moved. Measured nowhere; the guard that matters is the move check.
 - **Remarks in a live session.** The decision table is pinned by tests and the
   timer is trivial, but nobody has yet played for an hour with them on. The
   thing to watch for is not a wrong line — it is the cadence being wearing.

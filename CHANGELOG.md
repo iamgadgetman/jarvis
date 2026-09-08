@@ -1,5 +1,71 @@
 # Jarvis Changelog
 
+## v0.16.0 (2026-09-08) — he can find you a portal
+
+Three separate abilities, deliberately kept apart, because only one of them
+costs anything and only one of them works at any distance.
+
+### Added — he notices portals
+
+- **A sweep for portal blocks while he is out with you**, reusing the ore
+  search's trick of snapshotting chunks on the main thread and reading them off
+  it. Wide and shallow rather than the ore search's cube — a portal is a
+  landmark you walk past, not a vein you dig down to.
+- **Skipped entirely when you have not moved.** A sweep from a spot he has
+  already swept finds what it found last time, so the loop's usual outcome is
+  no work at all.
+- **Walking into one counts as a sighting**, via `PlayerPortalEvent`. Nothing
+  beats being told.
+- He cannot see into unloaded chunks — no plugin can without forcing terrain to
+  load, which would hitch the server — so a sweep reaches about as far as you
+  can see. He says "none nearby", never "there are none".
+
+### Added — he remembers them
+
+- Sightings persist in `data.yml` beside your home, deposit chest and patrol
+  routes.
+- **A frame is one portal, not six.** Every block of the purple qualifies as a
+  sighting, so anything within eight blocks of a known portal merges into it —
+  and a merge keeps the original coordinates rather than letting a remembered
+  portal wander a metre at a time.
+- **The list is bounded** at twelve per player, oldest dropped, because this is
+  a file that grows every time you walk past something and is read at every
+  startup. Re-seeing a portal refreshes it, so the one you use daily outlives
+  the one you glanced at once.
+- `/jarvis portals` lists what he knows in this world, nearest first, with
+  distance and bearing.
+
+### Added — he does the arithmetic
+
+- `/jarvis portal where` answers where a portal comes out on the other side.
+  This needs no scan, no memory and no loaded chunks: the Overworld runs at
+  eight times the Nether's scale, and the game links to any existing portal
+  within 128 blocks of the scaled position before building a new one — which is
+  why two portals close together in the Nether end up sharing an exit.
+- Standing at a portal he knows, it describes that one; standing anywhere else,
+  it answers "a portal here would come out at…", which is the same question
+  asked before you have built it.
+- **Negative coordinates are the whole difficulty.** Java's `/` truncates
+  toward zero, so `-1227 / 8` is -153 where the game floors to -154 — eight
+  blocks out, in the wrong chunk, for every base west or north of spawn.
+  `Math.floorDiv` throughout, and a test that pins exactly that case.
+
+### Added — he leads the way
+
+- `/jarvis portal` escorts you to the nearest one he knows, on the same legs,
+  waiting and torch-lighting as `/jarvis home`.
+- He leads you **to** a portal and no further. Citizens NPCs do not change
+  dimension with you, so he says as much and waits on this side.
+
+### Changed
+
+- `EscortService.takeHome` is now one caller of a general
+  `escortTo(player, destination, departure, arrival, wrongWorld)`. The walk
+  never cared where it was going.
+- `DepositManager` gains a portal registry beside the home and patrol ones, and
+  a `portals` section in `data.yml`. A sighting that merely refreshes a
+  timestamp does not trigger a disk write; a new portal does.
+
 ## v0.15.1 (2026-09-08) — the escort actually escorts
 
 `/jarvis home` walked Jarvis over to the player and left him standing there,

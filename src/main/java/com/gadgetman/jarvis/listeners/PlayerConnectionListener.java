@@ -34,6 +34,10 @@ public class PlayerConnectionListener implements Listener {
             plugin.getRemarks().forget(player);
         }
 
+        if (plugin.getPortalScout() != null) {
+            plugin.getPortalScout().forget(player);
+        }
+
         plugin.getLogger().fine("Cleaned up Jarvis state for disconnected player: " + player.getName());
     }
 }

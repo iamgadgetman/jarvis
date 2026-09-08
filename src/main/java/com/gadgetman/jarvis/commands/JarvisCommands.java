@@ -457,6 +457,7 @@ public class JarvisCommands implements CommandExecutor {
                 }
                 plugin.getJarvisNPC().tunnel(player, len, dir);
             }
+            case "portal", "portals" -> handlePortal(player, args);
             case "quiet", "hush" -> handleQuiet(player);
             case "rank", "service" -> handleRank(player, args);
             case "queue" -> handleQueue(player, args);
@@ -955,6 +956,118 @@ public class JarvisCommands implements CommandExecutor {
      * reload — the whole failure mode is a player being quietly annoyed and
      * never saying so.
      */
+    /**
+     * Nether portals: what he has seen, where they come out, and taking you to
+     * one.
+     *
+     * <p>The three answers are deliberately different in kind. The list and the
+     * escort depend on him having <i>seen</i> a portal, which is bounded by what
+     * the server has loaded. "Where does this come out" depends on nothing at
+     * all — it is arithmetic, and it works in the middle of nowhere.
+     */
+    private void handlePortal(Player player, String[] args) {
+        var scout = plugin.getPortalScout();
+        if (scout == null) {
+            player.sendMessage(ChatColor.GRAY + "Jarvis: The portal service is not running, sir.");
+            return;
+        }
+        String sub = args.length > 1 ? args[1].toLowerCase() : (args[0].equalsIgnoreCase("portals") ? "list" : "");
+
+        switch (sub) {
+            case "where", "link", "other" -> portalWhere(player, scout);
+            case "mark", "note" -> {
+                boolean isNew = scout.mark(player);
+                player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
+                        + (isNew ? "Noted, sir. I shall remember this portal."
+                                 : "I had this one already, sir."));
+            }
+            case "forget", "clear" -> {
+                int gone = scout.forgetAll(player);
+                player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
+                        + (gone == 0 ? "I had none to forget, sir."
+                                     : "Forgotten, sir — all " + gone + " of them."));
+            }
+            case "list" -> portalList(player, scout);
+            default -> portalEscort(player, scout);
+        }
+    }
+
+    /** The arithmetic: where this side's portal lands on the other. */
+    private void portalWhere(Player player, com.gadgetman.jarvis.npc.portal.PortalScout scout) {
+        var environment = player.getWorld().getEnvironment();
+        if (environment == org.bukkit.World.Environment.THE_END) {
+            player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
+                    + "The End does not pair with anything, sir. Only the Nether keeps that arrangement.");
+            return;
+        }
+        boolean inNether = environment == org.bukkit.World.Environment.NETHER;
+
+        // The nearest portal he knows, if you are practically standing at it;
+        // otherwise your own position, which answers "where should I dig".
+        var nearest = scout.nearest(player);
+        int x = player.getLocation().getBlockX();
+        int y = player.getLocation().getBlockY();
+        int z = player.getLocation().getBlockZ();
+        boolean atKnownPortal = nearest != null && nearest.distanceTo(x, y, z) <= 16;
+        if (atKnownPortal) {
+            x = nearest.x();
+            y = nearest.y();
+            z = nearest.z();
+        }
+
+        var link = com.gadgetman.jarvis.npc.portal.PortalLink.counterpart(x, y, z, inNether);
+        String side = inNether ? "Overworld" : "Nether";
+
+        player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
+                + (atKnownPortal ? "That portal comes out " : "A portal here would come out ")
+                + "at roughly " + ChatColor.YELLOW + "x " + link.x() + ", z " + link.z()
+                + ChatColor.WHITE + " in the " + side + ", sir.");
+        player.sendMessage(ChatColor.GRAY + "         The game will link to any portal within "
+                + com.gadgetman.jarvis.npc.portal.PortalLink.LINK_RADIUS
+                + " blocks of that before building a new one"
+                + (inNether ? "." : " — which is why two portals close together in the Nether"
+                              + " end up sharing an exit."));
+    }
+
+    /** What he has seen in this world, nearest first. */
+    private void portalList(Player player, com.gadgetman.jarvis.npc.portal.PortalScout scout) {
+        var known = scout.known(player);
+        if (known.isEmpty()) {
+            player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
+                    + "None on record in this world, sir. I note them as we pass them.");
+            return;
+        }
+        player.sendMessage(ChatColor.GOLD + "Portals I have seen here:");
+        var at = player.getLocation();
+        for (var sighting : known) {
+            var where = new org.bukkit.Location(player.getWorld(),
+                    sighting.x(), sighting.y(), sighting.z());
+            player.sendMessage(ChatColor.WHITE + "  x " + sighting.x() + ", y " + sighting.y()
+                    + ", z " + sighting.z() + ChatColor.GRAY + " — "
+                    + (int) at.distance(where) + "m "
+                    + com.gadgetman.jarvis.npc.portal.PortalScout.bearing(at, where));
+        }
+    }
+
+    /** Lead the way to the nearest one he knows. */
+    private void portalEscort(Player player, com.gadgetman.jarvis.npc.portal.PortalScout scout) {
+        var nearest = scout.nearest(player);
+        if (nearest == null) {
+            player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
+                    + "I know of no portal in this world, sir. I only see as far as the world is loaded — "
+                    + "walk a little and I shall note any we pass, or say '/jarvis portal mark' at one.");
+            return;
+        }
+        var where = new org.bukkit.Location(player.getWorld(),
+                nearest.x() + 0.5, nearest.y(), nearest.z() + 0.5);
+        plugin.getJarvisNPC().getEscortService().escortTo(player, where,
+                "The portal is " + (int) player.getLocation().distance(where) + " metres "
+                        + com.gadgetman.jarvis.npc.portal.PortalScout.bearing(player.getLocation(), where)
+                        + ", sir. This way — stay close.",
+                "The portal, sir. I shall wait on this side; I do not travel well between worlds.",
+                "That portal is in another world, sir — which is rather the difficulty.");
+    }
+
     private void handleQuiet(Player player) {
         var remarks = plugin.getRemarks();
         if (remarks == null || !remarks.isEnabled()) {
@@ -1003,6 +1116,9 @@ public class JarvisCommands implements CommandExecutor {
         player.sendMessage(ChatColor.WHITE + "  /jarvis duties" + ChatColor.GRAY + " - Standing scheduled duties");
         player.sendMessage(ChatColor.WHITE + "  /jarvis recover" + ChatColor.GRAY + " - Retrieve your death drops");
         player.sendMessage(ChatColor.WHITE + "  /jarvis tunnel [n|s|e|w] [length]" + ChatColor.GRAY + " - Drive a 3x3 passage (Peerless rank)");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis portal" + ChatColor.GRAY + " - Lead you to the nearest portal he has seen");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis portal where" + ChatColor.GRAY + " - Where this side comes out on the other");
+        player.sendMessage(ChatColor.WHITE + "  /jarvis portals" + ChatColor.GRAY + " - Portals he has noted in this world");
         player.sendMessage(ChatColor.WHITE + "  /jarvis quiet" + ChatColor.GRAY + " - Stop the idle remarks (toggle)");
         player.sendMessage(ChatColor.WHITE + "  /jarvis rank" + ChatColor.GRAY + " - Service record and what he has earned");
         player.sendMessage(ChatColor.WHITE + "  /jarvis queue <order>" + ChatColor.GRAY + " - Line up an order for when he's free");

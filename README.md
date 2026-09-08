@@ -69,6 +69,14 @@ Supports multiple AI backends with **tiered, Ollama-first routing** (new in 0.3.
 - `/jarvis duty add <minutes> <message>` — standing broadcasts that survive restarts; `/jarvis duties` to review
 - "Jarvis, build me a house" picks the best schematic from your library (works even on local-only AI); freeform AI building takes over when nothing matches
 
+### Nether Portals (new in 0.16.0)
+- `/jarvis portal` — he leads you to the nearest portal he has seen, with the same waiting and torch-lighting as the walk home
+- `/jarvis portals` — what he has noted in this world, nearest first, with distance and bearing
+- `/jarvis portal where` — **where this portal comes out on the other side.** Pure 1:8 arithmetic, so it works anywhere, at any distance, having seen nothing; it also tells you the 128-block linking radius, which is why two portals close together in the Nether share an exit
+- `/jarvis portal mark` / `forget` — note the one you are standing at, or clear the list
+- He notices portals as you pass them (a sweep of loaded chunks, skipped when you have not moved) and remembers up to twelve, merged so a frame counts once
+- **Two honest limits:** he cannot see into unloaded chunks, so "none nearby" never means "there are none"; and he leads you *to* a portal, not through one — Citizens NPCs do not change dimension with you
+
 ### Idle Remarks (new in 0.15.0)
 - He notices things while he is summoned and standing about: what you are carrying, how deep you have got, that it has started to thunder
 - Everything he says is read off a plain getter — **no action log, no database, no model call.** The lines are written, not generated, so a feature that fires on a timer costs nothing to run
@@ -241,6 +249,9 @@ Players can ask Jarvis for items ("Jarvis, can I get 64 iron ingots?"). Jarvis q
 | `/jarvis deny <id>` | Deny a player item request | `jarvis.admin` |
 | `/jarvis confirm` | Confirm a pending dangerous action | `jarvis.use` |
 | `/jarvis cancel` | Cancel a pending dangerous action | `jarvis.use` |
+| `/jarvis portal` | Lead you to the nearest portal he has seen | `jarvis.use` |
+| `/jarvis portal where` | Where this side's portal comes out on the other | `jarvis.use` |
+| `/jarvis portals` | Portals he has noted in this world | `jarvis.use` |
 | `/jarvis quiet` | Mute (or unmute) his idle remarks, for you | `jarvis.use` |
 | `/jarvis <anything>` | Natural language — Jarvis figures it out | `jarvis.use` |
 

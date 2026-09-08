@@ -576,6 +576,31 @@ steward:
     auto: false                  # true = fetch death drops without being asked
     max-distance: 192.0          # How far he'll travel for a recovery run
 
+# ========== NETHER PORTALS (v0.16.0) ==========
+# Three separate things, and only the first one costs anything:
+#
+#   He notices them  - a sweep of the LOADED chunks around you for portal
+#                      blocks, run only when you have moved since the last one.
+#                      A plugin cannot see into unloaded terrain, so this reaches
+#                      about as far as you can see. "None nearby" is the honest
+#                      answer it can give; "there are none" is not.
+#   He remembers them - sightings live beside your home in data.yml, merged so a
+#                      frame counts once, and capped so the file cannot grow
+#                      without bound.
+#   He does the maths - /jarvis portal where needs no scan at all. The Overworld
+#                      runs at 8x the Nether, and the game links to any portal
+#                      within 128 blocks of the scaled position.
+#
+# He will lead you TO a portal and no further: Citizens NPCs do not change
+# dimension with you.
+portals:
+  scout: true                    # Notice portals while he is out with you
+  announce: true                 # Mention a portal the first time he sees it
+  scan-radius: 48                # Horizontal reach of one sweep, in blocks
+  scan-height: 40                # And how far above and below you it looks
+  scan-interval-seconds: 20      # Sweeps are skipped entirely if you have not moved
+  remember: 12                   # Portals kept per player; oldest is dropped
+
 # ========== FARMING & GROUNDS (v0.7.0) ==========
 farming:
   field-radius: 16               # Crop scan radius around where he starts

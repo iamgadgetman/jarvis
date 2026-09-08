@@ -46,24 +46,45 @@ public class EscortService {
     }
 
     public void takeHome(Player player) {
-        if (!provider.isSpawned(player)) {
-            host.say(player, "Summon me first, sir — /jarvis summon.");
-            return;
-        }
         Location home = data.getHome(player);
         if (home == null) {
             host.say(player, "No home on record, sir. Stand where you'd like it and say '/jarvis home set'.");
             return;
         }
+        escortTo(player, home,
+                "This way, sir. Stay close — I'll light the road.",
+                "Home, sir. No casualties — I do like a quiet walk.",
+                "Home is in another world, sir — a portal is required first.");
+    }
+
+    /**
+     * Lead the player to a destination on foot: he walks ahead, waits when they
+     * fall behind, and lights the dark stretches.
+     *
+     * <p>Home was the first destination and for two versions the only one. The
+     * walk itself never cared where it was going, so the portal service leads
+     * with the same legs, the same waiting, and the same torches.
+     *
+     * @param departure what he says on setting off
+     * @param arrival   what he says on getting there
+     * @param wrongWorld what he says when the destination is not in this world;
+     *                  he cannot take you through a portal, only to one
+     */
+    public void escortTo(Player player, Location destination, String departure,
+                         String arrival, String wrongWorld) {
+        if (!provider.isSpawned(player)) {
+            host.say(player, "Summon me first, sir — /jarvis summon.");
+            return;
+        }
         Location npcLoc = host.getCurrentLocation(player);
-        if (home.getWorld() != npcLoc.getWorld()) {
-            host.say(player, "Home is in another world, sir — a portal is required first.");
+        if (destination.getWorld() != npcLoc.getWorld()) {
+            host.say(player, wrongWorld);
             return;
         }
 
         host.stopTask(player);
         host.applyNavigatorDefaults(player, null);
-        host.say(player, "This way, sir. Stay close — I'll light the road.");
+        host.say(player, departure);
 
         BukkitRunnable task = new BukkitRunnable() {
             int stalled = 0;
@@ -90,11 +111,11 @@ public class EscortService {
                 }
 
                 // Arrived? (Both of us, ideally)
-                if (playerLoc.distance(home) <= ARRIVE_DISTANCE + 2) {
+                if (playerLoc.distance(destination) <= ARRIVE_DISTANCE + 2) {
                     cancel();
                     host.taskDone(player, this);
                     provider.cancelNavigation(player);
-                    host.say(player, "Home, sir. No casualties — I do like a quiet walk.");
+                    host.say(player, arrival);
                     return;
                 }
 
@@ -116,11 +137,11 @@ public class EscortService {
                 // Light the road
                 lightHere(loc);
 
-                // Lead: walk it in legs. Aiming straight at a home three hundred
+                // Lead: walk it in legs. Aiming straight at a destination three hundred
                 // blocks off does not produce a long path, it produces no path,
                 // and a butler who never sets off.
-                if (!provider.isNavigating(player) && loc.distance(home) > ARRIVE_DISTANCE) {
-                    provider.navigateTo(player, nextLeg(loc, home));
+                if (!provider.isNavigating(player) && loc.distance(destination) > ARRIVE_DISTANCE) {
+                    provider.navigateTo(player, nextLeg(loc, destination));
                 }
                 if (loc.distance(playerLoc) > LEAD_DISTANCE && provider.isNavigating(player)) {
                     provider.setNavigationPaused(player, true);
@@ -137,7 +158,7 @@ public class EscortService {
                 }
                 lastPos = loc.clone();
 
-                // Stuck: a short bound TOWARD home, the way the recovery run does
+                // Stuck: a short bound TOWARD destination, the way the recovery run does
                 // it. This used to teleport him to the player, which is how an
                 // escort turned into a butler who walks over and stands there.
                 // He can only reach here while within LEAD_DISTANCE of the
@@ -146,7 +167,7 @@ public class EscortService {
                 // behind.
                 if (stalled > STALL_HOP_TICKS) {
                     provider.cancelNavigation(player);
-                    provider.teleport(player, hopToward(loc, home));
+                    provider.teleport(player, hopToward(loc, destination));
                     stalled = 0;
                 }
             }
