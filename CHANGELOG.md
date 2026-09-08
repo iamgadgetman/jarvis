@@ -1,5 +1,30 @@
 # Jarvis Changelog
 
+## v0.15.1 (2026-09-08) — the escort actually escorts
+
+`/jarvis home` walked Jarvis over to the player and left him standing there,
+which is the one thing an escort must not do.
+
+Two faults, one behind the other:
+
+- **He never set off.** The escort aimed the navigator straight at home.
+  Citizens plans with an iteration budget derived from the navigator's range
+  (`mining.navigator-range`, 64 by default), so a home three hundred blocks
+  away does not yield a long path — it yields no path, the navigation ends the
+  tick it began, and he stands still. The walk is now planned in 40-block
+  **legs**, re-aimed as each is reached, which keeps every request inside what
+  A* will actually solve.
+- **The stall watchdog then fetched him to you.** After eight stationary
+  seconds it teleported him to `findSafeNear(playerLoc)` — the player. So the
+  visible behaviour was a butler who trots to your side and waits. It now hops
+  eight blocks *toward home*, the way `RecoveryService` has always done it. A
+  hop can only happen while he is within `LEAD_DISTANCE` of you, because
+  further ahead the navigation is paused and pausing does not count as
+  stalling, so it can never leave you behind.
+
+Nothing else changed; the wait-for-a-straggler, torch-lighting and arrival
+behaviour are as they were.
+
 ## v0.15.0 (2026-09-08) — he notices things
 
 He spoke when spoken to, when a task ended, and when something was about to

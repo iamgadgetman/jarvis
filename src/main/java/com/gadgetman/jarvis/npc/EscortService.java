@@ -8,6 +8,7 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.Vector;
 
 /**
  * EscortService (v0.6.0) - "Take me home, Jarvis."
@@ -27,6 +28,8 @@ public class EscortService {
     private static final double ARRIVE_DISTANCE = 4.0;
     private static final double WAIT_FOR_PLAYER_DISTANCE = 10.0;
     private static final double LEAD_DISTANCE = 6.0;          // How far ahead he walks
+    private static final double LEG_DISTANCE = 40.0;          // One planned stretch of the walk
+    private static final double HOP_DISTANCE = 8.0;           // A stalled bound, toward home
     private static final int STALL_HOP_TICKS = 8;
     private static final int TORCH_LIGHT_THRESHOLD = 7;
 
@@ -113,9 +116,11 @@ public class EscortService {
                 // Light the road
                 lightHere(loc);
 
-                // Lead: aim for a point toward home, at most LEAD_DISTANCE ahead of the player
+                // Lead: walk it in legs. Aiming straight at a home three hundred
+                // blocks off does not produce a long path, it produces no path,
+                // and a butler who never sets off.
                 if (!provider.isNavigating(player) && loc.distance(home) > ARRIVE_DISTANCE) {
-                    provider.navigateTo(player, home);
+                    provider.navigateTo(player, nextLeg(loc, home));
                 }
                 if (loc.distance(playerLoc) > LEAD_DISTANCE && provider.isNavigating(player)) {
                     provider.setNavigationPaused(player, true);
@@ -132,10 +137,16 @@ public class EscortService {
                 }
                 lastPos = loc.clone();
 
+                // Stuck: a short bound TOWARD home, the way the recovery run does
+                // it. This used to teleport him to the player, which is how an
+                // escort turned into a butler who walks over and stands there.
+                // He can only reach here while within LEAD_DISTANCE of the
+                // player -- further ahead and the navigation is paused, which
+                // does not count as stalling -- so a hop can never leave you
+                // behind.
                 if (stalled > STALL_HOP_TICKS) {
                     provider.cancelNavigation(player);
-                    Location near = host.findSafeNear(playerLoc);
-                    provider.teleport(player, near);
+                    provider.teleport(player, hopToward(loc, home));
                     stalled = 0;
                 }
             }
@@ -143,6 +154,40 @@ public class EscortService {
 
         task.runTaskTimer(plugin, 10L, 20L);
         host.registerTask(player, task);
+    }
+
+    /**
+     * The next waypoint on the way home: home itself when it is close enough to
+     * plan, otherwise a point {@link #LEG_DISTANCE} along the line to it.
+     *
+     * <p>Citizens' A* is given an iteration budget derived from the navigator's
+     * range ({@code mining.navigator-range}, 64 by default), so a distant target
+     * does not yield a long path — it yields none, the navigation ends the tick
+     * it began, and the NPC stands still. Legs keep every request inside what
+     * the pathfinder will actually solve, which is what makes him walk the road
+     * rather than appear at your elbow.
+     */
+    private Location nextLeg(Location from, Location dest) {
+        return step(from, dest, LEG_DISTANCE);
+    }
+
+    /** A stalled bound in the same direction — short, visible, and never backwards. */
+    private Location hopToward(Location from, Location dest) {
+        return step(from, dest, HOP_DISTANCE);
+    }
+
+    private Location step(Location from, Location dest, double distance) {
+        Vector dir = dest.toVector().subtract(from.toVector());
+        if (dir.length() <= distance) return dest.clone();
+
+        Location point = from.clone().add(dir.normalize().multiply(distance));
+        point.setY(point.getWorld().getHighestBlockYAt(point) + 1);
+        // Home is underground, or the surface here is a cliff above us: stay in
+        // the current Y band rather than surfacing and walking over the top.
+        if (dest.getY() < from.getY() - 4 || from.getY() - point.getY() > 8) {
+            point.setY(from.getY());
+        }
+        return host.findSafeNear(point);
     }
 
     /** Place a torch at the NPC's feet when the road is spawn-dark. */
