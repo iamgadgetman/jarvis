@@ -1,6 +1,7 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** all nine steps done. The Fabric adapter is the next piece of work.
+**Status:** all nine steps done; the Fabric spike is built and awaits an in-game
+trial (see *The spike*). The Fabric adapter is the next piece of work.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -10,7 +11,8 @@ Hand this file to a future session with one of:
 
 - "Implement step N of docs/dev/platform-interface.md" (see *Refactor steps*).
 - "Revise the platform interface: <change>" to amend the design before starting.
-- "Run the Fabric spike from docs/dev/platform-interface.md" (see *The spike*).
+- "Trial the Fabric spike from docs/dev/platform-interface.md" (see *The spike*)
+  once someone has run it in a world, to record what the follower did.
 
 Everything below is self-contained. The numbers in *Why* were measured on the
 baseline above and do not need re-measuring unless the code has moved a lot.
@@ -86,9 +88,10 @@ jarvis/
   pom.xml                      (parent, packaging pom)
   jarvis-core/pom.xml          deps: org.json, snakeyaml, HikariCP, sqlite, junit
   jarvis-paper/pom.xml         deps: core, purpur-api, citizensapi, worldedit, voicechat-api
-  jarvis-fabric/build.gradle   deps: core (as a jar-in-jar), fabric-loader, fabric-api, voicechat-api
-  jarvis-nav/                  (optional, later) server-side A* shared by fabric and any
-                               future Citizens-free Paper provider
+  jarvis-nav/pom.xml           deps: core (value types only), junit. The A* and follower.
+  jarvis-fabric-spike/         Gradle Loom project, outside the Maven reactor: the spike.
+  jarvis-fabric/build.gradle   (later) deps: core (as a jar-in-jar), nav, fabric-loader,
+                               fabric-api, voicechat-api
 ```
 
 GraalJS is a Paper-only concern for now: Paper's library loader fetches it,
@@ -538,9 +541,10 @@ or is dropped.
 
 ---
 
-## The pathfinder (Fabric adapter, or `jarvis-nav`)
+## The pathfinder (`jarvis-nav`)
 
-Not in core. Needed only where the NPC has no navigator of its own.
+Not in core. Needed only where the NPC has no navigator of its own. *Built as
+the `jarvis-nav` module for the spike; see the end of this section.*
 
 - A* over `BlockPos` with move types: walk, step up, drop (up to 3, more if
   water below), jump gap of 1, swim, climb ladder/vine, open door.
@@ -554,6 +558,24 @@ Not in core. Needed only where the NPC has no navigator of its own.
   progress toward the next node is below a threshold for `stuckAfterTicks`.
 - Reads the world through `World`/`BlockScan`, so it could be lifted into a
   shared module and used by a future Citizens-free Paper provider too.
+
+*Done, as `jarvis-nav` (a Maven module beside core, depending only on core's
+value types).* It reads the world through its own six-method `Terrain`
+interface (solid, passable, liquid, climbable, door, hazard, plus the height
+limits) rather than `World`, so the Fabric spike could implement it over a
+`ServerLevel` directly and a Paper provider could implement it over `World`
+in a dozen lines. `AStar` has the move types and costs above (walk 1, step up
+1.5, drop 1 + 0.5 per block up to 3 or 12 into water, jump gap 3, swim 3,
+climb 1.5, door 2, plus 0.4 beside a fall of four or more), a node budget
+(4000 by default) and partial paths toward the goal. `PathFollower` turns a
+path into `Controls` (yaw, pitch, forward, strafe, jump, sneak, sprint, use
+door) every tick, holds jump on ladders and in water, sprints on straight
+runs of three, and reports stuck after 40 ticks without progress and strayed
+beyond six blocks. Lateral strafing and sneaking on fatal edges are not
+implemented; the search keeps him off edges instead. 26 tests: each move
+type against a grid terrain, and the follower walking a small kinematic
+simulation (gravity, a 1.25-block jump, 0.6 auto-step, ladders, water, doors)
+through the same terrains.
 
 ---
 
@@ -820,6 +842,49 @@ A throwaway Fabric mod, no core involved, to retire the one open-ended risk:
 Two weeks. If the follower is reliable, the Fabric adapter is straightforward.
 If not, that is the thing to solve before spending anything on the port.
 
+*Built; not yet trialled in a world.* `jarvis-fabric-spike/` is a Gradle Loom
+project outside the Maven reactor (Fabric's toolchain is Gradle), targeting
+Minecraft 26.3, Fabric Loader 0.19.5 and Loom 1.17, with no Fabric API: the
+command and the tick hook are mixins, the way Carpet does it. The
+`fabric-spike` workflow builds it on GitHub's runners (the Fabric and Mojang
+repositories are not reachable from the development sandbox) and attaches
+`jarvis-fabric-spike-<version>.jar`; the first run compiled clean.
+
+- Items 1 to 4 are done. Carpet's fake player, connection, packet listener,
+  action pack and ray tracer are vendored under
+  `com.gadgetman.jarvis.fabric.spike.fake` (MIT, attributed in
+  `THIRD-PARTY-LICENSES.md`), trimmed to offline profiles (no Mojang lookup,
+  no saved player data), no shadowing or respawning, and the use, attack and
+  jump actions. Four mixins install them: `PlayerListMixin` (spawn position
+  and the fake packet listener), `ServerPlayerMixin` (an action pack per
+  player, ticked for fakes only), `ConnectionAccessor` (a channel so the
+  connection counts as open) and `CommandsMixin` (registers `/jspike`).
+- `LevelTerrain` implements nav's `Terrain` over a `ServerLevel`: solid is a
+  non-empty collision shape that is not a ladder or door, doors and fence
+  gates that open by hand are doors, hazards are lava, fire, campfires,
+  cactus, magma, berry bushes, powder snow, wither roses and dripstone.
+- `FakeDriver` runs from the fake player's tick, before the action pack
+  applies input: plans with `AStar`, follows with `PathFollower`, re-plans
+  on stuck or strayed or at the end of a partial path (24 plans at most),
+  translates `Controls` into look, forward, strafe, sneak, sprint, a held
+  jump and a `USE` on the shut door ahead. `dig` first picks a place to
+  stand beside or on top of the block, walks there, then looks at the block
+  and holds `ATTACK` until it is air.
+- `/jspike spawn [name]`, `goto x y z`, `dig x y z`, `stop`, `status`, `kill`.
+  Operators only. One fake at a time. `status` says where he is and the
+  driver's last word (path size and nodes, stuck, arrived, dug, no path).
+- Item 5, the trial, is the remaining work and needs a person and a world:
+  Fabric Loader 0.19.5 on Minecraft 26.3, the jar in `mods/`, then the five
+  terrains. The server log records each plan and re-plan. Things to watch,
+  because the simulator does not model them: the game's real jump arc
+  against `jumpWithin` (1.3 blocks), whether `look` alone turns the body for
+  `travel` (the action pack sets head rotation too), fence and wall tops
+  counting as solid floors the search will try to step onto, and one-block
+  gap jumps timed from `onGround`.
+- Not vendored: Carpet's knockback and known-movement mixins (they need
+  MixinExtras and only matter for combat), tick-freeze handling, mounting,
+  item drops and hotbar control. Add them when the adapter needs them.
+
 ---
 
 ## Open questions
@@ -832,8 +897,9 @@ If not, that is the thing to solve before spending anything on the port.
 - **ChatEvent threading.** Paper's chat event is async; Fabric's is on the
   server thread. Core must treat `ChatEvent` as possibly async and hop with
   `Scheduler.sync`, as `ChatListener` does today.
-- **Who owns the pathfinder.** Fabric adapter for now. Promote to `jarvis-nav`
-  if a second consumer appears.
+- **Who owns the pathfinder.** Settled: `jarvis-nav`, since the spike needed
+  it testable without a game. A Citizens-free Paper provider would implement
+  its `Terrain` over `World`.
 - **GraalJS on Fabric.** Ship without it (JSON planner) and revisit with Rhino.
 - **NeoForge.** Architectury from the start would cover it with the same
   adapter; decide when the Fabric adapter exists.
