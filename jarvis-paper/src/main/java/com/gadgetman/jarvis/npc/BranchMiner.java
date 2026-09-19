@@ -288,13 +288,13 @@ class BranchMiner {
                     // v0.8.0: if the chest couldn't take it, don't loop forever
                     if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
                         mode = Mode.DONE;
-                        host.reportFailure(TaskFailure.of(player, "branch_mine")
+                        host.reportFailure(TaskFailure.of(plugin.owner(player), "branch_mine")
                                 .step("delivering a full load to the deposit chest")
                                 .reason("the chest would not take the load and his own bags are still "
                                         + "full, so nothing further can be picked up")
                                 .say("The chest is full and so are my bags, sir. "
                                         + "Pausing the mine until there's room somewhere.")
-                                .where(host.getCurrentLocation(player))
+                                .where(com.gadgetman.jarvis.platform.PaperWorlds.site(host.getCurrentLocation(player)))
                                 .state("loot slots used", host.lootSlotsUsed(player)
                                         + " of " + JarvisNPC.LOOT_CAPACITY)
                                 .state("ores recovered", oresMined)
@@ -451,14 +451,14 @@ class BranchMiner {
             // stopped; the tunnel is still there, so stepping back into it is a
             // move worth offering.
             final Location target = stepCell;
-            failEarly(TaskFailure.of(player, "branch_mine")
+            failEarly(TaskFailure.of(plugin.owner(player), "branch_mine")
                     .step("walking to dig cell " + index + " of " + plan.size())
                     .reason("drifted " + String.format("%.1f", distance) + " blocks from the cell he was "
                             + "walking to, past the " + MAX_TRANSITION_DISTANCE + "-block limit — "
                             + "pathfinding has lost the tunnel")
                     .say("I seem to have lost the mine, sir. Stopping here. ("
                             + oresMined + " ores recovered.)")
-                    .where(npcLoc)
+                    .where(com.gadgetman.jarvis.platform.PaperWorlds.site(npcLoc))
                     .state("plan progress", index + " of " + plan.size() + " cells")
                     .state("ores recovered", oresMined)
                     .state("blocks excavated", blocksDug)
@@ -563,13 +563,13 @@ class BranchMiner {
         if (index == 0 || index > plan.size()) {
             // No earlier segment to fall back on. The rest of the plan is still
             // good, so skipping the opening one is a real way forward.
-            failEarly(TaskFailure.of(player, "branch_mine")
+            failEarly(TaskFailure.of(plugin.owner(player), "branch_mine")
                     .step("clearing the opening segment of the mine")
                     .reason("the first segment was blocked before any of it was dug, so there is no "
                             + "earlier segment to reroute into")
                     .say("The very first stretch is blocked, sir. Stopping here. ("
                             + oresMined + " ores recovered.)")
-                    .where(host.getCurrentLocation(player))
+                    .where(com.gadgetman.jarvis.platform.PaperWorlds.site(host.getCurrentLocation(player)))
                     .state("plan length", plan.size() + " cells")
                     .state("ores recovered", oresMined)
                     .option("skip_first_segment",

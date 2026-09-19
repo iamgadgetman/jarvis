@@ -1,17 +1,19 @@
 package com.gadgetman.jarvis.steward;
 
-import com.gadgetman.jarvis.Jarvis;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-import org.bukkit.Bukkit;
-import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.entity.Player;
+import com.gadgetman.jarvis.core.config.YamlConfig;
+import com.gadgetman.jarvis.core.config.YamlFiles;
+import com.gadgetman.jarvis.core.platform.Audience;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Platform;
+import com.gadgetman.jarvis.core.platform.Task;
+import com.gadgetman.jarvis.core.text.Colors;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -36,18 +38,23 @@ public class DutyScheduler {
         }
     }
 
-    private final Jarvis plugin;
-    private final File file;
+    private final Platform platform;
+    private final Path file;
     private final List<Duty> duties = new CopyOnWriteArrayList<>();
     private int nextId = 1;
+    private final Task loop;
 
-    public DutyScheduler(Jarvis plugin) {
-        this.plugin = plugin;
-        this.file = new File(plugin.getDataFolder(), "duties.yml");
+    public DutyScheduler(Platform platform) {
+        this.platform = platform;
+        this.file = platform.dataDir().resolve("duties.yml");
         load();
 
         // Check loop: every 20 seconds
-        Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 200L, 400L);
+        this.loop = platform.scheduler().every(200L, 400L, t -> tick());
+    }
+
+    public void shutdown() {
+        loop.cancel();
     }
 
     // ==================== EXECUTION ====================
@@ -59,8 +66,7 @@ public class DutyScheduler {
         for (Duty duty : duties) {
             if (!duty.due(now)) continue;
 
-            Bukkit.getServer().broadcast(Component.text("[Jarvis] ", NamedTextColor.GOLD)
-                    .append(Component.text(duty.message, NamedTextColor.WHITE)));
+            platform.players().broadcast(Colors.GOLD + "[Jarvis] " + Colors.WHITE + duty.message);
 
             if (duty.remainingRuns > 0) {
                 duty.remainingRuns--;
@@ -110,25 +116,22 @@ public class DutyScheduler {
         return duties.size();
     }
 
-    public void showDuties(Player player) {
+    public void showDuties(Audience player) {
         if (duties.isEmpty()) {
-            player.sendMessage(Component.text("Jarvis: ", NamedTextColor.GOLD)
-                    .append(Component.text("No standing duties, sir. My schedule is entirely yours.",
-                            NamedTextColor.WHITE)));
+            player.message(Colors.jarvis("No standing duties, sir. My schedule is entirely yours."));
             return;
         }
-        player.sendMessage(Component.text("— Standing duties —", NamedTextColor.GOLD));
+        player.message(Colors.GOLD + "— Standing duties —");
         long now = System.currentTimeMillis() / 1000L;
         for (Duty d : duties) {
             long in = Math.max(0, d.nextRunEpochSec - now);
             String cadence = d.intervalSeconds > 0
                     ? "every " + formatDuration(d.intervalSeconds) : "once";
-            player.sendMessage(Component.text("  #" + d.id + " ", NamedTextColor.YELLOW)
-                    .append(Component.text("\"" + d.message + "\" ", NamedTextColor.WHITE))
-                    .append(Component.text("(" + cadence + ", next in " + formatDuration(in) + ")",
-                            NamedTextColor.GRAY)));
+            player.message(Colors.YELLOW + "  #" + d.id + " "
+                    + Colors.WHITE + "\"" + d.message + "\" "
+                    + Colors.GRAY + "(" + cadence + ", next in " + formatDuration(in) + ")");
         }
-        player.sendMessage(Component.text("Remove with /jarvis duty remove <id>", NamedTextColor.GRAY));
+        player.message(Colors.GRAY + "Remove with /jarvis duty remove <id>");
     }
 
     private String formatDuration(long seconds) {
@@ -140,14 +143,23 @@ public class DutyScheduler {
     // ==================== PERSISTENCE ====================
 
     private void load() {
-        if (!file.exists()) return;
-        YamlConfiguration yaml = YamlConfiguration.loadConfiguration(file);
+        Config yaml;
+        try {
+            yaml = YamlConfig.load(file);
+        } catch (IOException e) {
+            platform.log().warn("Could not read duties.yml: " + e.getMessage());
+            return;
+        }
         nextId = yaml.getInt("next-id", 1);
-        ConfigurationSection section = yaml.getConfigurationSection("duties");
-        if (section == null) return;
-        for (String key : section.getKeys(false)) {
+        if (!yaml.isSection("duties")) return;
+        Config section = yaml.section("duties");
+        for (String key : section.keys()) {
             Duty duty = new Duty();
-            duty.id = Integer.parseInt(key);
+            try {
+                duty.id = Integer.parseInt(key);
+            } catch (NumberFormatException e) {
+                continue;
+            }
             duty.message = section.getString(key + ".message", "");
             duty.intervalSeconds = section.getLong(key + ".interval-seconds", 0);
             duty.nextRunEpochSec = section.getLong(key + ".next-run", 0);
@@ -160,20 +172,23 @@ public class DutyScheduler {
     }
 
     public void save() {
-        YamlConfiguration yaml = new YamlConfiguration();
-        yaml.set("next-id", nextId);
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("next-id", nextId);
+        Map<String, Object> all = new LinkedHashMap<>();
         for (Duty d : duties) {
-            String base = "duties." + d.id;
-            yaml.set(base + ".message", d.message);
-            yaml.set(base + ".interval-seconds", d.intervalSeconds);
-            yaml.set(base + ".next-run", d.nextRunEpochSec);
-            yaml.set(base + ".remaining-runs", d.remainingRuns);
-            yaml.set(base + ".created-by", d.createdBy);
+            Map<String, Object> one = new LinkedHashMap<>();
+            one.put("message", d.message);
+            one.put("interval-seconds", d.intervalSeconds);
+            one.put("next-run", d.nextRunEpochSec);
+            one.put("remaining-runs", d.remainingRuns);
+            one.put("created-by", d.createdBy);
+            all.put(String.valueOf(d.id), one);
         }
+        root.put("duties", all);
         try {
-            yaml.save(file);
+            YamlFiles.write(file, root);
         } catch (IOException e) {
-            plugin.getLogger().warning("Could not save duties.yml: " + e.getMessage());
+            platform.log().warn("Could not save duties.yml: " + e.getMessage());
         }
     }
 }

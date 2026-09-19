@@ -144,13 +144,13 @@ class Farmer {
             deposits.startDepositRun(player, deposits.getChest(player), () -> {
                 // v0.8.0: if the chest couldn't take it, don't loop forever
                 if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
-                    host.reportFailure(TaskFailure.of(player, tendMode ? "tend" : "farm")
+                    host.reportFailure(TaskFailure.of(plugin.owner(player), tendMode ? "tend" : "farm")
                             .step("delivering a full load of produce to the deposit chest")
                             .reason("the chest would not take the load and his own bags are still "
                                     + "full, so nothing further can be picked up")
                             .say("The chest is full and so are my bags, sir. "
                                     + "Farming is paused until there's somewhere to put things.")
-                            .where(host.getCurrentLocation(player))
+                            .where(com.gadgetman.jarvis.platform.PaperWorlds.site(host.getCurrentLocation(player)))
                             .state("loot slots used", host.lootSlotsUsed(player)
                                     + " of " + JarvisNPC.LOOT_CAPACITY)
                             .state("crops harvested", harvested)

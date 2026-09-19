@@ -1,6 +1,6 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** steps 1 to 3 done. Steps 4 to 9 not started.
+**Status:** steps 1 to 4 done. Steps 5 to 9 not started.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -659,6 +659,27 @@ before. Order matters: each introduces the interfaces the next needs.
    `PaperPlatform`. Move `Observer`, `Remarks`, `DutyScheduler`,
    `MorningReport`, `PortalScout`, `RecoveryService`, `SituationSnapshot`,
    `TaskFailure`, `IntentPipeline`.
+   *Done for the interfaces and four of the classes.* Core has `Audience`,
+   `Owner`, `Players`, `World`, `BlockScan`, `Container`, `Entity`,
+   `EntityKind`, `Events` with its event records, `Site`, `Platform`, and
+   `text.Colors` (section-sign codes are the one markup every platform
+   renders; the Paper adapter turns them into components). `config.YamlFiles`
+   writes the small data files. The Paper adapter has `PaperPlatform`,
+   `PaperPlayers`, `PaperOwner` (a handle keyed on the player id that looks
+   the live player up on every call), `PaperWorld`, `PaperBlockScan`,
+   `PaperContainer`, `PaperEntity`, `PaperEvents` (one Bukkit listener that
+   republishes chat, join, quit, death and portal events) and `PaperWorlds`
+   for conversions; `PaperItems` converts item stacks both ways.
+   Moved: Observer, TaskFailure (its `where` now takes a `Site`),
+   TaskRecoveryHandler, DutyScheduler. `Jarvis.owner(Player)` is how the
+   Bukkit side gets a handle to pass into core.
+   **Deferred to step 5:** Remarks, MorningReport, PortalScout and
+   RecoveryService all call JarvisNPC directly (distance to owner, current
+   task, speaking, loot, the deposit chest, portal memory) and RecoveryService
+   is a navigation task outright. IntentPipeline dispatches thirty NPC
+   actions and belongs with the ButlerService and commands work (steps 5 and
+   8). Moving any of them now would mean inventing a stand-in for Butler that
+   step 5 replaces.
 5. **Butler.** Add `Butler`, `Butlers`, `Navigation`, `NavOptions`, `Fishing`.
    Make `CitizensNPCProvider` implement `Butler` (it already has most of the
    methods). Move tasks one at a time, smallest first: Lumberjack, Entertainer,

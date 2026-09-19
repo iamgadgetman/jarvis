@@ -1,7 +1,8 @@
 package com.gadgetman.jarvis.recovery;
 
-import org.bukkit.Location;
-import org.bukkit.entity.Player;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.core.platform.Site;
+import com.gadgetman.jarvis.core.world.BlockPos;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -29,11 +30,11 @@ public final class TaskFailure {
      *
      * @param name        short id the model returns, e.g. {@code "resume"}
      * @param description what it does, in plain English, for the prompt
-     * @param action      run on the main thread if the model picks it
+     * @param action      run on the server thread if the model picks it
      */
     public record Option(String name, String description, Runnable action) {}
 
-    private final Player player;
+    private final Owner owner;
     private final String taskType;
     private final String step;
     private final String reason;
@@ -42,7 +43,7 @@ public final class TaskFailure {
     private final List<Option> options;
 
     private TaskFailure(Builder b) {
-        this.player = b.player;
+        this.owner = b.owner;
         this.taskType = b.taskType;
         this.step = b.step;
         this.reason = b.reason;
@@ -51,7 +52,7 @@ public final class TaskFailure {
         this.options = Collections.unmodifiableList(new ArrayList<>(b.options));
     }
 
-    public Player getPlayer() { return player; }
+    public Owner getOwner() { return owner; }
     public String getTaskType() { return taskType; }
     public String getStep() { return step; }
     public String getReason() { return reason; }
@@ -68,12 +69,12 @@ public final class TaskFailure {
         return null;
     }
 
-    public static Builder of(Player player, String taskType) {
-        return new Builder(player, taskType);
+    public static Builder of(Owner owner, String taskType) {
+        return new Builder(owner, taskType);
     }
 
     public static final class Builder {
-        private final Player player;
+        private final Owner owner;
         private final String taskType;
         private String step = "unknown";
         private String reason = "unknown";
@@ -81,8 +82,8 @@ public final class TaskFailure {
         private final Map<String, String> state = new LinkedHashMap<>();
         private final List<Option> options = new ArrayList<>();
 
-        private Builder(Player player, String taskType) {
-            this.player = player;
+        private Builder(Owner owner, String taskType) {
+            this.owner = owner;
             this.taskType = taskType;
         }
 
@@ -109,12 +110,13 @@ public final class TaskFailure {
             return this;
         }
 
-        /** Records dimension, coordinates and the light level -- the usual suspects. */
-        public Builder where(Location loc) {
-            if (loc == null || loc.getWorld() == null) return this;
-            state.put("dimension", loc.getWorld().getEnvironment().name().toLowerCase());
-            state.put("position", loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ());
-            state.put("biome", loc.getBlock().getBiome().toString().toLowerCase());
+        /** Records dimension, coordinates and the biome -- the usual suspects. */
+        public Builder where(Site site) {
+            if (site == null || site.world() == null) return this;
+            BlockPos at = site.block();
+            state.put("dimension", site.world().environment().key());
+            state.put("position", at.x() + ", " + at.y() + ", " + at.z());
+            state.put("biome", site.world().biome(at));
             return this;
         }
 

@@ -72,11 +72,11 @@ class Fisherman {
         if (edge == null) {
             // Nothing to recover to — but "no water here" is worth saying with
             // the surroundings in it rather than as a stock line.
-            host.reportFailure(TaskFailure.of(player, "fish")
+            host.reportFailure(TaskFailure.of(plugin.owner(player), "fish")
                     .step("looking for somewhere to cast from")
                     .reason("no water edge found within the search radius")
                     .say("No fishable water nearby, sir. A pond would be a start.")
-                    .where(npcLoc)
+                    .where(com.gadgetman.jarvis.platform.PaperWorlds.site(npcLoc))
                     .build());
             return;
         }

@@ -337,7 +337,7 @@ public class JarvisNPC implements Listener {
     public void handlePlayerDisconnect(Player player) {
         UUID playerId = player.getUniqueId();
         TaskRecoveryHandler recovery = plugin.getTaskRecoveryHandler();
-        if (recovery != null) recovery.forget(player);
+        if (recovery != null) recovery.forget(plugin.owner(player));
         NPC npc = playerNPCs.remove(playerId);
         if (npc == null) return;
 
@@ -1780,7 +1780,7 @@ public class JarvisNPC implements Listener {
      */
     void beginTask(Player player, String taskType) {
         TaskRecoveryHandler recovery = plugin.getTaskRecoveryHandler();
-        if (recovery != null) recovery.taskStarted(player, taskType);
+        if (recovery != null) recovery.taskStarted(plugin.owner(player), taskType);
     }
 
     /**
@@ -1791,7 +1791,8 @@ public class JarvisNPC implements Listener {
     public void reportFailure(TaskFailure failure) {
         TaskRecoveryHandler recovery = plugin.getTaskRecoveryHandler();
         if (recovery == null) {
-            say(failure.getPlayer(), failure.getDefaultMessage());
+            plugin.getPlatform().player(failure.getOwner())
+                    .ifPresent(p -> say(p, failure.getDefaultMessage()));
             return;
         }
         recovery.handle(failure);
@@ -1851,7 +1852,7 @@ public class JarvisNPC implements Listener {
         // Tells self-explain that anything it is still diagnosing has been
         // superseded, so a recovery move cannot fire into the next job.
         TaskRecoveryHandler recovery = plugin.getTaskRecoveryHandler();
-        if (recovery != null) recovery.taskSuperseded(player);
+        if (recovery != null) recovery.taskSuperseded(plugin.owner(player));
         activeDefenders.remove(player.getUniqueId());
         BukkitRunnable task = activeTasks.remove(player.getUniqueId());
         if (task != null) {

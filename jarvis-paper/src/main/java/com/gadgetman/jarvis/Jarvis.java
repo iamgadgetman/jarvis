@@ -10,8 +10,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 import com.gadgetman.jarvis.core.platform.Config;
 import com.gadgetman.jarvis.core.platform.Log;
 import com.gadgetman.jarvis.core.platform.Scheduler;
-import com.gadgetman.jarvis.platform.PaperConfig;
-import com.gadgetman.jarvis.platform.PaperScheduler;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.platform.PaperPlatform;
 import com.gadgetman.jarvis.ai.AIConnector;
 import com.gadgetman.jarvis.npc.JarvisNPC;
 import com.gadgetman.jarvis.commands.JarvisCommands;
@@ -50,10 +50,8 @@ public class Jarvis extends JavaPlugin {
      */
     private String version = "unknown";
 
-    // The platform handles core talks through; see docs/dev/platform-interface.md.
-    private Config coreConfig;
-    private Log log;
-    private Scheduler scheduler;
+    // The platform core talks through; see docs/dev/platform-interface.md.
+    private PaperPlatform platform;
 
     private AIConnector aiConnector;
     private JarvisNPC jarvisNPC;
@@ -84,9 +82,11 @@ public class Jarvis extends JavaPlugin {
 
         saveDefaultConfig();
 
-        coreConfig = new PaperConfig(this);
-        log = Log.of(getLogger());
-        scheduler = new PaperScheduler(this);
+        platform = new PaperPlatform(this);
+        platform.registerEvents();
+        Config coreConfig = platform.config();
+        Log log = platform.log();
+        Scheduler scheduler = platform.scheduler();
 
         aiConnector = new AIConnector(coreConfig, log);
 
@@ -99,7 +99,7 @@ public class Jarvis extends JavaPlugin {
         databaseManager.initializeDatabaseConnections();
 
         experienceMemory = new ExperienceMemory(coreConfig, log, scheduler, databaseManager);
-        taskRecoveryHandler = new TaskRecoveryHandler(this);
+        taskRecoveryHandler = new TaskRecoveryHandler(coreConfig, log, scheduler, aiConnector);
 
         if (getServer().getPluginManager().getPlugin("Citizens") != null) {
             jarvisNPC = new JarvisNPC(this);
@@ -124,7 +124,7 @@ public class Jarvis extends JavaPlugin {
         confirmationManager = new ConfirmationManager(
                 getConfig().getLong("confirmation-timeout-seconds", 30));
         playerRequestManager = new PlayerRequestManager();
-        dutyScheduler = new DutyScheduler(this);
+        dutyScheduler = new DutyScheduler(platform);
         morningReport = new MorningReport(this);
 
         // Idle commentary. Off unless steward.remarks.enabled; start() is a
@@ -184,6 +184,9 @@ public class Jarvis extends JavaPlugin {
         if (taskMonitor != null) {
             taskMonitor.shutdown();
         }
+        if (dutyScheduler != null) {
+            dutyScheduler.shutdown();
+        }
         if (remarks != null) {
             remarks.shutdown();
         }
@@ -230,17 +233,27 @@ public class Jarvis extends JavaPlugin {
 
     // ========== GETTERS ==========
 
+    /** Everything core needs from the server, in one place. */
+    public PaperPlatform getPlatform() {
+        return platform;
+    }
+
+    /** Core's handle for a player. Cheap; make one whenever a core call needs it. */
+    public Owner owner(Player player) {
+        return platform.owner(player);
+    }
+
     /** Core's view of config.yml. Bukkit-side code may keep using getConfig(). */
     public Config getCoreConfig() {
-        return coreConfig;
+        return platform.config();
     }
 
     public Log getLog() {
-        return log;
+        return platform.log();
     }
 
     public Scheduler getScheduler() {
-        return scheduler;
+        return platform.scheduler();
     }
 
     public AIConnector getAIConnector() {

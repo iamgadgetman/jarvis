@@ -404,7 +404,7 @@ public class JarvisCommands implements CommandExecutor {
                 if (plugin.getMorningReport() != null) plugin.getMorningReport().deliver(player, false);
             }
             case "duties" -> {
-                if (plugin.getDutyScheduler() != null) plugin.getDutyScheduler().showDuties(player);
+                if (plugin.getDutyScheduler() != null) plugin.getDutyScheduler().showDuties(plugin.owner(player));
             }
             case "duty" -> handleDuty(player, args);
             case "recover" -> plugin.getJarvisNPC().getRecoveryService().recover(player);

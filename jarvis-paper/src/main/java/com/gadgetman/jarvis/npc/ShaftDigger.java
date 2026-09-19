@@ -118,12 +118,12 @@ public class ShaftDigger {
         if (!sealNeighbours(below)) {
             // Nothing to be done about this one — the shaft is where the player
             // put it. The diagnosis is the whole of the value here.
-            host.reportFailure(TaskFailure.of(player, "dig_down")
+            host.reportFailure(TaskFailure.of(plugin.owner(player), "dig_down")
                     .step("sealing the walls before opening the next block down")
                     .reason("more adjacent lava than the sealer will take on in one step")
                     .say("There is more lava down there than I care for, sir. Stopping here."
                             + progressNote())
-                    .where(cursor)
+                    .where(com.gadgetman.jarvis.platform.PaperWorlds.site(cursor))
                     .state("depth reached", dug + " blocks, now at y=" + cursor.getBlockY())
                     .state("target depth", "y=" + stopY)
                     .state("pockets sealed so far", sealed)
@@ -153,12 +153,12 @@ public class ShaftDigger {
                 dug++;
                 descend();
             } else {
-                host.reportFailure(TaskFailure.of(player, "dig_down")
+                host.reportFailure(TaskFailure.of(plugin.owner(player), "dig_down")
                         .step("breaking the block underfoot at y=" + (cursor.getBlockY() - 1))
                         .reason("the break did not complete — the block is protected, or something "
                                 + "changed it mid-swing")
                         .say("That block will not yield, sir. Stopping." + progressNote())
-                        .where(cursor)
+                        .where(com.gadgetman.jarvis.platform.PaperWorlds.site(cursor))
                         .state("block", below.getType().name().toLowerCase())
                         .state("depth reached", dug + " blocks, now at y=" + cursor.getBlockY())
                         .state("tool", host.describeHeldTool(player))

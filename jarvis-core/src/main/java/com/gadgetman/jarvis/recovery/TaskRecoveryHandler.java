@@ -1,8 +1,11 @@
 package com.gadgetman.jarvis.recovery;
 
-import com.gadgetman.jarvis.Jarvis;
-import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
+import com.gadgetman.jarvis.ai.AIConnector;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Log;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.core.platform.Scheduler;
+import com.gadgetman.jarvis.core.text.Colors;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -39,7 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * request took over two minutes -- far past the five-second light-tier timeout,
  * so on that hardware every failure falls back and nothing is lost by it.
  *
- * <p>Threading: the model call is async, the chosen move runs back on the main
+ * <p>Threading: the model call is async, the chosen move runs back on the server
  * thread. A task is never left waiting on the network mid-tick.
  */
 public class TaskRecoveryHandler {
@@ -58,22 +61,28 @@ public class TaskRecoveryHandler {
         long generation;
     }
 
-    private final Jarvis plugin;
+    private final Config config;
+    private final Log log;
+    private final Scheduler scheduler;
+    private final AIConnector ai;
     private final Map<UUID, Attempts> attempts = new ConcurrentHashMap<>();
 
     private boolean enabled = true;
     private int maxAttempts = 2;
     private boolean logDiagnosis = true;
 
-    public TaskRecoveryHandler(Jarvis plugin) {
-        this.plugin = plugin;
+    public TaskRecoveryHandler(Config config, Log log, Scheduler scheduler, AIConnector ai) {
+        this.config = config;
+        this.log = log;
+        this.scheduler = scheduler;
+        this.ai = ai;
         loadConfig();
     }
 
     private void loadConfig() {
-        this.enabled = plugin.getConfig().getBoolean("self-explain.enabled", true);
-        this.maxAttempts = plugin.getConfig().getInt("self-explain.max-attempts", 2);
-        this.logDiagnosis = plugin.getConfig().getBoolean("self-explain.log-diagnosis", true);
+        this.enabled = config.getBoolean("self-explain.enabled", true);
+        this.maxAttempts = config.getInt("self-explain.max-attempts", 2);
+        this.logDiagnosis = config.getBoolean("self-explain.log-diagnosis", true);
     }
 
     public void reload() {
@@ -90,9 +99,9 @@ public class TaskRecoveryHandler {
      * re-issues a command that just failed gets a new pair of attempts; a task
      * that fails repeatedly on its own does not.
      */
-    public void taskStarted(Player player, String taskType) {
+    public void taskStarted(Owner player, String taskType) {
         if (player == null) return;
-        Attempts a = attempts.computeIfAbsent(player.getUniqueId(), k -> new Attempts());
+        Attempts a = attempts.computeIfAbsent(player.id(), k -> new Attempts());
         a.taskType = taskType;
         a.used = 0;
         a.inFlight = false;
@@ -102,22 +111,22 @@ public class TaskRecoveryHandler {
      * Whatever this player was doing has been cancelled or replaced. Any
      * diagnosis still on the wire may speak, but must not act.
      */
-    public void taskSuperseded(Player player) {
+    public void taskSuperseded(Owner player) {
         if (player == null) return;
-        Attempts a = attempts.get(player.getUniqueId());
+        Attempts a = attempts.get(player.id());
         if (a != null) {
             synchronized (a) { a.generation++; }
         }
     }
 
     /** Drop a player's budget on disconnect, so the map does not grow forever. */
-    public void forget(Player player) {
-        if (player != null) attempts.remove(player.getUniqueId());
+    public void forget(Owner player) {
+        if (player != null) attempts.remove(player.id());
     }
 
     /** How many attempts this player has left on the task they are running. */
-    public int remainingAttempts(Player player) {
-        Attempts a = attempts.get(player.getUniqueId());
+    public int remainingAttempts(Owner player) {
+        Attempts a = attempts.get(player.id());
         return a == null ? maxAttempts : Math.max(0, maxAttempts - a.used);
     }
 
@@ -133,7 +142,7 @@ public class TaskRecoveryHandler {
      * replacing one.
      */
     public void handle(TaskFailure failure) {
-        Player player = failure.getPlayer();
+        Owner player = failure.getOwner();
         if (player == null) return;
 
         // Said first and unconditionally. Everything below is additive.
@@ -141,7 +150,7 @@ public class TaskRecoveryHandler {
 
         if (!enabled) return;
 
-        Attempts a = attempts.computeIfAbsent(player.getUniqueId(), k -> new Attempts());
+        Attempts a = attempts.computeIfAbsent(player.id(), k -> new Attempts());
         synchronized (a) {
             // A different task than the one we were counting -- start its budget.
             if (!failure.getTaskType().equals(a.taskType)) {
@@ -164,33 +173,27 @@ public class TaskRecoveryHandler {
         final List<String> allowed = new ArrayList<>();
         for (TaskFailure.Option o : failure.getOptions()) allowed.add(o.name());
 
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                String response = null;
-                try {
-                    response = plugin.getAIConnector().diagnoseTaskFailure(prompt, allowed);
-                } catch (Exception e) {
-                    plugin.getLogger().fine("Failure diagnosis unavailable: " + e.getMessage());
-                }
-                final String raw = response;
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        Attempts a2 = attempts.get(player.getUniqueId());
-                        if (a2 != null) {
-                            synchronized (a2) { a2.inFlight = false; }
-                        }
-                        apply(failure, raw, generation);
-                    }
-                }.runTask(plugin);
+        scheduler.async(() -> {
+            String response = null;
+            try {
+                response = ai.diagnoseTaskFailure(prompt, allowed);
+            } catch (Exception e) {
+                log.fine("Failure diagnosis unavailable: " + e.getMessage());
             }
-        }.runTaskAsynchronously(plugin);
+            final String raw = response;
+            scheduler.sync(() -> {
+                Attempts a2 = attempts.get(player.id());
+                if (a2 != null) {
+                    synchronized (a2) { a2.inFlight = false; }
+                }
+                apply(failure, raw, generation);
+            });
+        });
     }
 
     /** Main thread. Deliver the diagnosis and run the chosen move, or fall back. */
     private void apply(TaskFailure failure, String raw, long generation) {
-        Player player = failure.getPlayer();
+        Owner player = failure.getOwner();
         if (player == null || !player.isOnline()) return;
 
         // Nothing came back -- the box is down, or slower than the tier's
@@ -207,7 +210,7 @@ public class TaskRecoveryHandler {
             action = json.optString("action", "").trim();
             message = json.optString("message", "").trim();
         } catch (Exception e) {
-            plugin.getLogger().fine("Failure diagnosis was not JSON: " + e.getMessage());
+            log.fine("Failure diagnosis was not JSON: " + e.getMessage());
             return;
         }
 
@@ -221,8 +224,8 @@ public class TaskRecoveryHandler {
             String logged = !diagnosis.isEmpty() ? diagnosis
                     : (!message.isEmpty() ? "(no diagnosis given) " + message : "");
             if (!logged.isEmpty()) {
-                plugin.getLogger().info("Task " + failure.getTaskType() + " failed for "
-                        + player.getName() + " (" + failure.getReason() + "). Diagnosis: "
+                log.info("Task " + failure.getTaskType() + " failed for "
+                        + player.name() + " (" + failure.getReason() + "). Diagnosis: "
                         + logged + " -> action: " + (action.isEmpty() ? "none" : action));
             }
         }
@@ -237,13 +240,13 @@ public class TaskRecoveryHandler {
 
         // The player did something else while this was in flight. He has had
         // his say; acting now would take over whatever they asked for instead.
-        Attempts a = attempts.get(player.getUniqueId());
+        Attempts a = attempts.get(player.id());
         if (a != null) {
             long now;
             synchronized (a) { now = a.generation; }
             if (now != generation) {
-                plugin.getLogger().fine("Recovery move '" + chosen.name() + "' dropped — "
-                        + player.getName() + " moved on to something else.");
+                log.fine("Recovery move '" + chosen.name() + "' dropped — "
+                        + player.name() + " moved on to something else.");
                 return;
             }
         }
@@ -251,7 +254,7 @@ public class TaskRecoveryHandler {
         try {
             chosen.action().run();
         } catch (Exception e) {
-            plugin.getLogger().warning("Recovery move '" + chosen.name() + "' for "
+            log.warn("Recovery move '" + chosen.name() + "' for "
                     + failure.getTaskType() + " threw: " + e.getMessage());
             say(player, "That did not work either, sir. I shall leave it.");
         }
@@ -286,12 +289,9 @@ public class TaskRecoveryHandler {
         return sb.toString();
     }
 
-    private void say(Player player, String text) {
+    private void say(Owner player, String text) {
         if (player.isOnline() && text != null && !text.isBlank()) {
-            player.sendMessage(net.kyori.adventure.text.Component
-                    .text("Jarvis: ", net.kyori.adventure.text.format.NamedTextColor.GOLD)
-                    .append(net.kyori.adventure.text.Component.text(text,
-                            net.kyori.adventure.text.format.NamedTextColor.WHITE)));
+            player.message(Colors.jarvis(text));
         }
     }
 }

@@ -151,7 +151,7 @@ public class Remarks {
         Long last = lastRemark.get(id);
         if (last != null && now - last < quietMs) return;
 
-        Observation observation = Observer.observe(player);
+        Observation observation = Observer.observe(plugin.getPlatform(), plugin.owner(player));
         if (observation == null) return;
 
         Remark remark = RemarkDoctrine.choose(observation, recentSubjects(id, now), random.nextInt(64));
