@@ -1,6 +1,6 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** steps 1 to 7 done. Steps 8 and 9 not started.
+**Status:** steps 1 to 8 done. Step 9 not started.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -747,6 +747,34 @@ before. Order matters: each introduces the interfaces the next needs.
    the only platform hook.
 8. **Commands and UI.** `CommandSink` and `Menu` in core; thin Paper wiring.
    `Jarvis.java` becomes a bootstrap.
+   *Done.* Core has `commands.CommandService` (the whole of `/jarvis`,
+   implementing `CommandSink` with tab completion), `intent.IntentPipeline`
+   with its `ChatTrigger`, `steward.Courtesies` (join greeting, death
+   commentary), `ui.Menus` (every bell menu as a `Menu` of items and click
+   handlers), `ui.TaskMonitor` (progress bar and order queue through `Ui`),
+   `memory.DatasetExporter`, and `JarvisCore`, which assembles everything
+   in dependency order with start, shutdown, reload and the debug report.
+   Platform grew `Ui` (open/close a `Menu`, progress bar), `RichLine` with
+   `Audience.rich` for clickable prompts, `Config.set/save/reload`,
+   `Items.resolve`, `Platform.serverVersion`, `ItemUseEvent` (the bell)
+   and `ButlerInteractEvent` (a click on him). Two adapter-side contracts
+   were added that the design did not name: `ActionExecutor`, for the
+   server-administration actions the AI can ask for (give item, set time,
+   console commands), which are Bukkit through and through; and
+   `SchematicExtras`, the editor hook for clipboard saves and rotated
+   pastes. Paper: `PaperUi` draws menus as chest inventories and boss bars,
+   `PaperBell` keeps the mark on a placed bell, `CitizensInteractListener`
+   republishes a right-click on the NPC, `JarvisCommands` is a
+   CommandExecutor and TabCompleter that hands off to core,
+   `JarvisActionExecutor` implements `ActionExecutor`, `SchematicManager`
+   is WorldEdit only, and `Jarvis.java` is the bootstrap. The `Menu`
+   record carries a click consumer per item rather than the design's
+   `closeOnClick` flag, because the handlers decide between closing and
+   redrawing. Still on Paper: `VoiceBridge`/`VoiceResponder`, which feed
+   core's pipeline but keep Simple Voice Chat registration and the NPC
+   entity lookup, since core's build cannot resolve the voicechat
+   dependency from this environment; the `Voice` interface is the remaining
+   piece for step 9 or the Fabric adapter.
 9. **Enforce.** Core's pom declares no platform dependency, so a stray import
    fails the build. Add a unit test or two per moved task class now that they
    can be driven by a fake `Platform`.
