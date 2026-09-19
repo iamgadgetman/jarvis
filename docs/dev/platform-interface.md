@@ -1,7 +1,7 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** all nine steps done; the Fabric spike is built and awaits an in-game
-trial (see *The spike*). The Fabric adapter is the next piece of work.
+**Status:** all nine steps done; the Fabric spike is built and has run in a
+world (see *The spike*). The Fabric adapter is the next piece of work.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -11,8 +11,8 @@ Hand this file to a future session with one of:
 
 - "Implement step N of docs/dev/platform-interface.md" (see *Refactor steps*).
 - "Revise the platform interface: <change>" to amend the design before starting.
-- "Trial the Fabric spike from docs/dev/platform-interface.md" (see *The spike*)
-  once someone has run it in a world, to record what the follower did.
+- "Build the Fabric adapter from docs/dev/platform-interface.md" (see *Module
+  layout* and *The interfaces*; the spike has the fake player and the driver).
 
 Everything below is self-contained. The numbers in *Why* were measured on the
 baseline above and do not need re-measuring unless the code has moved a lot.
@@ -842,7 +842,7 @@ A throwaway Fabric mod, no core involved, to retire the one open-ended risk:
 Two weeks. If the follower is reliable, the Fabric adapter is straightforward.
 If not, that is the thing to solve before spending anything on the port.
 
-*Built; not yet trialled in a world.* `jarvis-fabric-spike/` is a Gradle Loom
+*Built and run.* `jarvis-fabric-spike/` is a Gradle Loom
 project outside the Maven reactor (Fabric's toolchain is Gradle), targeting
 Minecraft 26.3, Fabric Loader 0.19.5 and Loom 1.17, with no Fabric API: the
 command and the tick hook are mixins, the way Carpet does it. The
@@ -873,14 +873,15 @@ repositories are not reachable from the development sandbox) and attaches
 - `/jspike spawn [name]`, `goto x y z`, `dig x y z`, `stop`, `status`, `kill`.
   Operators only. One fake at a time. `status` says where he is and the
   driver's last word (path size and nodes, stuck, arrived, dug, no path).
-- Item 5, the trial, is the remaining work and needs a person and a world:
-  Fabric Loader 0.19.5 on Minecraft 26.3, the jar in `mods/`, then the five
-  terrains. The server log records each plan and re-plan. Things to watch,
-  because the simulator does not model them: the game's real jump arc
-  against `jumpWithin` (1.3 blocks), whether `look` alone turns the body for
-  `travel` (the action pack sets head rotation too), fence and wall tops
-  counting as solid floors the search will try to step onto, and one-block
-  gap jumps timed from `onGround`.
+- Item 5: the first in-world run, on a Fabric 26.3 server with the jar from
+  the workflow, spawned, walked and dug as intended. The fake player and the
+  driver are therefore known to work against 26.3; the five-terrain sweep
+  (50 m of rough ground, a two-block gap, a river, a ladder, a door) is the
+  thing to repeat when the adapter's provider is written, watching for the
+  cases the simulator does not model: the game's real jump arc against
+  `jumpWithin` (1.3 blocks), fence and wall tops counting as solid floors
+  the search will try to step onto, and one-block gap jumps timed from
+  `onGround`.
 - Not vendored: Carpet's knockback and known-movement mixins (they need
   MixinExtras and only matter for combat), tick-freeze handling, mounting,
   item drops and hotbar control. Add them when the adapter needs them.
