@@ -401,13 +401,13 @@ public class JarvisCommands implements CommandExecutor {
             
             case "ai" -> showAiStatus(player);
             case "report", "briefing", "status" -> {
-                if (plugin.getMorningReport() != null) plugin.getMorningReport().deliver(player, false);
+                if (plugin.getMorningReport() != null) plugin.getMorningReport().deliver(plugin.owner(player), false);
             }
             case "duties" -> {
                 if (plugin.getDutyScheduler() != null) plugin.getDutyScheduler().showDuties(plugin.owner(player));
             }
             case "duty" -> handleDuty(player, args);
-            case "recover" -> plugin.getJarvisNPC().getRecoveryService().recover(player);
+            case "recover" -> plugin.getJarvisNPC().getRecoveryService().recover(plugin.owner(player));
             case "home" -> {
                 if (args.length > 1 && args[1].equalsIgnoreCase("set")) {
                     plugin.getJarvisNPC().getEscortService().setHome(plugin.owner(player));
@@ -976,13 +976,13 @@ public class JarvisCommands implements CommandExecutor {
         switch (sub) {
             case "where", "link", "other" -> portalWhere(player, scout);
             case "mark", "note" -> {
-                boolean isNew = scout.mark(player);
+                boolean isNew = scout.mark(plugin.owner(player));
                 player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
                         + (isNew ? "Noted, sir. I shall remember this portal."
                                  : "I had this one already, sir."));
             }
             case "forget", "clear" -> {
-                int gone = scout.forgetAll(player);
+                int gone = scout.forgetAll(plugin.owner(player));
                 player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
                         + (gone == 0 ? "I had none to forget, sir."
                                      : "Forgotten, sir — all " + gone + " of them."));
@@ -1004,7 +1004,7 @@ public class JarvisCommands implements CommandExecutor {
 
         // The nearest portal he knows, if you are practically standing at it;
         // otherwise your own position, which answers "where should I dig".
-        var nearest = scout.nearest(player);
+        var nearest = scout.nearest(plugin.owner(player));
         int x = player.getLocation().getBlockX();
         int y = player.getLocation().getBlockY();
         int z = player.getLocation().getBlockZ();
@@ -1031,7 +1031,7 @@ public class JarvisCommands implements CommandExecutor {
 
     /** What he has seen in this world, nearest first. */
     private void portalList(Player player, com.gadgetman.jarvis.npc.portal.PortalScout scout) {
-        var known = scout.known(player);
+        var known = scout.known(plugin.owner(player));
         if (known.isEmpty()) {
             player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
                     + "None on record in this world, sir. I note them as we pass them.");
@@ -1045,13 +1045,13 @@ public class JarvisCommands implements CommandExecutor {
             player.sendMessage(ChatColor.WHITE + "  x " + sighting.x() + ", y " + sighting.y()
                     + ", z " + sighting.z() + ChatColor.GRAY + " — "
                     + (int) at.distance(where) + "m "
-                    + com.gadgetman.jarvis.npc.portal.PortalScout.bearing(at, where));
+                    + com.gadgetman.jarvis.npc.portal.PortalScout.bearing(com.gadgetman.jarvis.platform.PaperWorlds.vec(at), com.gadgetman.jarvis.platform.PaperWorlds.vec(where)));
         }
     }
 
     /** Lead the way to the nearest one he knows. */
     private void portalEscort(Player player, com.gadgetman.jarvis.npc.portal.PortalScout scout) {
-        var nearest = scout.nearest(player);
+        var nearest = scout.nearest(plugin.owner(player));
         if (nearest == null) {
             player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
                     + "I know of no portal in this world, sir. I only see as far as the world is loaded — "
@@ -1063,7 +1063,7 @@ public class JarvisCommands implements CommandExecutor {
         plugin.getJarvisNPC().getEscortService().escortTo(plugin.owner(player),
                 com.gadgetman.jarvis.platform.PaperWorlds.site(where),
                 "The portal is " + (int) player.getLocation().distance(where) + " metres "
-                        + com.gadgetman.jarvis.npc.portal.PortalScout.bearing(player.getLocation(), where)
+                        + com.gadgetman.jarvis.npc.portal.PortalScout.bearing(com.gadgetman.jarvis.platform.PaperWorlds.vec(player.getLocation()), com.gadgetman.jarvis.platform.PaperWorlds.vec(where))
                         + ", sir. This way — stay close.",
                 "The portal, sir. I shall wait on this side; I do not travel well between worlds.",
                 "That portal is in another world, sir — which is rather the difficulty.");
@@ -1075,7 +1075,7 @@ public class JarvisCommands implements CommandExecutor {
             player.sendMessage(ChatColor.GRAY + "Jarvis: I keep my observations to myself already, sir.");
             return;
         }
-        boolean nowMuted = remarks.toggleMute(player);
+        boolean nowMuted = remarks.toggleMute(plugin.owner(player));
         player.sendMessage(ChatColor.GOLD + "Jarvis: " + ChatColor.WHITE
                 + (nowMuted ? "Very good, sir. I shall hold my tongue."
                             : "As you wish, sir. I shall speak up when something warrants it."));

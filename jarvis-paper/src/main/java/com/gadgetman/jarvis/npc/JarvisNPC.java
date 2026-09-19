@@ -258,11 +258,10 @@ public class JarvisNPC implements Listener, ButlerHost {
         this.breakSpeedModifier = Math.max(0.1, plugin.getConfig().getDouble("mining.break-speed-modifier", 1.0));
 
         this.depositManager = new DepositManager(plugin.getPlatform(), this);
-        this.recoveryService = new RecoveryService(plugin, this);
+        this.recoveryService = new RecoveryService(this);
         this.escortService = new EscortService(this, depositManager);
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
-        plugin.getServer().getPluginManager().registerEvents(recoveryService, plugin);
         startCleanupTask();
         startSupplyMonitor();
         startCharmMonitor();
@@ -2418,6 +2417,18 @@ public class JarvisNPC implements Listener, ButlerHost {
     }
 
     @Override public Platform platform() { return plugin.getPlatform(); }
+    @Override public DepositManager deposits() { return depositManager; }
+
+    @Override
+    public String describeCurrentTask(Owner owner) {
+        return describeCurrentTask(owner.id());
+    }
+
+    @Override
+    public double distanceToOwner(Owner owner) {
+        Player p = playerOf(owner);
+        return p == null ? Double.MAX_VALUE : distanceToOwner(p);
+    }
     @Override public Config config() { return plugin.getCoreConfig(); }
     @Override public Butler butler(Owner owner) { return butlers.of(owner); }
 

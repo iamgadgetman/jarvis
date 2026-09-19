@@ -45,6 +45,19 @@ public interface ButlerHost {
         return b.isSpawned() ? b.pos() : null;
     }
 
+    /** The pack-mule service: chests, homes, patrol routes and portal memory. */
+    DepositManager deposits();
+
+    /** What he is doing for this owner, in a few words, or null when idle. */
+    String describeCurrentTask(Owner owner);
+
+    /**
+     * Metres from this owner's Jarvis to the owner, or {@link Double#MAX_VALUE}
+     * when the question does not apply: not summoned, not spawned, or a world
+     * away. One answer to "is he near enough to have noticed?".
+     */
+    double distanceToOwner(Owner owner);
+
     // ---- voice ----
 
     void say(Owner owner, String text);

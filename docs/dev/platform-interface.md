@@ -1,6 +1,6 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** steps 1 to 4 done. Steps 5 to 9 not started.
+**Status:** steps 1 to 5 done. Steps 6 to 9 not started.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -685,6 +685,30 @@ before. Order matters: each introduces the interfaces the next needs.
    methods). Move tasks one at a time, smallest first: Lumberjack, Entertainer,
    Lamplighter, Fisherman, Farmer, ShaftDigger, EscortService, BranchMiner,
    DepositManager, Defender.
+   *Done, with two deliberate departures from the sketch above.* `Butler`
+   keeps the imperative navigation the tasks were written against
+   (`navigateTo`, `isNavigating`, `cancelNavigation`, pause, and a stuck
+   callback) instead of a `Navigation` handle, and there is no `Fishing`
+   handle: the Fisherman keeps its simulation on `World` primitives. Both
+   can be added when the Fabric adapter needs them without touching the
+   tasks. Projectiles are `Butler.shootArrow` and `throwTrident` so the
+   Defender's aim stays in core and the entity mechanics in the adapter.
+   `ButlerHost` (in `npc`) is the seam the tasks use for voice, the task
+   register, kit, bags, the deposit service and the block-breaking policy;
+   JarvisNPC implements it in Paper for now, and step 6 moves that logic
+   into core. `Blocks` holds the pure block-id rules. The Paper adapter
+   has `CitizensButler` and `CitizensButlers` over the provider's
+   registry, and `BukkitTaskHandle` so Bukkit-side loops and core tasks
+   share one task register.
+   Moved: DepositManager (stored places as `Place`, same data.yml format),
+   Entertainer, Lumberjack, Lamplighter, Fisherman, Farmer, ShaftDigger,
+   EscortService, BranchMiner, Defender, and the four deferred from step
+   4: Remarks, MorningReport, PortalScout, RecoveryService (the last three
+   now subscribe to core events instead of being Bukkit listeners).
+   Still in Paper: JarvisNPC's own ore-mining state machine, follow,
+   return, summon and dismiss, the charm monitor, lifeguard and supply
+   monitor, and the Player-facing entry points, all of which step 6
+   splits.
 6. **Split JarvisNPC.** Orchestration to core `ButlerService`; Citizens to the
    Paper adapter. Delete `INPCProvider`. This is the largest single step.
 7. **Building and schematics.** `BuildingAssistant` onto `World.setBlock`;

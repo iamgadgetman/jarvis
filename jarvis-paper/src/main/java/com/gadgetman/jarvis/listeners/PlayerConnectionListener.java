@@ -31,11 +31,11 @@ public class PlayerConnectionListener implements Listener {
 
         // Idle-remark cooldowns are per-session state; the mute is not, and stays.
         if (plugin.getRemarks() != null) {
-            plugin.getRemarks().forget(player);
+            plugin.getRemarks().forget(plugin.owner(player));
         }
 
         if (plugin.getPortalScout() != null) {
-            plugin.getPortalScout().forget(player);
+            plugin.getPortalScout().forget(plugin.owner(player));
         }
 
         plugin.getLogger().fine("Cleaned up Jarvis state for disconnected player: " + player.getName());

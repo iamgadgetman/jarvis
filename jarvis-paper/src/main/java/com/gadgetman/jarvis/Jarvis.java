@@ -125,16 +125,16 @@ public class Jarvis extends JavaPlugin {
                 getConfig().getLong("confirmation-timeout-seconds", 30));
         playerRequestManager = new PlayerRequestManager();
         dutyScheduler = new DutyScheduler(platform);
-        morningReport = new MorningReport(this);
+        morningReport = new MorningReport(platform, jarvisNPC, playerRequestManager, dutyScheduler);
 
         // Idle commentary. Off unless steward.remarks.enabled; start() is a
         // no-op otherwise, so nothing ticks for a server that has not asked.
-        remarks = new Remarks(this);
+        remarks = new Remarks(platform, jarvisNPC);
         remarks.start();
 
         // Portals: he notes the ones we pass, and can do the 1:8 arithmetic
         // whether or not he has ever seen one.
-        portalScout = new PortalScout(this);
+        portalScout = new PortalScout(platform, jarvisNPC);
         portalScout.start();
 
         // The one road from an utterance to an action; chat and voice both use it.
@@ -152,8 +152,6 @@ public class Jarvis extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerConnectionListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerEventListener(this), this);
-        getServer().getPluginManager().registerEvents(morningReport, this);
-        getServer().getPluginManager().registerEvents(portalScout, this);
 
         // Periodic cleanup of old requests (every 5 minutes)
         getServer().getScheduler().runTaskTimer(this,

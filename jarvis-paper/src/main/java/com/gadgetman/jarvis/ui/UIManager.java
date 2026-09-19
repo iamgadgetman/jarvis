@@ -361,7 +361,7 @@ public class UIManager implements Listener {
             m.setItem(11, unavailable("Escort me home", "No home set yet"));
         }
 
-        if (npc.getRecoveryService().hasDeathPoint(p)) {
+        if (npc.getRecoveryService().hasDeathPoint(plugin.owner(p))) {
             m.setItem(12, item(Material.TOTEM_OF_UNDYING, ChatColor.GOLD + "Recover my drops",
                     ChatColor.GRAY + "Fetch what you left where you died"));
         } else {
@@ -819,7 +819,7 @@ public class UIManager implements Listener {
         switch (slot) {
             case 10 -> { npc.getEscortService().setHome(plugin.owner(p)); open(p, createHouseholdMenu(p)); }
             case 11 -> { if (deposit.getHome(plugin.owner(p)).isPresent()) { npc.getEscortService().takeHome(plugin.owner(p)); p.closeInventory(); } }
-            case 12 -> { if (npc.getRecoveryService().hasDeathPoint(p)) { npc.getRecoveryService().recover(p); p.closeInventory(); } }
+            case 12 -> { if (npc.getRecoveryService().hasDeathPoint(plugin.owner(p))) { npc.getRecoveryService().recover(plugin.owner(p)); p.closeInventory(); } }
             case 14 -> { deposit.setChest(plugin.owner(p)); open(p, createHouseholdMenu(p)); }
             case 15 -> { if (deposit.hasChest(plugin.owner(p))) { deposit.deposit(plugin.owner(p)); p.closeInventory(); } }
             case 31 -> open(p, createMainMenu(p));

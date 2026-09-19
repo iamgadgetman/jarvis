@@ -297,9 +297,9 @@ public class IntentPipeline {
                 startSchematicFirstBuild(player, desc, sink);
             }
             case "report" -> {
-                if (plugin.getMorningReport() != null) plugin.getMorningReport().deliver(player, false);
+                if (plugin.getMorningReport() != null) plugin.getMorningReport().deliver(plugin.owner(player), false);
             }
-            case "recover" -> plugin.getJarvisNPC().getRecoveryService().recover(player);
+            case "recover" -> plugin.getJarvisNPC().getRecoveryService().recover(plugin.owner(player));
             case "take_home" -> plugin.getJarvisNPC().getEscortService().takeHome(plugin.owner(player));
             case "set_home" -> plugin.getJarvisNPC().getEscortService().setHome(plugin.owner(player));
             case "farm" -> plugin.getJarvisNPC().farm(player,

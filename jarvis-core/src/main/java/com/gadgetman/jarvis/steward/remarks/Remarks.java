@@ -1,10 +1,11 @@
 package com.gadgetman.jarvis.steward.remarks;
 
-import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.core.platform.Platform;
+import com.gadgetman.jarvis.core.platform.Task;
+import com.gadgetman.jarvis.npc.ButlerHost;
 import com.gadgetman.jarvis.steward.remarks.RemarkDoctrine.Remark;
-import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.util.EnumMap;
 import java.util.HashSet;
@@ -47,7 +48,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class Remarks {
 
-    private final Jarvis plugin;
+    private final Platform platform;
+    private final ButlerHost host;
     private final Random random = new Random();
 
     /** When he last said anything at all to this player. */
@@ -57,7 +59,7 @@ public class Remarks {
     /** Players who have told him to keep it to himself. */
     private final Set<UUID> muted = ConcurrentHashMap.newKeySet();
 
-    private BukkitTask task;
+    private Task task;
 
     private boolean enabled;
     private long intervalTicks;
@@ -66,13 +68,14 @@ public class Remarks {
     private double maxDistance;
     private boolean requireIdle;
 
-    public Remarks(Jarvis plugin) {
-        this.plugin = plugin;
+    public Remarks(Platform platform, ButlerHost host) {
+        this.platform = platform;
+        this.host = host;
         readConfig();
     }
 
     private void readConfig() {
-        var config = plugin.getConfig();
+        Config config = platform.config();
         // steward.charm is the master switch for this whole family — waves,
         // greetings, idle glances and now remarks.
         this.enabled = config.getBoolean("steward.charm", true)
@@ -86,15 +89,12 @@ public class Remarks {
 
     /** Begin observing. A no-op when the feature is off. */
     public void start() {
-        if (!enabled || plugin.getJarvisNPC() == null) return;
-        task = new BukkitRunnable() {
-            @Override
-            public void run() {
-                for (Player player : plugin.getServer().getOnlinePlayers()) {
-                    considerRemarking(player);
-                }
+        if (!enabled || host == null) return;
+        task = platform.scheduler().every(intervalTicks, intervalTicks, t -> {
+            for (Owner player : platform.players().online()) {
+                considerRemarking(player);
             }
-        }.runTaskTimer(plugin, intervalTicks, intervalTicks);
+        });
     }
 
     public void shutdown() {
@@ -112,22 +112,22 @@ public class Remarks {
     }
 
     /** Drop a player's cooldowns. Mute survives — it was a decision, not state. */
-    public void forget(Player player) {
-        UUID id = player.getUniqueId();
+    public void forget(Owner player) {
+        UUID id = player.id();
         lastRemark.remove(id);
         lastBySubject.remove(id);
     }
 
     /** Toggle the mute for this player; returns true if he is now muted. */
-    public boolean toggleMute(Player player) {
-        UUID id = player.getUniqueId();
+    public boolean toggleMute(Owner player) {
+        UUID id = player.id();
         if (muted.remove(id)) return false;
         muted.add(id);
         return true;
     }
 
-    public boolean isMuted(Player player) {
-        return muted.contains(player.getUniqueId());
+    public boolean isMuted(Owner player) {
+        return muted.contains(player.id());
     }
 
     public boolean isEnabled() {
@@ -136,22 +136,22 @@ public class Remarks {
 
     // ==================== THE LOOP ====================
 
-    private void considerRemarking(Player player) {
-        UUID id = player.getUniqueId();
+    private void considerRemarking(Owner player) {
+        UUID id = player.id();
         if (muted.contains(id)) return;
 
         // Summoned, in this world, and close enough to have noticed.
-        if (plugin.getJarvisNPC().distanceToOwner(player) > maxDistance) return;
+        if (host.distanceToOwner(player) > maxDistance) return;
 
         // "Standing about" is the whole premise. A butler halfway down a mine
         // shaft on your orders is working, not making conversation.
-        if (requireIdle && plugin.getJarvisNPC().describeCurrentTask(id) != null) return;
+        if (requireIdle && host.describeCurrentTask(player) != null) return;
 
         long now = System.currentTimeMillis();
         Long last = lastRemark.get(id);
         if (last != null && now - last < quietMs) return;
 
-        Observation observation = Observer.observe(plugin.getPlatform(), plugin.owner(player));
+        Observation observation = Observer.observe(platform, player);
         if (observation == null) return;
 
         Remark remark = RemarkDoctrine.choose(observation, recentSubjects(id, now), random.nextInt(64));
@@ -160,7 +160,7 @@ public class Remarks {
         lastRemark.put(id, now);
         lastBySubject.computeIfAbsent(id, k -> new EnumMap<>(RemarkSubject.class))
                 .put(remark.subject(), now);
-        plugin.getJarvisNPC().speakTo(player, remark.line());
+        host.say(player, remark.line());
     }
 
     /** Subjects still inside their cooldown for this player. */
