@@ -313,7 +313,8 @@ build:
   max-undo-size: 10000           # Max blocks that can be undone
   
   # Materials
-  fallback-material: minecraft:dirt  # Use if material not found
+  # A plan naming something that is not a block (a painting, an item frame,
+  # a typo) leaves that spot alone; the log names it. Nothing is substituted.
   
   # AI Building
   #

@@ -45,6 +45,27 @@ class ShapePlanTest {
     }
 
     @Test
+    @DisplayName("a door or a window asked for one block off the wall moves into the wall")
+    void fittingsSnapIntoTheWall() {
+        // Wall along z=0; the model put the door at z=-1 and a pane at z=1.
+        ShapePlan.Result r = ShapePlan.expand(new JSONArray(
+                "[{\"op\":\"walls\",\"from\":[0,0,0],\"to\":[6,3,6],\"block\":\"oak_planks\"},"
+                + "{\"op\":\"door\",\"at\":[3,0,-1],\"facing\":\"north\"},"
+                + "{\"op\":\"set\",\"at\":[1,1,1],\"block\":\"glass_pane\"},"
+                + "{\"op\":\"set\",\"at\":[3,1,3],\"block\":\"crafting_table\"}]"), 5000);
+        Map<String, String> at = new HashMap<>();
+        for (ShapePlan.Block b : r.blocks()) at.put(b.x() + "," + b.y() + "," + b.z(), b.spec());
+
+        assertEquals("minecraft:oak_door[facing=north,half=lower,hinge=left]", at.get("3,0,0"));
+        assertEquals("minecraft:oak_door[facing=north,half=upper,hinge=left]", at.get("3,1,0"));
+        assertNull(at.get("3,0,-1"), "nothing left outside the wall");
+        assertEquals("minecraft:glass_pane", at.get("1,1,0"));
+        assertNull(at.get("1,1,1"));
+        assertEquals("minecraft:crafting_table", at.get("3,1,3"), "furniture is not snapped anywhere");
+        assertEquals(2, r.warnings().size(), String.join(" | ", r.warnings()));
+    }
+
+    @Test
     @DisplayName("a bed's head sits one block along its facing")
     void bedHasTwoParts() {
         Map<String, String> at = expand("[{\"op\":\"bed\",\"at\":[1,0,1],\"facing\":\"east\"}]");

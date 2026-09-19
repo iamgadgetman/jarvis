@@ -65,8 +65,8 @@ public final class ShapePlan {
                     case "hollow", "shell" -> box(out, op, Mode.HOLLOW);
                     case "outline" -> box(out, op, Mode.OUTLINE);
                     case "clear", "air" -> box(out, op.put("block", "minecraft:air"), Mode.SOLID);
-                    case "set", "block", "place" -> set(out, op);
-                    case "door" -> door(out, op);
+                    case "set", "block", "place" -> set(out, op, warnings);
+                    case "door" -> door(out, op, warnings);
                     case "bed" -> bed(out, op);
                     case "roof" -> roof(out, op);
                     default -> warnings.add("op " + (i + 1) + ": unknown op '" + kind + "' skipped");
@@ -118,22 +118,52 @@ public final class ShapePlan {
         }
     }
 
-    private static void set(Map<BlockPos, String> out, JSONObject op) {
+    private static void set(Map<BlockPos, String> out, JSONObject op, List<String> warnings) {
         int[] at = corner(op, "at");
-        out.put(new BlockPos(at[0], at[1], at[2]), block(op, null));
+        String block = block(op, null);
+        BlockPos pos = new BlockPos(at[0], at[1], at[2]);
+        // Glass goes in a wall. A pane one block off the wall's line hangs in
+        // the air beside it, which is the "front slightly messed up" look.
+        if (block.contains("glass")) pos = snapIntoWall(out, pos, "window", warnings);
+        out.put(pos, block);
     }
 
     /** Two halves, stacked, agreeing on facing and hinge. */
-    private static void door(Map<BlockPos, String> out, JSONObject op) {
+    private static void door(Map<BlockPos, String> out, JSONObject op, List<String> warnings) {
         int[] at = corner(op, "at");
         String facing = facing(op, "north");
         String id = bareId(block(op, "minecraft:oak_door"));
         String hinge = op.optString("hinge", "left").trim().toLowerCase(Locale.ROOT);
         if (!hinge.equals("left") && !hinge.equals("right")) hinge = "left";
-        out.put(new BlockPos(at[0], at[1], at[2]),
-                id + "[facing=" + facing + ",half=lower,hinge=" + hinge + "]");
-        out.put(new BlockPos(at[0], at[1] + 1, at[2]),
-                id + "[facing=" + facing + ",half=upper,hinge=" + hinge + "]");
+        BlockPos lower = snapIntoWall(out, new BlockPos(at[0], at[1], at[2]), "door", warnings);
+        out.put(lower, id + "[facing=" + facing + ",half=lower,hinge=" + hinge + "]");
+        out.put(lower.offset(0, 1, 0), id + "[facing=" + facing + ",half=upper,hinge=" + hinge + "]");
+    }
+
+    /**
+     * Where a door or a window really belongs: in the wall the model meant.
+     * Models get the wall's line off by one now and then, and a door beside
+     * its doorway is the most visible mistake a plan can make. If the spot
+     * is not in something already placed but a horizontal neighbour is, the
+     * fitting moves to the neighbour; otherwise it stays where asked.
+     */
+    private static BlockPos snapIntoWall(Map<BlockPos, String> out, BlockPos pos, String what, List<String> warnings) {
+        if (isSolid(out, pos)) return pos;
+        BlockPos[] around = {
+                pos.offset(0, 0, -1), pos.offset(0, 0, 1), pos.offset(-1, 0, 0), pos.offset(1, 0, 0) };
+        for (BlockPos n : around) {
+            if (isSolid(out, n)) {
+                warnings.add(what + " at " + pos.x() + "," + pos.y() + "," + pos.z()
+                        + " was beside the wall; moved into it at " + n.x() + "," + n.y() + "," + n.z());
+                return n;
+            }
+        }
+        return pos;
+    }
+
+    private static boolean isSolid(Map<BlockPos, String> out, BlockPos pos) {
+        String s = out.get(pos);
+        return s != null && !s.equals("minecraft:air") && !s.contains("glass") && !s.contains("door");
     }
 
     /** Foot at {@code at}, head one block along {@code facing}. */

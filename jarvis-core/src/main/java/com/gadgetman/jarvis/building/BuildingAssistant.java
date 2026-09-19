@@ -25,6 +25,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayDeque;
+import java.util.LinkedHashMap;
+import java.util.Iterator;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
@@ -67,7 +69,6 @@ public class BuildingAssistant {
     private int progressUpdateInterval = 100;
     private boolean enableUndo = true;
     private int maxAiBlocks = 5000;
-    private String fallbackBlock = Ids.DIRT;
 
     // Script planner
     private String planner = "script";
@@ -99,7 +100,6 @@ public class BuildingAssistant {
         progressUpdateInterval = cfg.getInt("build.progress-update-interval", 100);
         enableUndo = cfg.getBoolean("build.enable-undo", true);
         maxAiBlocks = cfg.getInt("build.max-ai-blocks", 5000);
-        fallbackBlock = Ids.of(cfg.getString("build.fallback-material", "minecraft:dirt").toLowerCase(Locale.ROOT));
 
         planner = cfg.getString("build.planner", "script").toLowerCase(Locale.ROOT);
         int scriptMaxBlocks = cfg.getInt("build.script.max-blocks", 50000);
@@ -549,20 +549,36 @@ public class BuildingAssistant {
         //
         // A name that exists is not proof of a block: a model asking for
         // "minecraft:brick" names the ITEM (the block is BRICKS), and placing
-        // it would throw part-way through and kill the build. A spec the
-        // server does not recognise degrades to the fallback instead.
-        BlockState fallback = platform.blockTypes().parse(fallbackBlock).orElse(BlockState.of(Ids.DIRT));
-        int repaired = 0;
-        for (BlockPlacement bp : placements) {
+        // it would throw part-way through and kill the build. This used to
+        // substitute dirt, which put a dirt block in the middle of a furnished
+        // room wherever the model had asked for a painting or an item frame
+        // (entities, not blocks). A spec with a bad state is retried as its
+        // bare id, and anything still unknown is left out and named in the log.
+        Map<String, Integer> unknown = new LinkedHashMap<>();
+        int bareRetries = 0;
+        for (Iterator<BlockPlacement> it = placements.iterator(); it.hasNext(); ) {
+            BlockPlacement bp = it.next();
             bp.state = platform.blockTypes().parse(bp.spec).orElse(null);
+            if (bp.state == null && bp.spec.indexOf('[') > 0) {
+                bp.state = platform.blockTypes().parse(bp.spec.substring(0, bp.spec.indexOf('['))).orElse(null);
+                if (bp.state != null) bareRetries++;
+            }
             if (bp.state == null) {
-                log.fine("Plan asked for unknown or non-block '" + bp.spec + "'; substituting " + fallback.id());
-                bp.state = fallback;
-                repaired++;
+                unknown.merge(bp.spec, 1, Integer::sum);
+                it.remove();
             }
         }
-        if (repaired > 0) {
-            log.info("Build plan had " + repaired + " non-block material(s); substituted " + fallback.id() + ".");
+        if (bareRetries > 0) {
+            log.info("Build plan: " + bareRetries + " block(s) had a state the server rejected; placed without it.");
+        }
+        if (!unknown.isEmpty()) {
+            StringBuilder sb = new StringBuilder("Build plan asked for things that are not blocks; left out: ");
+            unknown.forEach((spec, n) -> sb.append(spec).append(n > 1 ? " x" + n : "").append(", "));
+            log.warn(sb.substring(0, sb.length() - 2));
+        }
+        if (placements.isEmpty()) {
+            player.message(Colors.RED + "Nothing in that plan was a block the server knows.");
+            return null;
         }
 
         // Beds are two blocks that have to agree with each other, so this runs

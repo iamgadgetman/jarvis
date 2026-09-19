@@ -1090,6 +1090,38 @@ both planners now also insists on furnishing: a dwelling has at least a
 bed, a chest, a crafting table, light, and something on the walls, and a
 mansion or inn has rooms furnished for their purpose.
 
+Second build with shapes: furnished as asked, the door and a pane one
+block off the wall's line, and a dirt block indoors. Two more changes:
+
+- A door or a piece of glass asked for beside a wall moves into it
+  (`ShapePlan.snapIntoWall`: if the spot holds nothing placed so far but a
+  horizontal neighbour does, the fitting goes there and the log says so).
+- The dirt was `build.fallback-material`: a spec the registry rejects was
+  swapped for dirt, and the model had asked for a painting or an item
+  frame, which are entities. A spec with a state the server refuses is
+  retried as its bare id; anything still unknown is left out and named in
+  one warning line. The config key is retired.
+
+### NeoForge
+
+Of the Fabric adapter's 35 files, two import anything from Fabric: the
+entry point (`JarvisFabric`, the Fabric API callbacks it subscribes and
+the command registration) and `FabricPlatform` (the config directory
+from `FabricLoader`). Everything else is `net.minecraft` under Mojang
+mappings, which NeoForge also uses, and the Carpet-derived fake player
+is plain server code plus three mixins. A NeoForge module would be: a
+`@Mod` entry point subscribing the equivalent NeoForge events
+(`ServerStartedEvent`, `PlayerEvent.PlayerLoggedIn/Out`,
+`LivingDeathEvent`, `LivingDamageEvent`, `ServerChatEvent`,
+`PlayerInteractEvent.RightClickItem/RightClickBlock/EntityInteract`,
+`RegisterCommandsEvent`, `ServerTickEvent`), the mixin config declared
+the NeoForge way, and a `neoforge.mods.toml` in place of
+`fabric.mod.json`; the platform and butler packages move to a shared
+source set. It is gated on NeoForge publishing for the game version in
+use (26.3 at the time of writing). Forge proper is not planned: it has
+lagged the game since the split, and NeoForge is where the modding
+toolchain and the player base went.
+
 ---
 
 ## Open questions
