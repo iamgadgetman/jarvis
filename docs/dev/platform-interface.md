@@ -1,6 +1,6 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** steps 1 to 8 done. Step 9 not started.
+**Status:** all nine steps done. The Fabric adapter is the next piece of work.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -778,6 +778,31 @@ before. Order matters: each introduces the interfaces the next needs.
 9. **Enforce.** Core's pom declares no platform dependency, so a stray import
    fails the build. Add a unit test or two per moved task class now that they
    can be driven by a fake `Platform`.
+   *Done.* `jarvis-core/pom.xml` runs the Maven enforcer with a
+   `bannedDependencies` rule against every server and mod API (Paper,
+   Purpur, Spigot, Bukkit, Citizens, WorldEdit, Adventure, Fabric,
+   Minecraft, Simple Voice Chat), so nothing can drag one onto the
+   classpath transitively; `NoPlatformImportsTest` scans the sources for
+   the same prefixes and names the offending file. The fake platform lives
+   in `jarvis-core/src/test/java/.../core/testing`: `FakePlatform` with a
+   `FakeWorld` (blocks in a map, tags guessed from ids, containers, item
+   entities), `FakeButlers` (instant travel, immediate block breaks, 36
+   slots), `FakeOwner` (records every message, sound and item given),
+   `FakeScheduler` (nothing runs until the test ticks it), `FakeEvents`,
+   `FakeUi` (menus as data with a `click`) and a `Fixture` that boots the
+   whole `JarvisCore` on them with an sqlite database in a temp folder.
+   Tests drive the real code end to end: summon and dismiss, the
+   Lumberjack felling and replanting, the Farmer harvesting ripe wheat, the
+   Lamplighter's torch grid, the ShaftDigger sealing lava, the OreMiner
+   with and without a filter, deposits, escort, recovery, the three guard
+   stances, a wall built and undone, a .schem written and pasted, the
+   command service (typos, permissions, tab completion, item requests),
+   the bell menus, the task queue, the chat trigger falling back to
+   keywords with the model unreachable, the morning report and the duty
+   scheduler. 134 tests run in the core build. Left as it was: the `Voice`
+   interface, since core cannot resolve the voicechat API from this
+   environment; the voice bridge stays a Paper class that feeds core's
+   pipeline, and the Fabric adapter will register its own.
 
 After step 8 the Fabric adapter is a fresh module against a stable core.
 

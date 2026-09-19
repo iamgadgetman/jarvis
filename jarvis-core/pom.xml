@@ -48,5 +48,57 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- The tests boot the whole of core on a fake platform, and the
+             service record and build history want a database to write to.
+             On a server the driver comes with it; here it comes with the tests. -->
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>3.46.1.3</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- The rule this module exists for: no server API on the classpath.
+                 A transitive dependency that dragged one in would let a stray
+                 import compile, so the ban is on the dependency tree itself. The
+                 NoPlatformImportsTest checks the sources the same way. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>no-platform-dependencies</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>io.papermc.paper:*</exclude>
+                                        <exclude>io.papermc:*</exclude>
+                                        <exclude>org.purpurmc.purpur:*</exclude>
+                                        <exclude>org.spigotmc:*</exclude>
+                                        <exclude>org.bukkit:*</exclude>
+                                        <exclude>net.citizensnpcs:*</exclude>
+                                        <exclude>com.sk89q.worldedit:*</exclude>
+                                        <exclude>net.kyori:*</exclude>
+                                        <exclude>net.fabricmc:*</exclude>
+                                        <exclude>net.minecraft:*</exclude>
+                                        <exclude>de.maxhenkel.voicechat:*</exclude>
+                                    </excludes>
+                                    <message>jarvis-core must not depend on a server or mod API; that belongs in an adapter module.</message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

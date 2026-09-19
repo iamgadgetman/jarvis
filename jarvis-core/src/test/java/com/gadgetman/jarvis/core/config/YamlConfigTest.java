@@ -85,4 +85,24 @@ class YamlConfigTest {
         Config n = YamlConfig.parse(null);
         assertTrue(n.keys().isEmpty());
     }
+
+    @Test
+    void setSaveAndReloadRoundTrip() throws java.io.IOException {
+        java.nio.file.Path file = java.nio.file.Files.createTempFile("jarvis-config", ".yml");
+        java.nio.file.Files.writeString(file, DOC);
+        YamlConfig c = YamlConfig.load(file);
+
+        c.set("mining.torch-spacing", 11);
+        c.set("ai.provider", "ollama");
+        assertEquals(11, c.getInt("mining.torch-spacing", 0), "visible in memory at once");
+
+        c.reload();
+        assertEquals("auto", c.getString("ai.provider", "x"), "reload drops what was not saved");
+
+        c.set("mining.torch-spacing", 11);
+        c.save();
+        YamlConfig again = YamlConfig.load(file);
+        assertEquals(11, again.getInt("mining.torch-spacing", 0));
+        assertEquals("http://localhost:11434", again.getString("ai.ollama.endpoint", "x"), "the rest survived the write");
+    }
 }
