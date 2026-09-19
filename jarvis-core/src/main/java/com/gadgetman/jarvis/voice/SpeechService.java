@@ -67,6 +67,26 @@ public class SpeechService {
     public String getEndpoint() { return endpoint; }
 
     /**
+     * Is the speech server there? Asks it for its model list, which every
+     * OpenAI-compatible server answers cheaply.
+     *
+     * @return null when it answered, otherwise what went wrong
+     */
+    public String probe() {
+        try {
+            HttpRequest.Builder req = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint + "/v1/models"))
+                    .timeout(Duration.ofSeconds(5))
+                    .GET();
+            if (!apiKey.isBlank()) req.header("Authorization", "Bearer " + apiKey);
+            HttpResponse<String> res = http.send(req.build(), HttpResponse.BodyHandlers.ofString());
+            return res.statusCode() < 400 ? null : "HTTP " + res.statusCode();
+        } catch (Exception e) {
+            return e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+        }
+    }
+
+    /**
      * Transcribe 48 kHz mono 16-bit PCM.
      *
      * @return the recognised text, or null if the call failed or heard nothing

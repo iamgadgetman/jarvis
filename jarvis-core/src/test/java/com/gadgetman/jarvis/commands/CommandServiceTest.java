@@ -38,6 +38,17 @@ class CommandServiceTest {
     }
 
     @Test
+    @DisplayName("/jarvis voice says so when there is no voice here, and defers to the plugin when there is")
+    void voiceStatus() {
+        run(p, "voice");
+        assertTrue(p.wasTold("not available on this server"), String.join("\n", p.plainMessages()));
+
+        f.core.setVoiceStatus(to -> to.message("listening on the test rig"));
+        run(p, "voice");
+        assertTrue(p.wasTold("listening on the test rig"));
+    }
+
+    @Test
     @DisplayName("/jarvis summon reaches the butler")
     void summonReachesTheButler() {
         run(p, "summon");

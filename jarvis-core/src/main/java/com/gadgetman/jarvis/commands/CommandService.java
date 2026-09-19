@@ -124,6 +124,13 @@ public class CommandService implements CommandSink {
                 core.printDebug(sender);
                 return;
             }
+            case "voice" -> {
+                // Where the chain from microphone to order stands: the one
+                // question worth answering when he does not hear you.
+                sender.message(Colors.GOLD + "Jarvis: Voice, sir:");
+                core.voiceStatus().report(sender);
+                return;
+            }
             case "ai" -> {
                 if (args.size() <= 1 || args.get(1).equalsIgnoreCase("status")) {
                     showAiStatus(sender);
@@ -895,8 +902,8 @@ public class CommandService implements CommandSink {
             "paste", "paste_schematic", "patrol", "potion_effect", "protect", "recover", "reload", "remove",
             "report", "requests", "return", "rotate", "save", "scan", "schematic", "schematics", "sentry",
             "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather",
-            "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "ver", "version", "warp",
-            "watch");
+            "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "ver", "version", "voice",
+            "warp", "watch");
 
     /** The top-level words worth offering on tab. */
     private static final List<String> COMPLETIONS = List.of(
@@ -904,7 +911,7 @@ public class CommandService implements CommandSink {
             "tunnel", "farm", "tend", "chop", "fish", "dance", "light", "patrol", "chest", "deposit", "loot",
             "clearloot", "bell", "build", "paste", "cancelbuild", "schematic", "ask", "ai", "report", "duties",
             "duty", "recover", "home", "confirm", "cancel", "requests", "approve", "deny", "portal", "portals",
-            "quiet", "rank", "queue", "version", "help", "reload", "debug", "export-dataset");
+            "quiet", "rank", "queue", "version", "voice", "help", "reload", "debug", "export-dataset");
 
     /**
      * Closest command to a mistyped one, or null when nothing is close.

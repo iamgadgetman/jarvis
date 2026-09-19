@@ -33,6 +33,7 @@ import com.gadgetman.jarvis.steward.remarks.Remarks;
 import com.gadgetman.jarvis.ui.Menus;
 import com.gadgetman.jarvis.ui.Prompts;
 import com.gadgetman.jarvis.ui.TaskMonitor;
+import com.gadgetman.jarvis.voice.VoiceStatus;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -64,6 +65,7 @@ public final class JarvisCore {
     private BuildingAssistant building;
     private SchematicLibrary schematics;
     private SchematicExtras schematicExtras = SchematicExtras.NONE;
+    private VoiceStatus voiceStatus = VoiceStatus.NONE;
     private RequestDecomposer requestDecomposer;
     private ConfirmationManager confirmations;
     private PlayerRequestManager requests;
@@ -214,6 +216,13 @@ public final class JarvisCore {
     public void setSchematicExtras(SchematicExtras extras) {
         this.schematicExtras = extras == null ? SchematicExtras.NONE : extras;
     }
+
+    /** The voice plugin, once registered, answers {@code /jarvis voice}. */
+    public void setVoiceStatus(VoiceStatus status) {
+        this.voiceStatus = status == null ? VoiceStatus.NONE : status;
+    }
+
+    public VoiceStatus voiceStatus() { return voiceStatus; }
 
     // ==================== ACCESSORS ====================
 

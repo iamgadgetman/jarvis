@@ -1,6 +1,7 @@
 package com.gadgetman.jarvis.voice.svc;
 
 import com.gadgetman.jarvis.JarvisCore;
+import com.gadgetman.jarvis.core.platform.Audience;
 import com.gadgetman.jarvis.core.platform.Log;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
@@ -8,6 +9,7 @@ import com.gadgetman.jarvis.core.platform.Task;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.intent.IntentPipeline;
 import com.gadgetman.jarvis.voice.SpeechService;
+import com.gadgetman.jarvis.voice.VoiceStatus;
 import com.gadgetman.jarvis.voice.WakeWords;
 import de.maxhenkel.voicechat.api.VoicechatApi;
 import de.maxhenkel.voicechat.api.VoicechatPlugin;
@@ -57,7 +59,7 @@ import java.util.function.Supplier;
  * transcription is pushed off-thread, and the pipeline puts execution back
  * on the server thread.
  */
-public class SvcVoicePlugin implements VoicechatPlugin {
+public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
 
     private static volatile SvcVoicePlugin current;
 
@@ -111,6 +113,13 @@ public class SvcVoicePlugin implements VoicechatPlugin {
 
     private VoiceHost attached;
     private VoiceSettings settings;
+
+    // For the status report: is anything arriving, and what did he make of it.
+    private volatile long lastPacketAt;
+    private volatile long lastPacketRejectedAt;
+    private volatile long lastUtteranceAt;
+    private volatile String lastTranscript;
+    private volatile long lastTranscriptAt;
     private SpeechService speech;
     private SvcVoiceResponder responder;
     private Task sweeper;
@@ -173,6 +182,7 @@ public class SvcVoicePlugin implements VoicechatPlugin {
         Platform platform = h.platform();
         settings = VoiceSettings.read(platform.config());
         speech = new SpeechService(platform.config(), platform.log());
+        h.core().setVoiceStatus(this);
         if (!settings.enabled()) {
             platform.log().info("Voice: off (voice.enabled is false)");
             return;
@@ -233,8 +243,12 @@ public class SvcVoicePlugin implements VoicechatPlugin {
                 }
             }
 
-            if ("whisper".equals(settings.gate()) && !whispering) return;
+            if ("whisper".equals(settings.gate()) && !whispering) {
+                lastPacketRejectedAt = System.currentTimeMillis();
+                return;
+            }
             if (opus == null || opus.length == 0) return;
+            lastPacketAt = System.currentTimeMillis();
 
             Utterance u = open.computeIfAbsent(id, k -> new Utterance(api.createDecoder()));
             short[] frame = u.decoder.decode(opus);
@@ -273,6 +287,7 @@ public class SvcVoicePlugin implements VoicechatPlugin {
             if (owner == null || !owner.isOnline()) continue;
             if (pcm.length < settings.minSeconds() * 48000) continue;   // a cough, not an order
 
+            lastUtteranceAt = System.currentTimeMillis();
             handleUtterance(h, owner, pcm);
         }
     }
@@ -288,6 +303,8 @@ public class SvcVoicePlugin implements VoicechatPlugin {
             if (text == null || text.isBlank()) return;
 
             String cleaned = WakeWords.clean(text);
+            lastTranscript = cleaned;
+            lastTranscriptAt = System.currentTimeMillis();
             if (cleaned.isEmpty()) return;
 
             if ("wake-word".equals(settings.gate())) {
@@ -310,6 +327,51 @@ public class SvcVoicePlugin implements VoicechatPlugin {
                 h.core().intents().submit(owner, order.toLowerCase(java.util.Locale.ROOT),
                         IntentPipeline.Source.VOICE, sink);
             });
+        });
+    }
+
+    // ==================== /jarvis voice ====================
+
+    private static String ago(long at) {
+        if (at == 0) return "never";
+        long s = (System.currentTimeMillis() - at) / 1000;
+        return s < 60 ? s + "s ago" : (s / 60) + "m ago";
+    }
+
+    @Override
+    public void report(Audience to) {
+        VoiceSettings st = settings;
+        to.message(Colors.GRAY + "Simple Voice Chat: " + Colors.WHITE + "plugin registered"
+                + (api == null ? Colors.YELLOW + " (not initialised by the mod yet)" : ""));
+        to.message(Colors.GRAY + "Voice server: " + (serverApi != null
+                ? Colors.GREEN + "up" + Colors.GRAY + " (audible " + serverApi.getVoiceChatDistance() + " blocks)"
+                : Colors.RED + "not started" + Colors.GRAY
+                        + ". A singleplayer world has none until it is opened to LAN; on a server, check the voicechat port."));
+        if (st == null) {
+            to.message(Colors.YELLOW + "Not attached to a server run yet.");
+            return;
+        }
+        to.message(Colors.GRAY + "voice.enabled: " + (st.enabled()
+                ? Colors.GREEN + "true"
+                : Colors.RED + "false" + Colors.GRAY + " (set it in config/jarvis/config.yml and reload)"));
+        to.message(Colors.GRAY + "Gate: " + Colors.WHITE + st.gate()
+                + ("wake-word".equals(st.gate()) ? Colors.GRAY + " (phrases: " + String.join(", ", st.wake().phrases()) + ")"
+                : "whisper".equals(st.gate()) ? Colors.GRAY + " (hold the voice chat whisper key)" : ""));
+        to.message(Colors.GRAY + "Heard: " + Colors.WHITE + "last packet " + ago(lastPacketAt)
+                + Colors.GRAY + ", last rejected by the gate " + ago(lastPacketRejectedAt)
+                + ", last sentence closed " + ago(lastUtteranceAt));
+        to.message(Colors.GRAY + "Last transcript: " + (lastTranscript == null
+                ? Colors.WHITE + "none yet"
+                : Colors.WHITE + "\"" + lastTranscript + "\"" + Colors.GRAY + " (" + ago(lastTranscriptAt) + ")"));
+        to.message(Colors.GRAY + "Speaking: " + (responder != null
+                ? Colors.GREEN + "ready"
+                : Colors.YELLOW + (st.speakReplies() ? "waiting for the voice server" : "off (voice.speak-replies)")));
+        if (attached == null || speech == null) return;
+        String endpoint = speech.getEndpoint();
+        attached.platform().scheduler().async(() -> {
+            String problem = speech.probe();
+            attached.platform().scheduler().sync(() -> to.message(Colors.GRAY + "Speech server " + endpoint + ": "
+                    + (problem == null ? Colors.GREEN + "answering" : Colors.RED + "unreachable" + Colors.GRAY + " (" + problem + ")")));
         });
     }
 }

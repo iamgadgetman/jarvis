@@ -204,7 +204,11 @@ public final class JarvisNeoForge implements JarvisMod {
             LOG.warn("Could not start fetching Jarvis's skin: {}", e.toString());
         }
         // Ears, when Simple Voice Chat is here to lend them.
-        if (voiceChatLoaded()) VoiceHooks.serverStarted();
+        if (voiceChatLoaded()) {
+            VoiceHooks.serverStarted();
+        } else {
+            LOG.info("Voice: Simple Voice Chat is not installed, so he cannot hear you. /jarvis voice explains.");
+        }
     }
 
     /** Only then may anything that names the voice chat API be touched. */

@@ -4,6 +4,7 @@ import com.gadgetman.jarvis.Jarvis;
 import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
+import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.voice.svc.SvcVoicePlugin;
 import com.gadgetman.jarvis.voice.svc.VoiceHost;
 import de.maxhenkel.voicechat.api.BukkitVoicechatService;
@@ -35,7 +36,11 @@ public final class PaperVoice implements VoiceHost {
      * @return true if registered; false when the plugin is absent or voice is off
      */
     public boolean register() {
-        if (!plugin.getCoreConfig().getBoolean("voice.enabled", false)) return false;
+        if (!plugin.getCoreConfig().getBoolean("voice.enabled", false)) {
+            plugin.core().setVoiceStatus(to -> to.message(Colors.YELLOW + "Voice: off. "
+                    + Colors.GRAY + "Set voice.enabled: true in plugins/Jarvis/config.yml and restart."));
+            return false;
+        }
 
         if (Bukkit.getPluginManager().getPlugin("voicechat") == null) {
             plugin.getLogger().warning("voice.enabled is true but Simple Voice Chat "
