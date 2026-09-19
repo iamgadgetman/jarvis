@@ -138,36 +138,7 @@ public class IntentPipeline {
      * parse robust to whichever model is answering.
      */
     static String extractJson(String reply) {
-        if (reply == null) return "";
-        String text = reply.trim();
-
-        // Strip a markdown fence if that is all that is wrong.
-        if (text.startsWith("```")) {
-            int firstBreak = text.indexOf('\n');
-            if (firstBreak > 0) text = text.substring(firstBreak + 1);
-            int close = text.lastIndexOf("```");
-            if (close >= 0) text = text.substring(0, close);
-            text = text.trim();
-        }
-        if (text.startsWith("{")) return text;
-
-        // Otherwise take the outermost {...}, counting braces so that nested
-        // parameter objects don't end the span early. Braces inside strings
-        // are skipped, or a description containing "{" would truncate it.
-        int start = text.indexOf('{');
-        if (start < 0) return text;
-        int depth = 0;
-        boolean inString = false, escaped = false;
-        for (int i = start; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (escaped)            { escaped = false; continue; }
-            if (c == '\\')          { escaped = true;  continue; }
-            if (c == '"')           { inString = !inString; continue; }
-            if (inString)           continue;
-            if (c == '{')           depth++;
-            else if (c == '}' && --depth == 0) return text.substring(start, i + 1);
-        }
-        return text.substring(start);
+        return com.gadgetman.jarvis.ai.ModelJson.extractObject(reply);
     }
 
     /**

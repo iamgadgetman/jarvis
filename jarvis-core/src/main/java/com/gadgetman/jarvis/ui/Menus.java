@@ -412,6 +412,19 @@ public class Menus {
                 c -> run(p, "schematic", "scan"));
         m.put(12, item(Ids.BARRIER, Colors.RED + "Cancel build", Colors.GRAY + "Stop the build in progress"),
                 c -> run(p, "cancelbuild"));
+        m.put(13, item(Ids.WRITABLE_BOOK, Colors.GREEN + "Custom build",
+                Colors.GRAY + "Describe it in chat and he plans it", Colors.DARK_GRAY + "Same as /jarvis build <description>"),
+                c -> askInChat(p, "What shall I build, sir? Describe it in a line.", description -> {
+                    String[] words = description.trim().split("\\s+");
+                    if (words.length == 0 || words[0].isEmpty()) {
+                        p.message(Colors.GRAY + "Nothing to build, then.");
+                        return;
+                    }
+                    List<String> args = new ArrayList<>(words.length + 1);
+                    args.add("build");
+                    args.addAll(Arrays.asList(words));
+                    core.commands().jarvis(p, Optional.of(p), args, false);
+                }));
 
         m.put(31, back(), c -> open(p, main(p)));
         return m.build();

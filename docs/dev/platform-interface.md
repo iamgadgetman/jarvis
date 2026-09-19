@@ -1047,6 +1047,28 @@ and "Test connection". `/jarvis ai status|enable|disable|key|endpoint|model
 |models|test` are the same as words, for the console; `key` warns that
 commands are logged. Admin only, bar `status`.
 
+### First freeform build on Fabric: "Failed to generate build plan"
+
+With Claude and Ollama both set up from the menu, `/jarvis build ...` on
+Fabric failed every time. Fabric has no GraalJS, so the JSON planner runs
+instead of the script one, and its request went out with the default
+2,000-token output cap: Claude honoured it, the block list stopped
+mid-object, and `new JSONObject(reply)` threw. (Ollama's `format: json`
+has no cap, which is why the same code worked there.) Two changes, both
+in core:
+
+- `queryBuildPlan` sends with the build-script ceiling (16,000 tokens).
+- `ai/ModelJson` is the one place a model reply is turned into JSON:
+  fence and prose stripped (`extractObject`, which `IntentPipeline` now
+  uses too), and for a reply that still does not parse, the complete
+  objects of an array are recovered (`salvageArray`). `parseBuildPlan`
+  builds the blocks that arrived whole and logs that the plan was cut
+  off, instead of building nothing.
+
+The Building page of the menu also gained "Custom build": it asks for a
+description in chat through `Prompts` and hands it to `/jarvis build`, so
+a player never has to know the command.
+
 ---
 
 ## Open questions

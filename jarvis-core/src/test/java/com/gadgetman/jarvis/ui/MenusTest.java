@@ -149,6 +149,27 @@ class MenusTest {
     }
 
     @Test
+    @DisplayName("Custom build asks for a description in chat and hands it to /jarvis build")
+    void customBuildFromTheMenu() {
+        ringBell();
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Building"), false);
+        assertEquals("Jarvis — Building", f.platform.ui().menuFor(p).title());
+
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Custom build"), false);
+        assertFalse(f.platform.ui().isOpen(p), "the menu closes so the description can be typed");
+        assertTrue(f.core.prompts().isWaiting(p));
+        assertTrue(p.wasTold("What shall I build"));
+
+        AtomicBoolean cancelled = new AtomicBoolean();
+        f.platform.events().publish(new com.gadgetman.jarvis.core.platform.events.ChatEvent(p, "a small oak cottage", cancelled::set));
+        assertTrue(cancelled.get(), "the description is an answer, not a chat line");
+        // No AI is configured in the fixture, so the build command answers
+        // as it would for /jarvis build: the request reached it.
+        assertFalse(f.core.prompts().isWaiting(p));
+        assertTrue(p.plainMessages().size() >= 2, String.join("\n", p.plainMessages()));
+    }
+
+    @Test
     @DisplayName("a player without admin rights never sees the AI page")
     void aiSetupNeedsAdmin() {
         ringBell();

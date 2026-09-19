@@ -365,7 +365,12 @@ public class AIConnector {
             prompt = memoryExamples + "\n" + prompt;
         }
 
-        return sendTiered(Tier.HEAVY, prompt, "You are a Minecraft build planner. Output ONLY valid JSON.", true);
+        // A plan lists every block, and a modest cottage is a few hundred of
+        // them: far past the default output cap. Claude honoured the cap, the
+        // JSON stopped mid-block, and the parser reported "failed to generate
+        // build plan" for a plan the model had happily produced.
+        return sendTiered(Tier.HEAVY, prompt, "You are a Minecraft build planner. Output ONLY valid JSON.", true,
+                BUILD_SCRIPT_MAX_TOKENS);
     }
 
     /**

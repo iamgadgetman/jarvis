@@ -2,6 +2,7 @@ package com.gadgetman.jarvis.building;
 
 import com.gadgetman.jarvis.DatabaseManager;
 import com.gadgetman.jarvis.ai.AIConnector;
+import com.gadgetman.jarvis.ai.ModelJson;
 import com.gadgetman.jarvis.core.platform.Config;
 import com.gadgetman.jarvis.core.platform.Log;
 import com.gadgetman.jarvis.core.platform.Owner;
@@ -20,6 +21,7 @@ import com.gadgetman.jarvis.npc.ButlerService;
 import com.gadgetman.jarvis.progression.ProgressionManager;
 import com.gadgetman.jarvis.progression.ServiceRecord;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayDeque;
@@ -465,41 +467,54 @@ public class BuildingAssistant {
         return new ScriptPlan(script, null);
     }
 
-    /** Parse an AI JSON response into block placements. */
+    /**
+     * Parse an AI JSON response into block placements.
+     *
+     * <p>Tolerant of what models actually send back: a ```json fence, a
+     * line of prose, and a reply cut off by the provider's output cap. In
+     * the last case the blocks that arrived whole are built and the log
+     * says so, rather than the whole plan being thrown away.
+     */
     private List<BlockPlacement> parseBuildPlan(String jsonResponse, BlockPos origin) {
+        List<JSONObject> blocks = new ArrayList<>();
+        String text = ModelJson.extractObject(jsonResponse);
         try {
-            JSONObject json = new JSONObject(jsonResponse);
-            JSONArray blocks = json.optJSONArray("blocks");
-
-            if (blocks == null || blocks.isEmpty()) {
+            JSONArray array = new JSONObject(text).optJSONArray("blocks");
+            if (array != null) {
+                for (int i = 0; i < array.length(); i++) {
+                    JSONObject block = array.optJSONObject(i);
+                    if (block != null) blocks.add(block);
+                }
+            }
+        } catch (JSONException e) {
+            blocks = ModelJson.salvageArray(text, "blocks");
+            if (blocks.isEmpty()) {
+                log.warn("Failed to parse build plan: " + e.getMessage());
                 return null;
             }
-
-            List<BlockPlacement> placements = new ArrayList<>();
-
-            for (int i = 0; i < blocks.length(); i++) {
-                JSONObject block = blocks.optJSONObject(i);
-                if (block == null) continue;
-
-                int x = block.optInt("x", 0);
-                int y = block.optInt("y", 0);
-                int z = block.optInt("z", 0);
-                // Only the shape of the id is normalised here. Whether it is a
-                // placeable block is checked in executeBuild, through the
-                // registry, on the server thread.
-                String id = Ids.of(block.optString("material", "minecraft:stone").trim().toLowerCase(Locale.ROOT));
-                placements.add(new BlockPlacement(origin.offset(x, y, z), id));
-            }
-
-            // Sort by Y to build from bottom up
-            placements.sort(Comparator.comparingInt(p -> p.pos.y()));
-
-            return placements;
-
-        } catch (Exception e) {
-            log.warn("Failed to parse build plan: " + e.getMessage());
+            log.warn("Build plan was cut off or malformed (" + e.getMessage()
+                    + "); building the " + blocks.size() + " blocks that arrived whole");
+        }
+        if (blocks.isEmpty()) {
+            log.warn("Build plan has no blocks");
             return null;
         }
+
+        List<BlockPlacement> placements = new ArrayList<>();
+        for (JSONObject block : blocks) {
+            int x = block.optInt("x", 0);
+            int y = block.optInt("y", 0);
+            int z = block.optInt("z", 0);
+            // Only the shape of the id is normalised here. Whether it is a
+            // placeable block is checked in executeBuild, through the
+            // registry, on the server thread.
+            String id = Ids.of(block.optString("material", "minecraft:stone").trim().toLowerCase(Locale.ROOT));
+            placements.add(new BlockPlacement(origin.offset(x, y, z), id));
+        }
+
+        // Sort by Y to build from bottom up
+        placements.sort(Comparator.comparingInt(p -> p.pos.y()));
+        return placements;
     }
 
     /**
