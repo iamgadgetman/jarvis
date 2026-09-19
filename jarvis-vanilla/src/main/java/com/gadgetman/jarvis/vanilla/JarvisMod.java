@@ -3,6 +3,7 @@ package com.gadgetman.jarvis.vanilla;
 import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.vanilla.butler.FakeButlers;
 import com.gadgetman.jarvis.vanilla.platform.VanillaPlatform;
+import com.gadgetman.jarvis.voice.svc.VoiceHost;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,6 +25,9 @@ public interface JarvisMod {
     JarvisCore core();
 
     FakeButlers butlers();
+
+    /** The voice plugin's view of this server run. Null before the server is up. */
+    VoiceHost voiceHost();
 
     /** The reason the last start failed, or null. */
     String startupError();

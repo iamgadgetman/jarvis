@@ -8,6 +8,9 @@ import com.gadgetman.jarvis.vanilla.butler.FakeButlers;
 import com.gadgetman.jarvis.vanilla.platform.VanillaEvents;
 import com.gadgetman.jarvis.vanilla.platform.VanillaLog;
 import com.gadgetman.jarvis.vanilla.platform.VanillaPlatform;
+import com.gadgetman.jarvis.vanilla.voice.VanillaVoiceHost;
+import com.gadgetman.jarvis.vanilla.voice.VoiceHooks;
+import com.gadgetman.jarvis.voice.svc.VoiceHost;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
@@ -55,6 +58,7 @@ public final class JarvisNeoForge implements JarvisMod {
     private VanillaPlatform platform;
     private FakeButlers butlers;
     private JarvisCore core;
+    private VoiceHost voiceHost;
 
     /**
      * Fabric raises one event before a player dies and another after the
@@ -182,6 +186,7 @@ public final class JarvisNeoForge implements JarvisMod {
             platform.vanillaEvents().butlerResolver(butlers::ownerOf);
             core = new JarvisCore(platform, version, butlers, new VanillaActionExecutor(this));
             core.start();
+            voiceHost = new VanillaVoiceHost(this);
             startupError = null;
             LOG.info("Jarvis AI Companion v{} enabled successfully!", version);
         } catch (Exception e) {
@@ -198,6 +203,13 @@ public final class JarvisNeoForge implements JarvisMod {
         } catch (Exception e) {
             LOG.warn("Could not start fetching Jarvis's skin: {}", e.toString());
         }
+        // Ears, when Simple Voice Chat is here to lend them.
+        if (voiceChatLoaded()) VoiceHooks.serverStarted();
+    }
+
+    /** Only then may anything that names the voice chat API be touched. */
+    private static boolean voiceChatLoaded() {
+        return ModList.get().isLoaded("voicechat");
     }
 
     private static String loaderDescription() {
@@ -207,6 +219,8 @@ public final class JarvisNeoForge implements JarvisMod {
     }
 
     private void stop() {
+        if (voiceChatLoaded()) VoiceHooks.serverStopping();
+        voiceHost = null;
         if (core != null) {
             try {
                 core.shutdown();
@@ -239,6 +253,11 @@ public final class JarvisNeoForge implements JarvisMod {
     @Override
     public FakeButlers butlers() {
         return butlers;
+    }
+
+    @Override
+    public VoiceHost voiceHost() {
+        return voiceHost;
     }
 
     @Override

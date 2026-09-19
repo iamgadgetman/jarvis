@@ -35,8 +35,8 @@ setup) or in config.yml.
 Then it is the plugin: `/jarvis summon`, the bell, chat, the menus. What
 differs from Paper is what differs on Fabric, see
 [../jarvis-fabric/README.md](../jarvis-fabric/README.md): a fake player for
-a butler, operator for admin, no voice chat or WorldEdit, and the JSON
-planner for freeform builds.
+a butler, operator for admin, voice through the Simple Voice Chat mod, no
+WorldEdit, and the JSON planner for freeform builds.
 
 ## What is Carpet's
 

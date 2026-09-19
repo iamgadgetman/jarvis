@@ -18,6 +18,12 @@ group = 'com.gadgetman'
 
 repositories {
     mavenCentral()
+    // Simple Voice Chat's API, compile-time only: the voice plugin is
+    // registered only when the voicechat mod is there to ask for it.
+    maven {
+        name = 'maxhenkel'
+        url = 'https://maven.maxhenkel.de/repository/public'
+    }
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
@@ -61,6 +67,7 @@ dependencies {
     // shipped, and the planner checks for it before use, so freeform builds
     // use the JSON planner here.
     compileOnly "org.graalvm.polyglot:polyglot:${project.graaljs_version}"
+    compileOnly "de.maxhenkel.voicechat:voicechat-api:${project.voicechat_api_version}"
 }
 
 // The bundled default config.yml is the plugin's; one file for every adapter.
@@ -90,6 +97,7 @@ sourceSets {
             srcDir '../jarvis-core/src/main/java'
             srcDir '../jarvis-nav/src/main/java'
             srcDir '../jarvis-vanilla/src/main/java'
+            srcDir '../jarvis-voice/src/main/java'
         }
         resources {
             srcDir '../jarvis-vanilla/src/main/resources'

@@ -72,6 +72,11 @@ public final class FakeButlers implements Butlers {
         return p == null || p.isLeaving() ? null : p;
     }
 
+    /** The same, for code outside the package that needs his body itself (the voice channel). */
+    public Optional<FakePlayer> fakeOf(UUID ownerId) {
+        return Optional.ofNullable(player(ownerId));
+    }
+
     boolean exists(UUID ownerId) {
         return registry.containsKey(ownerId);
     }

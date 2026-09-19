@@ -11,7 +11,7 @@ import com.gadgetman.jarvis.npc.provider.CitizensNPCProvider;
 import com.gadgetman.jarvis.platform.PaperPlatform;
 import com.gadgetman.jarvis.schematics.SchematicManager;
 import com.gadgetman.jarvis.ui.PaperBell;
-import com.gadgetman.jarvis.voice.VoiceBridge;
+import com.gadgetman.jarvis.voice.PaperVoice;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -38,7 +38,7 @@ public class Jarvis extends JavaPlugin {
 
     private CitizensNPCProvider npcProvider;
     private SchematicManager schematicManager;
-    private VoiceBridge voiceBridge;
+    private PaperVoice voice;
 
     @Override
     public void onEnable() {
@@ -85,8 +85,8 @@ public class Jarvis extends JavaPlugin {
                 new CitizensInteractListener(npcProvider, platform.paperEvents()), this);
 
         // Ears. No-ops unless voice.enabled and Simple Voice Chat is installed.
-        voiceBridge = new VoiceBridge(this);
-        voiceBridge.register();
+        voice = new PaperVoice(this);
+        voice.register();
 
         getLogger().info("Jarvis AI Companion v" + version + " enabled successfully!");
         getLogger().info("NPC, mining, building, and steward systems are at your service.");
@@ -94,8 +94,8 @@ public class Jarvis extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        if (voiceBridge != null) {
-            voiceBridge.shutdown();
+        if (voice != null) {
+            voice.shutdown();
         }
         if (core != null) {
             core.shutdown();
@@ -141,8 +141,8 @@ public class Jarvis extends JavaPlugin {
         return schematicManager;
     }
 
-    public VoiceBridge getVoiceBridge() {
-        return voiceBridge;
+    public PaperVoice getVoice() {
+        return voice;
     }
 
     public String getVersion() {

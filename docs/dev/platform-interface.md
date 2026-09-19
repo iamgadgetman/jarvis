@@ -3,7 +3,8 @@
 **Status:** all nine steps done, the spike run, the Fabric adapter built and
 running in a world (see *The Fabric adapter*), and the NeoForge adapter built
 on the same shared code (see *NeoForge*), started on a dedicated server by
-CI and confirmed working in a world.
+CI and confirmed working in a world. Voice is shared across all three
+(see *Voice*); the mods' voice is not yet tried in a world.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -526,18 +527,32 @@ suggestion provider that calls `jarvis(..., tab=true)`.
 
 ### Voice
 
-Simple Voice Chat's API is platform neutral. The only difference is
-registration, so:
+*Built, on all three.* Simple Voice Chat's API is platform neutral down
+to taking the loader's own entity and level objects as `Object`, so the
+plugin is one class for every platform. It lives in `jarvis-voice/`, a
+directory of sources like `jarvis-vanilla` (the mods compile it in;
+Paper's pom adds it with build-helper), because core may not depend on
+the voice chat API and Paper cannot see `jarvis-vanilla`:
 
-```java
-public interface Voice {
-    void register(de.maxhenkel.voicechat.api.VoicechatPlugin plugin);   // adapter does the lookup
-}
-```
-
-*Paper:* `Bukkit.getServicesManager().load(BukkitVoicechatService.class).registerPlugin`.
-*Fabric:* a `voicechat` entrypoint in `fabric.mod.json` that returns core's `VoiceBridge`.
-`EntityAudioChannel` takes the butler's entity UUID on both.
+- `voice/svc/SvcVoicePlugin` is the ears (what `VoiceBridge` was) and
+  `SvcVoiceResponder` the mouth (what `VoiceResponder` was), on `Owner`,
+  `Scheduler` and `Log`. The wake-word matching moved to core as
+  `voice/WakeWords`, pure and tested.
+- `VoiceHost` is what an adapter answers: `core()`, `platform()`, the
+  butler's body as the loader's object when he is near the owner
+  (`butlerEntityNear`), and the owner's level (`levelOf`). Paper answers
+  with the Citizens NPC's entity and the Bukkit world (`PaperVoice`);
+  both mods with the fake player and the `ServerLevel`
+  (`vanilla/voice/VanillaVoiceHost`).
+- Registration is the loader's: Paper loads `BukkitVoicechatService` and
+  registers; Fabric names `FabricVoicePlugin` as the `voicechat`
+  entrypoint; NeoForge's `NeoForgeVoicePlugin` carries
+  `@ForgeVoicechatPlugin`, which is how that build discovers plugins. On
+  the mods the plugin is constructed at mod load, before any server, so
+  it takes a supplier of the host and attaches to whichever server run
+  is current, re-reading `voice.*` each time. The entry points only touch
+  it through `VoiceHooks`, and only when the voicechat mod is loaded, so
+  nothing links against the API when it is absent.
 
 ### Schematics
 

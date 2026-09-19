@@ -12,6 +12,7 @@ on:
     paths:
       - 'jarvis-neoforge/**'
       - 'jarvis-vanilla/**'
+      - 'jarvis-voice/**'
       - 'jarvis-core/src/main/**'
       - 'jarvis-nav/src/main/**'
       - 'jarvis-paper/src/main/resources/config.yml'
@@ -20,6 +21,7 @@ on:
     paths:
       - 'jarvis-neoforge/**'
       - 'jarvis-vanilla/**'
+      - 'jarvis-voice/**'
       - 'jarvis-core/src/main/**'
       - 'jarvis-nav/src/main/**'
       - 'jarvis-paper/src/main/resources/config.yml'

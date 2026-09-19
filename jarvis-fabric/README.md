@@ -40,9 +40,13 @@ differs from Paper:
   "Jarvis", as Citizens fetches it on Paper.
 - Permissions: Fabric has no permission plugin, so `jarvis.admin` means
   operator and everything else is open.
-- Not on Fabric (yet): voice chat, WorldEdit clipboard saves and rotated
-  pastes, and the GraalJS build planner (freeform builds use the JSON
-  planner). Schematics, the library and pastes work.
+- Voice works as on Paper: with the Simple Voice Chat mod installed and
+  `voice.enabled` on, he hears you (whisper key, always, or a wake word)
+  and answers out loud, positionally from his body or in your ear when he
+  is away. The speech server (`voice.endpoint`) is the same one.
+- Not on Fabric (yet): WorldEdit clipboard saves and rotated pastes, and
+  the GraalJS build planner (freeform builds use the JSON planner).
+  Schematics, the library and pastes work.
 
 ## What is Carpet's
 

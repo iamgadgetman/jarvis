@@ -8,6 +8,9 @@ import com.gadgetman.jarvis.vanilla.butler.FakeButlers;
 import com.gadgetman.jarvis.vanilla.platform.VanillaEvents;
 import com.gadgetman.jarvis.vanilla.platform.VanillaLog;
 import com.gadgetman.jarvis.vanilla.platform.VanillaPlatform;
+import com.gadgetman.jarvis.vanilla.voice.VanillaVoiceHost;
+import com.gadgetman.jarvis.vanilla.voice.VoiceHooks;
+import com.gadgetman.jarvis.voice.svc.VoiceHost;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -45,6 +48,7 @@ public final class JarvisFabric implements ModInitializer, JarvisMod {
     private VanillaPlatform platform;
     private FakeButlers butlers;
     private JarvisCore core;
+    private VoiceHost voiceHost;
 
     public static JarvisFabric get() {
         return instance;
@@ -104,6 +108,7 @@ public final class JarvisFabric implements ModInitializer, JarvisMod {
             platform.vanillaEvents().butlerResolver(butlers::ownerOf);
             core = new JarvisCore(platform, version, butlers, new VanillaActionExecutor(this));
             core.start();
+            voiceHost = new VanillaVoiceHost(this);
             startupError = null;
             LOG.info("Jarvis AI Companion v{} enabled successfully!", version);
         } catch (Exception e) {
@@ -120,6 +125,13 @@ public final class JarvisFabric implements ModInitializer, JarvisMod {
         } catch (Exception e) {
             LOG.warn("Could not start fetching Jarvis's skin: {}", e.toString());
         }
+        // Ears, when Simple Voice Chat is here to lend them.
+        if (voiceChatLoaded()) VoiceHooks.serverStarted();
+    }
+
+    /** Only then may anything that names the voice chat API be touched. */
+    private static boolean voiceChatLoaded() {
+        return FabricLoader.getInstance().isModLoaded("voicechat");
     }
 
     private static String loaderDescription() {
@@ -136,6 +148,8 @@ public final class JarvisFabric implements ModInitializer, JarvisMod {
     }
 
     private void stop() {
+        if (voiceChatLoaded()) VoiceHooks.serverStopping();
+        voiceHost = null;
         if (core != null) {
             try {
                 core.shutdown();
@@ -162,6 +176,11 @@ public final class JarvisFabric implements ModInitializer, JarvisMod {
     @Override
     public FakeButlers butlers() {
         return butlers;
+    }
+
+    @Override
+    public VoiceHost voiceHost() {
+        return voiceHost;
     }
 
     @Override

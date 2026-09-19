@@ -8,9 +8,13 @@
   "license": "MIT",
   "environment": "*",
   "entrypoints": {
-    "main": ["com.gadgetman.jarvis.fabric.JarvisFabric"]
+    "main": ["com.gadgetman.jarvis.fabric.JarvisFabric"],
+    "voicechat": ["com.gadgetman.jarvis.fabric.FabricVoicePlugin"]
   },
   "mixins": ["jarvis.mixins.json"],
+  "suggests": {
+    "voicechat": "*"
+  },
   "depends": {
     "fabricloader": ">=0.19.5",
     "fabric-api": "*",
