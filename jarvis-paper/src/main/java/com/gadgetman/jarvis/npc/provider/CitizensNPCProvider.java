@@ -36,9 +36,15 @@ public class CitizensNPCProvider {
 
     private final Jarvis plugin;
     private final Map<UUID, NPC> playerNPCs = new ConcurrentHashMap<>();
+    /** His inventory as the owner sees it; registered with Bukkit by the plugin. */
+    private final ButlerInventoryView inventoryView = new ButlerInventoryView();
 
     public CitizensNPCProvider(Jarvis plugin) {
         this.plugin = plugin;
+    }
+
+    public ButlerInventoryView inventoryView() {
+        return inventoryView;
     }
 
     // ==================== LIFECYCLE ====================

@@ -474,7 +474,7 @@ public final class CitizensButler implements Butler {
     public void openInventory(Owner viewer) {
         NPC npc = npc();
         Player p = Bukkit.getPlayer(viewer.id());
-        if (npc != null && p != null) npc.getOrAddTrait(Inventory.class).openInventory(p);
+        if (npc != null && p != null) provider.inventoryView().open(npc, p);
     }
 
     // ---- surroundings ----

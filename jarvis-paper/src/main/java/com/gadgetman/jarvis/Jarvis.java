@@ -80,6 +80,7 @@ public class Jarvis extends JavaPlugin {
         getCommand("jarvis").setExecutor(commands);
         getCommand("jarvis").setTabCompleter(commands);
         getServer().getPluginManager().registerEvents(new PaperBell(platform.paperEvents()), this);
+        getServer().getPluginManager().registerEvents(npcProvider.inventoryView(), this);
         getServer().getPluginManager().registerEvents(
                 new CitizensInteractListener(npcProvider, platform.paperEvents()), this);
 
