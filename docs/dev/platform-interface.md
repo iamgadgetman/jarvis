@@ -1,6 +1,6 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** steps 1 to 5 done. Steps 6 to 9 not started.
+**Status:** steps 1 to 6 done. Steps 7 to 9 not started.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -711,6 +711,23 @@ before. Order matters: each introduces the interfaces the next needs.
    splits.
 6. **Split JarvisNPC.** Orchestration to core `ButlerService`; Citizens to the
    Paper adapter. Delete `INPCProvider`. This is the largest single step.
+   *Done.* Core has `npc.ButlerService` (implements `ButlerHost`; summon,
+   dismiss, the kit and what rank issues it, the task register, loot pickup,
+   follow, return, the charm, lifeguard, supply and cleanup monitors, and
+   every Owner-based entry point) and `npc.OreMiner` (the ore state
+   machine). `progression.ProgressionManager` moved to core, keyed on
+   `Owner`, with `attach(ButlerService)` for kit re-issue. Platform grew
+   what the split needed: `Items` (edible, max stack) on `Platform`,
+   `Owner.foodLevel` and `heldItemWear`, `Entity.setItem`,
+   `Butler.spawn/despawn/exists`, `Butler.addToInventory` returning the
+   remainder, `Butlers.name/all`, and `OwnerDamagedEvent` /
+   `ButlerDamagedEvent`. Paper: `JarvisNPC` is a Player-to-Owner facade
+   over the service plus `getNPCForPlayer` for the menu's click handler;
+   `CitizensNPCProvider` is the registry, spawning and block breaking only;
+   `PaperEvents` republishes damage through a resolver the adapter
+   registers; disconnect cleanup rides core's `QuitEvent`. `INPCProvider`
+   and `NPCProviderFactory` are gone. Still in Paper: BuildingAssistant,
+   SchematicManager, commands, menus, voice, and `Jarvis.java` wiring.
 7. **Building and schematics.** `BuildingAssistant` onto `World.setBlock`;
    `SchematicManager` split.
 8. **Commands and UI.** `CommandSink` and `Menu` in core; thin Paper wiring.
