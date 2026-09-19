@@ -59,6 +59,16 @@ Every one of those has a fuller account, with its limits, in
 4. Add your AI API key(s) to `config.yml` (see below)
 5. Restart or `/reload confirm`
 
+### Fabric and NeoForge
+
+Jarvis is also a mod: the same butler on Fabric and on NeoForge, with a
+fake player for a body instead of a Citizens NPC. Grab
+`jarvis-fabric-<version>.jar` or `jarvis-neoforge-<version>.jar` from the
+`fabric` or `neoforge` workflow run for the commit you want, drop it in
+`mods/` (Fabric needs Fabric API too), and the config appears in
+`config/jarvis/`. See [jarvis-fabric/README.md](jarvis-fabric/README.md)
+and [jarvis-neoforge/README.md](jarvis-neoforge/README.md) for what differs.
+
 ### First run
 
 ```

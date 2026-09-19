@@ -6,9 +6,12 @@ fake player walked by `jarvis-nav`. See
 design; this module is the thin layer that design leaves to an adapter.
 
 A Gradle Loom project, separate from the Maven reactor, because Fabric's
-toolchain is Gradle. It compiles core and nav straight from their sources and
-bundles core's libraries (org.json, snakeyaml, HikariCP, sqlite-jdbc) as
-nested jars, so the one mod file is all a server needs besides Fabric API.
+toolchain is Gradle. It compiles core, nav and the loader-neutral server code
+in `../jarvis-vanilla` straight from their sources and bundles core's
+libraries (org.json, snakeyaml, HikariCP, sqlite-jdbc) as nested jars, so the
+one mod file is all a server needs besides Fabric API. The only class in this
+module is the entry point; everything else is shared with the NeoForge mod in
+`../jarvis-neoforge`.
 
 ## Building
 
@@ -44,4 +47,4 @@ differs from Paper:
 ## What is Carpet's
 
 The fake player is adapted from the Carpet mod (MIT); see
-`THIRD-PARTY-LICENSES.md` for the files and the licence.
+`../jarvis-vanilla/THIRD-PARTY-LICENSES.md` for the files and the licence.

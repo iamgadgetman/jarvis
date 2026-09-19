@@ -1,10 +1,13 @@
 package com.gadgetman.jarvis.fabric;
 
 import com.gadgetman.jarvis.JarvisCore;
-import com.gadgetman.jarvis.fabric.butler.FakeButlers;
-import com.gadgetman.jarvis.fabric.platform.FabricEvents;
-import com.gadgetman.jarvis.fabric.platform.FabricLog;
-import com.gadgetman.jarvis.fabric.platform.FabricPlatform;
+import com.gadgetman.jarvis.vanilla.JarvisMod;
+import com.gadgetman.jarvis.vanilla.VanillaActionExecutor;
+import com.gadgetman.jarvis.vanilla.VanillaCommands;
+import com.gadgetman.jarvis.vanilla.butler.FakeButlers;
+import com.gadgetman.jarvis.vanilla.platform.VanillaEvents;
+import com.gadgetman.jarvis.vanilla.platform.VanillaLog;
+import com.gadgetman.jarvis.vanilla.platform.VanillaPlatform;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -19,8 +22,6 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 
@@ -28,21 +29,20 @@ import java.nio.file.Path;
  * Jarvis AI Butler, the Fabric mod.
  *
  * <p>A bootstrap, like the Paper plugin's main class: it builds the
- * {@link FabricPlatform} when the server is up, gives core a fake-player
+ * {@link VanillaPlatform} when the server is up, gives core a fake-player
  * body for the butler and an executor for the admin actions, and starts
- * {@link JarvisCore}. Everything the butler does lives in core; what is
- * here is registration with the loader and the server.
+ * {@link JarvisCore}. Everything the butler does lives in core, and
+ * everything that touches the server lives in jarvis-vanilla, shared with
+ * the NeoForge mod; what is here is registration with Fabric.
  */
-public final class JarvisFabric implements ModInitializer {
-
-    public static final Logger LOG = LoggerFactory.getLogger("jarvis");
+public final class JarvisFabric implements ModInitializer, JarvisMod {
 
     private static JarvisFabric instance;
 
     private String version = "unknown";
     /** Why the last start failed, for the command to repeat; null when it did not. */
     private String startupError;
-    private FabricPlatform platform;
+    private VanillaPlatform platform;
     private FakeButlers butlers;
     private JarvisCore core;
 
@@ -56,7 +56,7 @@ public final class JarvisFabric implements ModInitializer {
         version = FabricLoader.getInstance().getModContainer("jarvis")
                 .map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("unknown");
 
-        CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> FabricCommands.register(dispatcher, this));
+        CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> VanillaCommands.register(dispatcher, this));
         ServerLifecycleEvents.SERVER_STARTED.register(this::start);
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> stop());
         ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -74,35 +74,35 @@ public final class JarvisFabric implements ModInitializer {
         ServerLivingEntityEvents.AFTER_DAMAGE.register((entity, source, base, taken, blocked) ->
                 events(e -> e.onDamaged(entity, source, taken)));
         ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) ->
-                platform == null || platform.fabricEvents().onChat(sender, message.signedContent()));
+                platform == null || platform.vanillaEvents().onChat(sender, message.signedContent()));
         UseItemCallback.EVENT.register((player, level, hand) -> {
             if (level.isClientSide() || platform == null || !(player instanceof ServerPlayer sp)) return InteractionResult.PASS;
-            return platform.fabricEvents().onUseItem(sp, hand);
+            return platform.vanillaEvents().onUseItem(sp, hand);
         });
         UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
             if (level.isClientSide() || platform == null || !(player instanceof ServerPlayer sp)) return InteractionResult.PASS;
-            return platform.fabricEvents().onUseBlock(sp, hand, hit);
+            return platform.vanillaEvents().onUseBlock(sp, hand, hit);
         });
         UseEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
             if (level.isClientSide() || platform == null || !(player instanceof ServerPlayer sp)) return InteractionResult.PASS;
-            return platform.fabricEvents().onUseEntity(sp, hand, entity);
+            return platform.vanillaEvents().onUseEntity(sp, hand, entity);
         });
 
         LOG.info("Jarvis v{} loaded; waiting for the server", version);
     }
 
-    private void events(java.util.function.Consumer<FabricEvents> body) {
-        if (platform != null) body.accept(platform.fabricEvents());
+    private void events(java.util.function.Consumer<VanillaEvents> body) {
+        if (platform != null) body.accept(platform.vanillaEvents());
     }
 
     private void start(MinecraftServer server) {
         LOG.info("Jarvis AI Companion v{} enabling...", version);
         try {
             Path dataDir = FabricLoader.getInstance().getConfigDir().resolve("jarvis");
-            platform = new FabricPlatform(server, dataDir, new FabricLog(LOG));
+            platform = new VanillaPlatform(server, dataDir, new VanillaLog(LOG), "fabric", loaderDescription());
             butlers = new FakeButlers(platform);
-            platform.fabricEvents().butlerResolver(butlers::ownerOf);
-            core = new JarvisCore(platform, version, butlers, new FabricActionExecutor(this));
+            platform.vanillaEvents().butlerResolver(butlers::ownerOf);
+            core = new JarvisCore(platform, version, butlers, new VanillaActionExecutor(this));
             core.start();
             startupError = null;
             LOG.info("Jarvis AI Companion v{} enabled successfully!", version);
@@ -122,7 +122,15 @@ public final class JarvisFabric implements ModInitializer {
         }
     }
 
-    /** The reason the last start failed, or null. */
+    private static String loaderDescription() {
+        String loader = FabricLoader.getInstance().getModContainer("fabricloader")
+                .map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("?");
+        String api = FabricLoader.getInstance().getModContainer("fabric-api")
+                .map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("?");
+        return "Fabric Loader " + loader + " with Fabric API " + api;
+    }
+
+    @Override
     public String startupError() {
         return startupError;
     }
@@ -141,20 +149,22 @@ public final class JarvisFabric implements ModInitializer {
         butlers = null;
     }
 
-    /** Everything core needs from the server. Null before the server is up. */
-    public FabricPlatform platform() {
+    @Override
+    public VanillaPlatform platform() {
         return platform;
     }
 
-    /** Jarvis himself. Null before the server is up. */
+    @Override
     public JarvisCore core() {
         return core;
     }
 
+    @Override
     public FakeButlers butlers() {
         return butlers;
     }
 
+    @Override
     public String version() {
         return version;
     }

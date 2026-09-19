@@ -1,8 +1,9 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** all nine steps done, the spike run, and the Fabric adapter built
-and running in a world (see *The Fabric adapter*). Next: whatever the next
-session in a world finds.
+**Status:** all nine steps done, the spike run, the Fabric adapter built and
+running in a world (see *The Fabric adapter*), and the NeoForge adapter built
+on the same shared code (see *NeoForge*), started on a dedicated server by
+CI and awaiting its first session in a world.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -31,10 +32,16 @@ Decision: split Jarvis into a platform-free **core** and thin **adapters**.
   Fabric, or Minecraft imports. Enforced by the module simply not declaring
   those dependencies.
 - `jarvis-paper`: the existing plugin, reduced to an adapter. NPC via Citizens.
+- `jarvis-vanilla`: everything an adapter needs from a vanilla server, in
+  Mojang mappings and with no loader API: the platform classes, the
+  Carpet-style fake player and its mixins, the driver on our pathfinder,
+  the command and the action executor. Not a build of its own; the two mods
+  below compile it from source.
 - `jarvis-fabric`: a server-side Fabric mod. Works in singleplayer (integrated
-  server) and on Fabric servers with vanilla clients. NPC via a vendored
-  Carpet-style fake player plus our own pathfinder.
-- NeoForge later, through Architectury or a third adapter.
+  server) and on Fabric servers with vanilla clients. One class: the entry
+  point that registers Fabric API's callbacks.
+- `jarvis-neoforge`: the same mod for NeoForge. One class: the entry point
+  that subscribes to NeoForge's event bus.
 
 What was measured on the baseline:
 
@@ -90,9 +97,14 @@ jarvis/
   jarvis-core/pom.xml          deps: org.json, snakeyaml, HikariCP, sqlite, junit
   jarvis-paper/pom.xml         deps: core, purpur-api, citizensapi, worldedit, voicechat-api
   jarvis-nav/pom.xml           deps: core (value types only), junit. The A* and follower.
+  jarvis-vanilla/              Sources only (no build file): the loader-neutral adapter,
+                               com.gadgetman.jarvis.vanilla, plus jarvis.mixins.json.
   jarvis-fabric/build.gradle   Gradle Loom project, outside the Maven reactor. Compiles
-                               core and nav from source; deps: fabric-loader, fabric-api,
-                               and core's libraries nested in the jar.
+                               core, nav and vanilla from source; deps: fabric-loader,
+                               fabric-api, and core's libraries nested in the jar.
+  jarvis-neoforge/build.gradle ModDevGradle project, likewise. Compiles core, nav and
+                               vanilla from source; deps: neoforge, and core's libraries
+                               as Jar-in-Jar.
 ```
 
 GraalJS is a Paper-only concern for now: Paper's library loader fetches it,
@@ -1104,23 +1116,40 @@ block off the wall's line, and a dirt block indoors. Two more changes:
 
 ### NeoForge
 
-Of the Fabric adapter's 35 files, two import anything from Fabric: the
-entry point (`JarvisFabric`, the Fabric API callbacks it subscribes and
-the command registration) and `FabricPlatform` (the config directory
-from `FabricLoader`). Everything else is `net.minecraft` under Mojang
-mappings, which NeoForge also uses, and the Carpet-derived fake player
-is plain server code plus three mixins. A NeoForge module would be: a
-`@Mod` entry point subscribing the equivalent NeoForge events
-(`ServerStartedEvent`, `PlayerEvent.PlayerLoggedIn/Out`,
-`LivingDeathEvent`, `LivingDamageEvent`, `ServerChatEvent`,
-`PlayerInteractEvent.RightClickItem/RightClickBlock/EntityInteract`,
-`RegisterCommandsEvent`, `ServerTickEvent`), the mixin config declared
-the NeoForge way, and a `neoforge.mods.toml` in place of
-`fabric.mod.json`; the platform and butler packages move to a shared
-source set. It is gated on NeoForge publishing for the game version in
-use (26.3 at the time of writing). Forge proper is not planned: it has
-lagged the game since the split, and NeoForge is where the modding
-toolchain and the player base went.
+*Built; started on a dedicated server by CI; not yet tried in a world.*
+
+Of the Fabric adapter's 35 files, two imported anything from Fabric, so
+the split was cheap: everything else moved to `jarvis-vanilla` as
+`com.gadgetman.jarvis.vanilla` (`Fabric*` classes renamed `Vanilla*`), a
+directory of sources both mods compile in, the way they already compiled
+core and nav. `JarvisMod` is the small interface the shared code needs
+from whichever entry point is running (platform, core, butlers, the
+startup error, the version, the logger), and `VanillaPlatform` is told
+its name and loader version instead of asking Fabric. The mixin config
+and the third-party notice moved with the code.
+
+`jarvis-neoforge/` is a ModDevGradle project: `JarvisNeoForge` is a
+`@Mod` that registers itself on `NeoForge.EVENT_BUS` and maps the events
+one to one: `ServerStartedEvent`/`ServerStoppingEvent` for start and
+stop, `ServerTickEvent.Post` for the tick, `RegisterCommandsEvent` for
+`/jarvis`, `PlayerEvent.PlayerLoggedIn/Out`, `LivingDamageEvent.Post`,
+`ServerChatEvent` (cancelled when core consumed the line), and the three
+`PlayerInteractEvent`s with the bridge's `InteractionResult` set as the
+cancellation result. One difference: Fabric has a before-death and an
+after-death hook and NeoForge only `LivingDeathEvent`, which fires
+before the drops; the entry point snapshots the inventory there and
+reports the death on the next tick. Core's libraries ride as Jar-in-Jar
+with a version range, so another mod carrying the same library resolves
+to one copy. The config lives in `config/jarvis/`, as on Fabric.
+
+The `neoforge` workflow builds the jar and then starts a dedicated server
+with it (`gradle runServer`, EULA accepted, flat world) and waits for the
+"enabled successfully" line, since the module graph, the mixins and the
+nested jars are only exercised at runtime. Targets NeoForge 26.3.0.6-beta
+(NeoForge's 26.3 builds are betas at the time of writing).
+
+Forge proper is not planned: it has lagged the game since the split, and
+NeoForge is where the modding toolchain and the player base went.
 
 ---
 

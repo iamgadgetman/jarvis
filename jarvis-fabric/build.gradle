@@ -1,8 +1,9 @@
 // The Fabric adapter: jarvis-core on a Fabric server, with the butler as a
 // fake player walked by jarvis-nav. A Gradle Loom project outside the Maven
-// reactor, since Fabric's toolchain is Loom. Core and nav compile in from
-// their sources, so nothing has to be installed to a Maven repository first,
-// and core's libraries ride along as nested jars.
+// reactor, since Fabric's toolchain is Loom. Core, nav and the loader-neutral
+// server code in jarvis-vanilla compile in from their sources, so nothing
+// has to be installed to a Maven repository first, and core's libraries ride
+// along as nested jars. Only JarvisFabric itself is in this module.
 plugins {
     id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
@@ -48,8 +49,10 @@ sourceSets {
         java {
             srcDir '../jarvis-core/src/main/java'
             srcDir '../jarvis-nav/src/main/java'
+            srcDir '../jarvis-vanilla/src/main/java'
         }
         resources {
+            srcDir '../jarvis-vanilla/src/main/resources'
             srcDir defaultConfig
         }
     }
@@ -73,5 +76,5 @@ java {
 }
 
 jar {
-    from('THIRD-PARTY-LICENSES.md')
+    from('../jarvis-vanilla/THIRD-PARTY-LICENSES.md')
 }

@@ -1,0 +1,83 @@
+# Builds the NeoForge adapter (jarvis-neoforge/, a ModDevGradle project that
+# is not part of the Maven reactor), attaches the mod jar, and then starts a
+# dedicated server with the mod in it to prove it loads: the module graph,
+# the mixins and the nested jars are only exercised at runtime, and the
+# runner can reach NeoForge's and Mojang's repositories where a sandbox
+# cannot. JDK 25 because Minecraft 26.x is built for Java 25.
+name: neoforge
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'jarvis-neoforge/**'
+      - 'jarvis-vanilla/**'
+      - 'jarvis-core/src/main/**'
+      - 'jarvis-nav/src/main/**'
+      - 'jarvis-paper/src/main/resources/config.yml'
+      - '.github/workflows/neoforge.yml'
+  pull_request:
+    paths:
+      - 'jarvis-neoforge/**'
+      - 'jarvis-vanilla/**'
+      - 'jarvis-core/src/main/**'
+      - 'jarvis-nav/src/main/**'
+      - 'jarvis-paper/src/main/resources/config.yml'
+      - '.github/workflows/neoforge.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+      - name: Build
+        working-directory: jarvis-neoforge
+        run: gradle build --no-daemon --stacktrace
+      - name: Attach mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-neoforge
+          path: jarvis-neoforge/build/libs/jarvis-neoforge-*.jar
+          if-no-files-found: error
+      - name: Start a server with the mod
+        working-directory: jarvis-neoforge
+        run: |
+          mkdir -p run/server
+          echo 'eula=true' > run/server/eula.txt
+          printf 'level-type=minecraft\\:flat\nonline-mode=false\nmax-tick-time=-1\n' > run/server/server.properties
+          gradle runServer --no-daemon > server.out 2>&1 &
+          GRADLE_PID=$!
+          for i in $(seq 1 90); do
+            if grep -q 'Jarvis AI Companion v.* enabled successfully' server.out; then break; fi
+            if grep -q 'Jarvis could not start\|FATAL\|crash-reports' server.out; then break; fi
+            if ! kill -0 $GRADLE_PID 2>/dev/null; then break; fi
+            sleep 5
+          done
+          kill $GRADLE_PID 2>/dev/null || true
+          pkill -f 'neoforge' 2>/dev/null || true
+          sleep 3
+          grep -i 'jarvis' server.out | head -50 || true
+          if ! grep -q 'Jarvis AI Companion v.* enabled successfully' server.out; then
+            echo '::error::the mod did not start on a dedicated server'
+            tail -150 server.out
+            ls run/server/crash-reports 2>/dev/null && cat run/server/crash-reports/* || true
+            exit 1
+          fi
+      - name: Attach server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: neoforge-server-log
+          path: |
+            jarvis-neoforge/server.out
+            jarvis-neoforge/run/server/logs/latest.log
+            jarvis-neoforge/run/server/crash-reports/
+          if-no-files-found: ignore
