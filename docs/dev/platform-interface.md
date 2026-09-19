@@ -1069,6 +1069,27 @@ The Building page of the menu also gained "Custom build": it asks for a
 description in chat through `Prompts` and hands it to `/jarvis build`, so
 a player never has to know the command.
 
+### Shapes, not blocks: the JSON planner's second form
+
+The first freeform build after that fix went up, but half-finished and
+without a door. That is the block-listing format's own doing: asked for
+several hundred `{"x","y","z","material"}` entries, a model tires a wall
+and a half in, and a door (two blocks with states) becomes a "gap". The
+script planner never had the problem, because it writes loops, but it
+needs GraalJS and the Fabric mod does not carry it.
+
+`building/ShapePlan` is the middle way. The model answers with
+`{"ops":[...]}`, a few dozen shapes: `fill`, `walls`, `hollow`, `clear`,
+`set`, `door` (both halves), `bed` (foot and head), and `roof`, which
+builds the pitched roof the script prompt teaches, stairs facing up-slope,
+courses stepping in to a ridge, gables closed, eaves overhanging. Core
+enumerates them; later ops overwrite earlier ones, so a doorway is a wall
+and then a door. `parseBuildPlan` takes `ops` first and still reads the
+old `blocks` list, because remembered plans are in it. The prompt for
+both planners now also insists on furnishing: a dwelling has at least a
+bed, a chest, a crafting table, light, and something on the walls, and a
+mansion or inn has rooms furnished for their purpose.
+
 ---
 
 ## Open questions

@@ -341,36 +341,62 @@ public class AIConnector {
                     "Freeform build planning is disabled in Ollama-only mode. Use schematics instead.");
         }
 
-        // The old one-line prompt ("Generate a Minecraft structure as JSON for: X")
-        // produced flat, corner-only shapes: a local 7B model returned a 14x8x3
-        // "cottage" against a declared 7x8x7, and a watchtower request ran past
-        // 180s without finishing. Spelling out what a structure IS fixes both --
-        // measured on qwen2.5:7b, declared dimensions then matched actual extents
-        // exactly (8x9x8, 8x13x8) and the watchtower came back in 61s.
-        String prompt = "Output ONLY valid JSON, no extra text. Design a complete Minecraft "
-                + "structure as JSON: {\"dimensions\":{\"width\":int,\"height\":int,\"length\":int},"
-                + "\"blocks\":[{\"x\":int,\"y\":int,\"z\":int,\"material\":\"minecraft:stone\"},...]}\n"
-                + "Requirements:\n"
-                + "- Unless the request clearly asks for something smaller, make it at least 8 blocks "
-                + "wide, 8 blocks long and 4 blocks tall.\n"
-                + "- List EVERY block explicitly. A wall is every block in it, not just its corners.\n"
-                + "- If it is a building, include four walls, a floor, a roof, a door gap and at least "
-                + "two windows.\n"
-                + "- Use only real placeable block ids (minecraft:oak_planks, minecraft:bricks, "
-                + "minecraft:glass). Never item ids such as minecraft:brick.\n"
-                + "- Coordinates are relative to 0,0,0 and y increases upward.\n"
-                + "Structure to design: " + description;
+        // The first version of this planner asked for every block by hand
+        // ("blocks":[{"x":..,"y":..,"z":..,"material":..},...]). Models tire
+        // of that a wall and a half in, leave the door as a gap, and run
+        // into the output cap. Now the model writes shapes and ShapePlan
+        // enumerates them, which is what the script planner's JavaScript
+        // does without needing an engine on the server.
+        String system = """
+                You are an expert Minecraft architect. You answer with ONE JSON object and nothing else:
+                {"ops":[ ... ]}. Each op is a shape; later ops overwrite earlier ones at the same spot.
+
+                  {"op":"fill",   "from":[x,y,z], "to":[x,y,z], "block":"oak_planks"}   solid box, corners inclusive
+                  {"op":"walls",  "from":[x,y,z], "to":[x,y,z], "block":"..."}          the four upright sides only
+                  {"op":"hollow", "from":[x,y,z], "to":[x,y,z], "block":"..."}          the whole shell, floor and ceiling too
+                  {"op":"clear",  "from":[x,y,z], "to":[x,y,z]}                         air: carve a doorway, window or room
+                  {"op":"set",    "at":[x,y,z], "block":"wall_torch[facing=south]"}     one block
+                  {"op":"door",   "at":[x,y,z], "facing":"south", "block":"oak_door"}   both halves, at the lower one
+                  {"op":"bed",    "at":[x,y,z], "facing":"east", "block":"red_bed"}     foot at 'at', head one block along facing
+                  {"op":"roof",   "from":[x,y,z], "to":[x,y,z], "block":"oak_stairs", "gable":"oak_planks"}
+                      A pitched roof over that rectangle. Give the WALL's own rectangle with y one above the
+                      wall tops; courses of stairs step in and up to a ridge, and the end triangles are closed.
+
+                Coordinates are relative to the origin. y is the empty space the player stands in and the
+                ground is y-1: lay exactly one floor at y-1, then walls, door, furniture start at y. Never
+                fill y inside a room. North is -z, south +z, east +x, west -x. Block ids are the real ones the
+                /setblock command takes, with states in brackets where they matter: oak_planks, stone_bricks,
+                glass_pane, oak_log[axis=y], oak_stairs[facing=north], lantern[hanging=true]. Never item ids
+                ("brick" is an item; the block is "bricks"). If unsure of a fancy variant, use the plain block.
+
+                Design rules:
+                - Unless asked for something tiny, a building is at least 8 wide, 8 long and 4 tall inside.
+                - Walls, then cut windows with "clear" and fill them with glass_pane at y+1 (eye height),
+                  then a door. Windows and a door on the front at least.
+                - A roof on every building, overhanging the walls, and no room open to the sky.
+                - FURNISH IT. A place someone lives in has, at minimum: a bed, a chest, a crafting table,
+                  wall torches or lanterns so it is lit inside (torches go in the empty space NEXT to a
+                  wall, facing away from it, never at the wall's own coordinate), and something on the
+                  walls or floor: bookshelves, flower pots, a carpet, a painting-sized frame of a different
+                  block, a fireplace of bricks with a campfire. A mansion, inn, castle or manor has several
+                  rooms and EACH is furnished for its purpose: beds in bedrooms, a kitchen with a furnace,
+                  smoker and barrels, a hall with a long table of slabs and stairs as chairs, a library
+                  of bookshelves. Fences make railings and table legs; stairs make chairs; slabs make
+                  tables and counters; trapdoors make shutters. A tower has a way up: ladders or stairs.
+                - Outside: a path of a different block to the door, and a lantern or two by it.
+                - Keep every op inside a few dozen blocks of the origin. Twenty to sixty ops is normal.
+                """;
+
+        String prompt = "Design and furnish: " + description;
 
         if (memoryExamples != null && !memoryExamples.isBlank()) {
             prompt = memoryExamples + "\n" + prompt;
         }
 
-        // A plan lists every block, and a modest cottage is a few hundred of
-        // them: far past the default output cap. Claude honoured the cap, the
-        // JSON stopped mid-block, and the parser reported "failed to generate
-        // build plan" for a plan the model had happily produced.
-        return sendTiered(Tier.HEAVY, prompt, "You are a Minecraft build planner. Output ONLY valid JSON.", true,
-                BUILD_SCRIPT_MAX_TOKENS);
+        // A plan is now a few dozen shapes rather than every block, but the
+        // cap stays high: Claude honoured the default 2,000 and the first
+        // block-listed plans came back cut off mid-object.
+        return sendTiered(Tier.HEAVY, prompt, system, true, BUILD_SCRIPT_MAX_TOKENS);
     }
 
     /**
@@ -657,6 +683,17 @@ public class AIConnector {
                 y+1.6, so y+1 is the height you actually look through; y+2 sits above eye line
                 and reads as a gap under the eaves. Hang wall torches at y+2, above the
                 windows, so the two do not compete for the same band of wall.
+
+                Furnish and decorate. A place someone lives in has, at minimum, a bed, a chest, a
+                crafting table, wall torches or lanterns so it is lit inside, and something on the
+                walls or floor: bookshelves, flower pots, a carpet, a fireplace of bricks with a
+                campfire. A mansion, inn, castle or manor has several rooms and EACH is furnished
+                for its purpose: beds in bedrooms, a kitchen with a furnace, smoker and barrels, a
+                hall with a long table of slabs and stairs as chairs, a library of bookshelves.
+                Fences make railings and table legs; stairs make chairs; slabs make tables and
+                counters; trapdoors make shutters. A tower has a way up. Outside, a path of a
+                different block leads to the door, with a lantern or two beside it. A bare box with
+                a door is not finished.
 
                 Rules:
                 - You only ever place blocks; nothing is removed unless you place air. The

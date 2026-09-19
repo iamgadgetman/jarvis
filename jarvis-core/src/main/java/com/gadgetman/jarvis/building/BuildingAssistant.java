@@ -470,51 +470,71 @@ public class BuildingAssistant {
     /**
      * Parse an AI JSON response into block placements.
      *
-     * <p>Tolerant of what models actually send back: a ```json fence, a
-     * line of prose, and a reply cut off by the provider's output cap. In
-     * the last case the blocks that arrived whole are built and the log
-     * says so, rather than the whole plan being thrown away.
+     * <p>Two dialects. The current one is a list of shapes under {@code ops},
+     * expanded by {@link ShapePlan}; the original one, still accepted because
+     * remembered plans are in it, lists every block under {@code blocks}.
+     * Tolerant of what models actually send back: a ```json fence, a line of
+     * prose, and a reply cut off by the provider's output cap. In the last
+     * case the entries that arrived whole are built and the log says so,
+     * rather than the whole plan being thrown away.
      */
     private List<BlockPlacement> parseBuildPlan(String jsonResponse, BlockPos origin) {
-        List<JSONObject> blocks = new ArrayList<>();
         String text = ModelJson.extractObject(jsonResponse);
+        List<JSONObject> ops = new ArrayList<>();
+        List<JSONObject> blocks = new ArrayList<>();
         try {
-            JSONArray array = new JSONObject(text).optJSONArray("blocks");
-            if (array != null) {
-                for (int i = 0; i < array.length(); i++) {
-                    JSONObject block = array.optJSONObject(i);
-                    if (block != null) blocks.add(block);
-                }
-            }
+            JSONObject json = new JSONObject(text);
+            ops = elements(json.optJSONArray("ops"));
+            blocks = elements(json.optJSONArray("blocks"));
         } catch (JSONException e) {
-            blocks = ModelJson.salvageArray(text, "blocks");
-            if (blocks.isEmpty()) {
+            ops = ModelJson.salvageArray(text, "ops");
+            if (ops.isEmpty()) blocks = ModelJson.salvageArray(text, "blocks");
+            if (ops.isEmpty() && blocks.isEmpty()) {
                 log.warn("Failed to parse build plan: " + e.getMessage());
                 return null;
             }
             log.warn("Build plan was cut off or malformed (" + e.getMessage()
-                    + "); building the " + blocks.size() + " blocks that arrived whole");
-        }
-        if (blocks.isEmpty()) {
-            log.warn("Build plan has no blocks");
-            return null;
+                    + "); building the " + (ops.isEmpty() ? blocks.size() + " blocks" : ops.size() + " shapes")
+                    + " that arrived whole");
         }
 
         List<BlockPlacement> placements = new ArrayList<>();
-        for (JSONObject block : blocks) {
-            int x = block.optInt("x", 0);
-            int y = block.optInt("y", 0);
-            int z = block.optInt("z", 0);
-            // Only the shape of the id is normalised here. Whether it is a
-            // placeable block is checked in executeBuild, through the
-            // registry, on the server thread.
-            String id = Ids.of(block.optString("material", "minecraft:stone").trim().toLowerCase(Locale.ROOT));
-            placements.add(new BlockPlacement(origin.offset(x, y, z), id));
+        if (!ops.isEmpty()) {
+            ShapePlan.Result result = ShapePlan.expand(new JSONArray(ops), maxAiBlocks);
+            for (String w : result.warnings()) log.warn("Build plan: " + w);
+            for (ShapePlan.Block b : result.blocks()) {
+                placements.add(new BlockPlacement(origin.offset(b.x(), b.y(), b.z()), b.spec()));
+            }
+        } else {
+            for (JSONObject block : blocks) {
+                int x = block.optInt("x", 0);
+                int y = block.optInt("y", 0);
+                int z = block.optInt("z", 0);
+                // Only the shape of the id is normalised here. Whether it is a
+                // placeable block is checked in executeBuild, through the
+                // registry, on the server thread.
+                String id = Ids.of(block.optString("material", "minecraft:stone").trim().toLowerCase(Locale.ROOT));
+                placements.add(new BlockPlacement(origin.offset(x, y, z), id));
+            }
+        }
+        if (placements.isEmpty()) {
+            log.warn("Build plan has no blocks");
+            return null;
         }
 
         // Sort by Y to build from bottom up
         placements.sort(Comparator.comparingInt(p -> p.pos.y()));
         return placements;
+    }
+
+    private static List<JSONObject> elements(JSONArray array) {
+        List<JSONObject> out = new ArrayList<>();
+        if (array == null) return out;
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject o = array.optJSONObject(i);
+            if (o != null) out.add(o);
+        }
+        return out;
     }
 
     /**
