@@ -150,7 +150,7 @@ public class ProgressionManager {
                     .enchant(Ids.ENCHANT_IMPALING, 5);
         }
         return item.named(Colors.AQUA + "Jarvis's " + name(kind)
-                + Colors.DARK_GRAY + " (" + rank.title() + ")");
+                + Colors.DARK_GRAY + " (" + rank.title() + ")").marked(Kit.MARKER);
     }
 
     private static String name(Rank.ToolKind kind) {

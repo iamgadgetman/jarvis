@@ -26,8 +26,6 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
 import net.minecraft.world.entity.projectile.arrow.Arrow;
 import net.minecraft.world.entity.projectile.arrow.ThrownTrident;
-import net.minecraft.world.inventory.ChestMenu;
-import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.SwingAnimation;
@@ -403,7 +401,7 @@ public final class FakeButler implements Butler {
         ServerPlayer v = server().getPlayerList().getPlayer(viewer.id());
         if (p == null || v == null) return;
         v.openMenu(new SimpleMenuProvider(
-                (id, inventory, player) -> new ChestMenu(MenuType.GENERIC_9x4, id, inventory, p.getInventory(), 4),
+                (id, inventory, player) -> new ButlerInventoryScreen(id, inventory, p),
                 Component.literal(p.getName().getString() + "'s Inventory")));
     }
 

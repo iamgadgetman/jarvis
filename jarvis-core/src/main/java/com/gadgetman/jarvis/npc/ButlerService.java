@@ -18,6 +18,7 @@ import com.gadgetman.jarvis.core.world.Ids;
 import com.gadgetman.jarvis.core.world.Item;
 import com.gadgetman.jarvis.core.world.Vec3;
 import com.gadgetman.jarvis.progression.ProgressionManager;
+import com.gadgetman.jarvis.progression.Kit;
 import com.gadgetman.jarvis.progression.Rank;
 import com.gadgetman.jarvis.progression.ServiceRecord;
 import com.gadgetman.jarvis.recovery.TaskFailure;
@@ -402,7 +403,7 @@ public class ButlerService implements ButlerHost {
      * not be silently replaced the next time a task starts.
      */
     static boolean isIssuedKit(Item item) {
-        return item != null && item.displayName() != null && item.displayName().contains("Jarvis's");
+        return Kit.isIssued(item);
     }
 
     private static Rank.ToolKind kindOf(String itemId) {
@@ -488,7 +489,7 @@ public class ButlerService implements ButlerHost {
 
         Item item = progression != null
                 ? progression.kitItem(owner, kind)
-                : Item.of(kind == Rank.ToolKind.ROD ? Ids.FISHING_ROD : Ids.DIAMOND_PICKAXE);
+                : Item.of(kind == Rank.ToolKind.ROD ? Ids.FISHING_ROD : Ids.DIAMOND_PICKAXE).marked(Kit.MARKER);
         b.setHeldItem(item);
     }
 
@@ -520,7 +521,7 @@ public class ButlerService implements ButlerHost {
         if (!b.exists()) return;
         Item pickaxe = progression != null
                 ? progression.kitItem(owner, Rank.ToolKind.PICKAXE)
-                : Item.of(Ids.DIAMOND_PICKAXE).enchant(Ids.ENCHANT_FORTUNE, 3);
+                : Item.of(Ids.DIAMOND_PICKAXE).enchant(Ids.ENCHANT_FORTUNE, 3).marked(Kit.MARKER);
         b.setHeldItem(pickaxe);
     }
 
@@ -1063,10 +1064,10 @@ public class ButlerService implements ButlerHost {
         World world = b.world().orElse(null);
         if (world == null) return;
         List<Item> contents = b.inventory();
-        // Slot 0 is his pickaxe — everything else gets handed over
+        // Slot 0 is his pickaxe, and issued gear anywhere is his: everything else gets handed over
         for (int i = 1; i < contents.size(); i++) {
             Item item = contents.get(i);
-            if (!item.isEmpty()) world.dropItem(b.pos(), item);
+            if (!item.isEmpty() && !Kit.isIssued(item)) world.dropItem(b.pos(), item);
         }
     }
 
