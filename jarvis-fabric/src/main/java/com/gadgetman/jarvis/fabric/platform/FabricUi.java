@@ -60,7 +60,7 @@ public final class FabricUi implements Ui {
         ServerPlayer p = player(viewer);
         if (p == null) return;
         ServerBossEvent bar = bars.computeIfAbsent(viewer.id(), k -> {
-            ServerBossEvent b = new ServerBossEvent(Component.literal(title),
+            ServerBossEvent b = new ServerBossEvent(UUID.randomUUID(), Component.literal(title),
                     BossEvent.BossBarColor.BLUE, BossEvent.BossBarOverlay.NOTCHED_10);
             b.addPlayer(p);
             return b;

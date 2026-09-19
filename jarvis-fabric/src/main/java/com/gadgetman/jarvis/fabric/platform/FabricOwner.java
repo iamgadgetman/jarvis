@@ -14,6 +14,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -234,7 +235,7 @@ public final class FabricOwner implements Owner {
     @Override
     public void actionBar(String text) {
         ServerPlayer p = p();
-        if (p != null && text != null) p.displayClientMessage(Component.literal(text), true);
+        if (p != null && text != null) p.connection.send(new ClientboundSetActionBarTextPacket(Component.literal(text)));
     }
 
     @Override

@@ -9,7 +9,7 @@ import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ChestMenu;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
 
@@ -41,10 +41,9 @@ public final class MenuScreen extends ChestMenu {
     }
 
     @Override
-    public void clicked(int slotId, int button, ClickType clickType, Player player) {
+    public void clicked(int slotId, int button, ContainerInput input, Player player) {
         if (player instanceof ServerPlayer sp) {
-            if (slotId >= 0 && slotId < model.size()
-                    && (clickType == ClickType.PICKUP || clickType == ClickType.QUICK_MOVE)) {
+            if (slotId >= 0 && slotId < model.size()) {
                 MenuItem item = model.at(slotId);
                 if (item != null && item.onClick() != null) {
                     item.onClick().accept(new MenuClick(new FabricOwner(server, sp.getUUID()), button == 1));

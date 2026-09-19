@@ -131,17 +131,15 @@ public final class FabricActionExecutor implements ActionExecutor {
                             try { yield Long.parseLong(value); } catch (NumberFormatException e) { yield 1000L; }
                         }
                     };
-                    ServerLevel level = requester.level();
-                    level.setDayTime(level.getDayTime() - level.getDayTime() % 24000L + time);
+                    console("time set " + time);
                     yield "Set time to " + value + ".";
                 }
                 case "set_weather"        -> {
                     String type = p.optString("type", "clear").toLowerCase(Locale.ROOT);
-                    ServerLevel level = requester.level();
                     switch (type) {
-                        case "clear" -> level.setWeatherParameters(6000, 0, false, false);
-                        case "rain" -> level.setWeatherParameters(0, 6000, true, false);
-                        case "thunder" -> level.setWeatherParameters(0, 6000, true, true);
+                        case "clear" -> server().setWeatherParameters(6000, 0, false, false);
+                        case "rain" -> server().setWeatherParameters(0, 6000, true, false);
+                        case "thunder" -> server().setWeatherParameters(0, 6000, true, true);
                         default -> { yield "Unknown weather type: " + type; }
                     }
                     yield "Set weather to " + type + ".";

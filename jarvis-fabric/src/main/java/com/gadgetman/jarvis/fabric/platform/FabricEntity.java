@@ -46,7 +46,7 @@ public final class FabricEntity implements Entity {
     @Override
     public void setVelocity(Vec3 v) {
         e.setDeltaMovement(FabricWorlds.mc(v));
-        e.hurtMarked = true;
+        e.syncVelocity = true;
     }
 
     @Override

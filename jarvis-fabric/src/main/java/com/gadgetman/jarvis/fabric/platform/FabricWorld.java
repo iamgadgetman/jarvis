@@ -62,7 +62,7 @@ public final class FabricWorld implements World {
     @Override public WorldId id() { return FabricWorlds.id(level); }
     @Override public String name() { return level.dimension().identifier().getPath(); }
     @Override public Environment environment() { return FabricWorlds.env(level); }
-    @Override public long time() { return level.getDayTime() % 24000L; }
+    @Override public long time() { return level.getOverworldClockTime() % 24000L; }
     @Override public long fullTime() { return level.getGameTime(); }
     @Override public boolean isRaining() { return level.isRaining(); }
     @Override public boolean isThundering() { return level.isThundering(); }
@@ -85,7 +85,7 @@ public final class FabricWorld implements World {
         level.setBlock(FabricWorlds.mc(pos), s, physics ? Block.UPDATE_ALL : Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
     }
 
-    @Override public boolean isSolid(BlockPos pos) { return at(pos).blocksMotion(); }
+    @Override public boolean isSolid(BlockPos pos) { return !at(pos).getCollisionShape(level, FabricWorlds.mc(pos)).isEmpty(); }
     @Override public boolean isPassable(BlockPos pos) { return at(pos).getCollisionShape(level, FabricWorlds.mc(pos)).isEmpty(); }
     @Override public boolean isLiquid(BlockPos pos) { return !level.getFluidState(FabricWorlds.mc(pos)).isEmpty(); }
     @Override public boolean isOccluding(BlockPos pos) { return at(pos).canOcclude(); }

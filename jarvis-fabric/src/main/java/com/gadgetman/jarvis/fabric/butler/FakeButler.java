@@ -23,10 +23,11 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.projectile.AbstractArrow;
-import net.minecraft.world.entity.projectile.Arrow;
-import net.minecraft.world.entity.projectile.ThrownTrident;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
+import net.minecraft.world.entity.projectile.arrow.Arrow;
+import net.minecraft.world.entity.projectile.arrow.ThrownTrident;
 import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.SwingAnimation;
@@ -126,7 +127,7 @@ public final class FakeButler implements Butler {
         FakePlayer p = p();
         if (p != null) {
             p.setDeltaMovement(FabricWorlds.mc(velocity));
-            p.hurtMarked = true;
+            p.syncVelocity = true;
         }
     }
 
@@ -150,7 +151,10 @@ public final class FakeButler implements Butler {
     @Override
     public void setProtected(boolean invulnerable) {
         FakePlayer p = p();
-        if (p != null) p.setInvulnerable(invulnerable);
+        if (p != null) {
+            p.setPermanentlyInvulnerable(invulnerable);
+            p.getAbilities().invulnerable = invulnerable;
+        }
     }
 
     @Override
@@ -399,7 +403,7 @@ public final class FakeButler implements Butler {
         ServerPlayer v = server().getPlayerList().getPlayer(viewer.id());
         if (p == null || v == null) return;
         v.openMenu(new SimpleMenuProvider(
-                (id, inventory, player) -> ChestMenu.fourRows(id, inventory, p.getInventory()),
+                (id, inventory, player) -> new ChestMenu(MenuType.GENERIC_9x4, id, inventory, p.getInventory(), 4),
                 Component.literal(p.getName().getString() + "'s Inventory")));
     }
 
