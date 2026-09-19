@@ -1142,10 +1142,12 @@ reports the death on the next tick. Core's libraries ride as Jar-in-Jar
 with a version range, so another mod carrying the same library resolves
 to one copy. The config lives in `config/jarvis/`, as on Fabric.
 
-The `neoforge` workflow builds the jar and then starts a dedicated server
-with it (`gradle runServer`, EULA accepted, flat world) and waits for the
-"enabled successfully" line, since the module graph, the mixins and the
-nested jars are only exercised at runtime. Targets NeoForge 26.3.0.6-beta
+The `neoforge` workflow builds the jar, then installs a real NeoForge
+server with the installer, puts the jar in `mods/`, starts it (EULA
+accepted, flat world) and waits for the "enabled successfully" line,
+since the module graph, the mixins and the nested jars are only
+exercised at runtime. The first run of it, on the dev classpath, came up
+clean: mixins applied, sqlite through HikariCP opened, core started. Targets NeoForge 26.3.0.6-beta
 (NeoForge's 26.3 builds are betas at the time of writing).
 
 Forge proper is not planned: it has lagged the game since the split, and

@@ -1,9 +1,9 @@
 # Builds the NeoForge adapter (jarvis-neoforge/, a ModDevGradle project that
-# is not part of the Maven reactor), attaches the mod jar, and then starts a
-# dedicated server with the mod in it to prove it loads: the module graph,
-# the mixins and the nested jars are only exercised at runtime, and the
-# runner can reach NeoForge's and Mojang's repositories where a sandbox
-# cannot. JDK 25 because Minecraft 26.x is built for Java 25.
+# is not part of the Maven reactor), attaches the mod jar, and then installs
+# a real NeoForge server with the jar in mods/ and starts it, to prove the
+# artifact loads: the module graph, the mixins and the nested jars are only
+# exercised at runtime, and the runner can reach NeoForge's and Mojang's
+# repositories where a sandbox cannot. JDK 25 because Minecraft 26.x is built for Java 25.
 name: neoforge
 
 on:
@@ -47,28 +47,37 @@ jobs:
           name: jarvis-neoforge
           path: jarvis-neoforge/build/libs/jarvis-neoforge-*.jar
           if-no-files-found: error
-      - name: Start a server with the mod
+      - name: Start a real server with the built jar
         working-directory: jarvis-neoforge
         run: |
-          mkdir -p run/server
-          echo 'eula=true' > run/server/eula.txt
-          printf 'level-type=minecraft\\:flat\nonline-mode=false\nmax-tick-time=-1\n' > run/server/server.properties
-          gradle runServer --no-daemon > server.out 2>&1 &
-          GRADLE_PID=$!
+          # Not gradle runServer: that runs the classes folder on the dev
+          # classpath. This installs NeoForge the way a player does and puts
+          # the jar in mods/, so the nested jars and the module graph of
+          # the real artifact are what get exercised.
+          NEO=$(grep '^neo_version=' gradle.properties | cut -d= -f2)
+          mkdir -p smoke/mods
+          cp build/libs/jarvis-neoforge-*.jar smoke/mods/
+          cd smoke
+          curl -fsSL -o installer.jar "https://maven.neoforged.net/releases/net/neoforged/neoforge/${NEO}/neoforge-${NEO}-installer.jar"
+          java -jar installer.jar --install-server . > ../installer.out 2>&1 || { tail -50 ../installer.out; exit 1; }
+          echo 'eula=true' > eula.txt
+          printf 'level-type=minecraft\\:flat\nonline-mode=false\nmax-tick-time=-1\n' > server.properties
+          java -Xmx2G @libraries/net/neoforged/neoforge/${NEO}/unix_args.txt --nogui > ../server.out 2>&1 &
+          SERVER_PID=$!
+          cd ..
           for i in $(seq 1 90); do
             if grep -q 'Jarvis AI Companion v.* enabled successfully' server.out; then break; fi
             if grep -q 'Jarvis could not start\|FATAL\|crash-reports' server.out; then break; fi
-            if ! kill -0 $GRADLE_PID 2>/dev/null; then break; fi
+            if ! kill -0 $SERVER_PID 2>/dev/null; then break; fi
             sleep 5
           done
-          kill $GRADLE_PID 2>/dev/null || true
-          pkill -f 'neoforge' 2>/dev/null || true
+          kill $SERVER_PID 2>/dev/null || true
           sleep 3
           grep -i 'jarvis' server.out | head -50 || true
           if ! grep -q 'Jarvis AI Companion v.* enabled successfully' server.out; then
             echo '::error::the mod did not start on a dedicated server'
             tail -150 server.out
-            ls run/server/crash-reports 2>/dev/null && cat run/server/crash-reports/* || true
+            ls smoke/crash-reports 2>/dev/null && cat smoke/crash-reports/* || true
             exit 1
           fi
       - name: Attach server log
@@ -78,6 +87,7 @@ jobs:
           name: neoforge-server-log
           path: |
             jarvis-neoforge/server.out
-            jarvis-neoforge/run/server/logs/latest.log
-            jarvis-neoforge/run/server/crash-reports/
+            jarvis-neoforge/installer.out
+            jarvis-neoforge/smoke/logs/latest.log
+            jarvis-neoforge/smoke/crash-reports/
           if-no-files-found: ignore

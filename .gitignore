@@ -80,6 +80,8 @@ databases.yml
 *.tmp
 *.temp
 
-# NeoForge dev server started by the smoke test
+# NeoForge servers started by the smoke test
 jarvis-neoforge/run/
+jarvis-neoforge/smoke/
 jarvis-neoforge/server.out
+jarvis-neoforge/installer.out
