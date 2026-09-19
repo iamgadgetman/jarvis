@@ -15,12 +15,14 @@ import net.minecraft.util.Unit;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.ItemLore;
+import net.minecraft.world.item.component.TooltipDisplay;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -78,7 +80,14 @@ public final class FabricItems implements Items {
         net.minecraft.world.item.Item kind = item(item.id());
         if (kind == null || kind == net.minecraft.world.item.Items.AIR) return ItemStack.EMPTY;
         ItemStack stack = new ItemStack(kind, item.count());
-        if (item.displayName() != null) stack.set(DataComponents.CUSTOM_NAME, Component.literal(item.displayName()));
+        if (item.displayName() != null) {
+            stack.set(DataComponents.CUSTOM_NAME, Component.literal(item.displayName()));
+            // A blank name means "say nothing": menu filler. Without this the
+            // client draws an empty tooltip box that follows the cursor.
+            if (item.displayName().isBlank()) {
+                stack.set(DataComponents.TOOLTIP_DISPLAY, new TooltipDisplay(true, new LinkedHashSet<>()));
+            }
+        }
         if (!item.lore().isEmpty()) {
             List<Component> lines = new ArrayList<>();
             for (String line : item.lore()) lines.add(Component.literal(line));
