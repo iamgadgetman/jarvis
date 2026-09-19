@@ -1,78 +1,67 @@
 package com.gadgetman.jarvis.schematics;
 
 import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.npc.ButlerService;
+import com.gadgetman.jarvis.schematics.SchematicLibrary.SchematicInfo;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import java.io.*;
-import java.util.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Path;
+import java.util.Collection;
 
 /**
- * SchematicManager - Manages schematic files using WorldEdit
+ * The Paper face of the schematic library.
  *
- * Supports WorldEdit .schem/.schematic files for proper building.
- * Falls back to JSON schematics if WorldEdit is not available.
+ * <p>Scanning, matching, the native .schem paste and the litematic
+ * conversion live in core's {@link SchematicLibrary}. What stays here is
+ * WorldEdit: the JSON paste it accelerates, saving a clipboard, and rotated
+ * pastes, all reached by reflection so WorldEdit stays an optional plugin.
  */
 public class SchematicManager {
 
     private final Jarvis plugin;
-    private final File schematicFolder;
-    private final Map<String, SchematicInfo> availableSchematics = new HashMap<>();
+    private final SchematicLibrary library;
 
     // WorldEdit integration
     private boolean worldEditEnabled = false;
-    private Plugin worldEditPlugin = null;
-
-    // Litematic converter
-    private LitematicConverter litematicConverter;
-
-    // Native .schem reader (no WorldEdit required)
-    private SchemReader schemReader;
-
-    // Configuration
-    private boolean allowDownloads = true;
-    private int maxDownloadSize = 10; // MB
     private boolean pasteAir = false;
 
-    public SchematicManager(Jarvis plugin) {
+    public SchematicManager(Jarvis plugin, ButlerService butlers) {
         this.plugin = plugin;
-        this.schematicFolder = new File(plugin.getDataFolder(), "schematics");
-        loadConfig();
-        initializeFolder();
+        this.pasteAir = plugin.getConfig().getBoolean("schematics.paste-air", false);
+        this.library = new SchematicLibrary(plugin.getPlatform(), butlers);
         initializeWorldEdit();
-        this.litematicConverter = new LitematicConverter(plugin, schematicFolder);
-        this.schemReader = new SchemReader(plugin);
-        scanFolder();
-
-        // Check for unconverted litematic files
-        int litematicCount = litematicConverter.listLitematicFiles().size();
-        plugin.getLogger().info("Schematic manager initialized with " + availableSchematics.size() + " schematics" +
-            (worldEditEnabled ? " (WorldEdit enabled)" : " (WorldEdit not found)") +
-            (litematicCount > 0 ? " [" + litematicCount + " .litematic files available for conversion]" : ""));
     }
 
-    private void loadConfig() {
-        allowDownloads = plugin.getConfig().getBoolean("schematics.allow-downloads", true);
-        maxDownloadSize = plugin.getConfig().getInt("schematics.max-download-size", 10);
-        pasteAir = plugin.getConfig().getBoolean("schematics.paste-air", false);
+    /** The platform-free library behind this facade. */
+    public SchematicLibrary library() {
+        return library;
     }
 
-    private void initializeFolder() {
-        if (!schematicFolder.exists()) {
-            schematicFolder.mkdirs();
-        }
+    private Owner o(Player player) {
+        return plugin.owner(player);
     }
 
-    /**
-     * Initialize WorldEdit integration
-     */
+    /** Initialize WorldEdit integration. */
     private void initializeWorldEdit() {
-        worldEditPlugin = plugin.getServer().getPluginManager().getPlugin("WorldEdit");
+        Plugin worldEditPlugin = plugin.getServer().getPluginManager().getPlugin("WorldEdit");
         if (worldEditPlugin != null && worldEditPlugin.isEnabled()) {
             worldEditEnabled = true;
+            library.setAccelerator(new SchematicLibrary.Accelerator() {
+                @Override public String name() { return "WorldEdit"; }
+                @Override public void pasteJson(Owner player, SchematicInfo info) {
+                    plugin.getPlatform().player(player).ifPresent(p -> pasteWithWorldEdit(p, info));
+                }
+            });
             plugin.getLogger().info("WorldEdit integration enabled for schematics");
         } else {
             worldEditEnabled = false;
@@ -80,337 +69,32 @@ public class SchematicManager {
         }
     }
 
-    // ==================== DATA STRUCTURES ====================
+    // ==================== DELEGATED TO CORE ====================
 
-    public static class SchematicInfo {
-        public String name;
-        public String fileName;
-        public File file;
-        public SchematicFormat format;
-        public long fileSize;
+    public void scanFolder() { library.scanFolder(); }
+    public void listSchematics(Player player) { library.listSchematics(o(player)); }
+    public void pasteSchematic(Player player, String name) { library.pasteSchematic(o(player), name); }
+    public String bestMatchName(String query) { return library.bestMatchName(query); }
+    public int bestMatchScore(String query) { return library.bestMatchScore(query); }
+    public String bestMatchName(String query, RequestFeatures features) { return library.bestMatchName(query, features); }
+    public int bestMatchScore(String query, RequestFeatures features) { return library.bestMatchScore(query, features); }
+    public Path getSchematicFolder() { return library.getSchematicFolder(); }
+    public Collection<SchematicInfo> getSchematics() { return library.getSchematics(); }
+    public SchematicInfo getSchematic(String name) { return library.getSchematic(name); }
+    public int getSchematicCount() { return library.getSchematicCount(); }
+    public void convertLitematic(Player player, String name) { library.convertLitematic(o(player), name); }
+    public void convertAllLitematics(Player player) { library.convertAllLitematics(o(player)); }
+    public void showLitematicFiles(Player player) { library.showLitematicFiles(o(player)); }
 
-        public enum SchematicFormat {
-            WORLDEDIT_SCHEM,    // .schem (Sponge format)
-            WORLDEDIT_SCHEMATIC, // .schematic (MCEdit format)
-            JSON                 // .json (Jarvis format)
-        }
+    public boolean isWorldEditEnabled() {
+        return worldEditEnabled;
     }
 
-    // ==================== FOLDER SCANNING ====================
+    // ==================== WORLDEDIT ====================
 
-    /**
-     * Scan the schematics folder for all supported formats
-     */
-    public void scanFolder() {
-        availableSchematics.clear();
-
-        File[] files = schematicFolder.listFiles();
-        if (files == null) return;
-
-        for (File file : files) {
-            String fileName = file.getName().toLowerCase();
-            SchematicInfo info = new SchematicInfo();
-            info.file = file;
-            info.fileName = file.getName();
-            info.fileSize = file.length();
-
-            if (fileName.endsWith(".schem")) {
-                info.format = SchematicInfo.SchematicFormat.WORLDEDIT_SCHEM;
-                info.name = file.getName().replace(".schem", "");
-            } else if (fileName.endsWith(".schematic")) {
-                info.format = SchematicInfo.SchematicFormat.WORLDEDIT_SCHEMATIC;
-                info.name = file.getName().replace(".schematic", "");
-            } else if (fileName.endsWith(".json")) {
-                info.format = SchematicInfo.SchematicFormat.JSON;
-                info.name = file.getName().replace(".json", "");
-            } else {
-                continue; // Skip unsupported formats
-            }
-
-            availableSchematics.put(info.name.toLowerCase(), info);
-        }
-
-        plugin.getLogger().info("Found " + availableSchematics.size() + " schematics in folder");
-    }
-
-    // ==================== SCHEMATIC COMMANDS ====================
-
-    /**
-     * List available schematics
-     */
-    public void listSchematics(Player player) {
-        scanFolder(); // Refresh list
-
-        if (availableSchematics.isEmpty()) {
-            player.sendMessage(ChatColor.YELLOW + "No schematics available.");
-            player.sendMessage(ChatColor.GRAY + "Add .schem or .schematic files to:");
-            player.sendMessage(ChatColor.WHITE + schematicFolder.getPath());
-            return;
-        }
-
-        player.sendMessage("");
-        player.sendMessage(ChatColor.GREEN + "======== Available Schematics ========");
-
-        for (SchematicInfo info : availableSchematics.values()) {
-            String formatStr = switch (info.format) {
-                case WORLDEDIT_SCHEM -> ChatColor.AQUA + "[SCHEM]";
-                case WORLDEDIT_SCHEMATIC -> ChatColor.AQUA + "[SCHEMATIC]";
-                case JSON -> ChatColor.YELLOW + "[JSON]";
-            };
-
-            String sizeStr = formatFileSize(info.fileSize);
-            player.sendMessage(formatStr + " " + ChatColor.GOLD + info.name +
-                ChatColor.GRAY + " (" + sizeStr + ")");
-        }
-
-        player.sendMessage("");
-        player.sendMessage(ChatColor.GRAY + "Use: /jarvis schematic paste <name>");
-        if (worldEditEnabled) {
-            player.sendMessage(ChatColor.GREEN + "WorldEdit: " + ChatColor.WHITE + "Enabled");
-        } else {
-            player.sendMessage(ChatColor.RED + "WorldEdit: " + ChatColor.WHITE + "Not found (limited features)");
-        }
-        player.sendMessage(ChatColor.GREEN + "====================================");
-    }
-
-    /**
-     * Find a schematic by fuzzy name matching.
-     * Tries: exact → contains → word-by-word → suggestion fallback.
-     */
-    /**
-     * Score how well a schematic name answers a query, 0 (no match) to 100.
-     *
-     * Replaces the old "return the first map entry whose key contains the
-     * query" walk, which was order-dependent: a short query like "a" is a
-     * substring of nearly every name, so it returned whatever HashMap
-     * iteration happened to yield first — the same schematic every time,
-     * regardless of what was asked for.
-     */
-    static int scoreMatch(String key, String query) {
-        if (key == null || query == null) return 0;
-        if (key.equals(query)) return 100;
-
-        Set<String> qt = meaningfulWords(query);
-        Set<String> kt = meaningfulWords(key);
-        if (qt.isEmpty() || kt.isEmpty()) return 0;
-
-        int overlap = 0;
-        for (String q : qt) {
-            for (String k : kt) {
-                if (k.equals(q) || k.contains(q) || q.contains(k)) { overlap++; break; }
-            }
-        }
-        if (overlap == 0) return 0;
-
-        // Fraction of what was ASKED for that the name accounts for. Keying on
-        // the query, not the name, stops a long name matching everything.
-        int score = (int) Math.round(90.0 * overlap / qt.size());
-        if (key.contains(query)) score += 9;
-        return Math.min(99, score);
-    }
-
-    private static Set<String> meaningfulWords(String text) {
-        Set<String> out = new java.util.HashSet<>();
-        for (String w : text.toLowerCase().split("[^a-z0-9]+")) {
-            if (w.length() >= 3 && !SCHEMATIC_STOPWORDS.contains(w)) out.add(w);
-        }
-        return out;
-    }
-
-    private static final Set<String> SCHEMATIC_STOPWORDS = Set.of(
-            "the", "and", "for", "with", "build", "make", "create", "please", "one");
-
-    /** Best-scoring schematic for a query, or null if nothing scores at all. */
-    private Map.Entry<String, SchematicInfo> bestMatch(String query) {
-        String lower = query.toLowerCase().trim();
-        Map.Entry<String, SchematicInfo> best = null;
-        int bestScore = 0;
-        for (Map.Entry<String, SchematicInfo> e : availableSchematics.entrySet()) {
-            int sc = scoreMatch(e.getKey(), lower);
-            // Tie-break toward the shorter (more specific) name.
-            if (sc > bestScore || (sc == bestScore && sc > 0 && best != null
-                    && e.getKey().length() < best.getKey().length())) {
-                bestScore = sc;
-                best = e;
-            }
-        }
-        return bestScore > 0 ? best : null;
-    }
-
-    /**
-     * Score a schematic name against a request that has been decomposed,
-     * taking whichever of the two readings is stronger.
-     *
-     * <p>Measured: "somewhere to store my loot" against {@code storage_shed}
-     * scores <b>zero</b> on the raw wording -- "store" is not a substring of
-     * "storage" in either direction, so the schematic is not merely ranked low,
-     * it is invisible. Decomposed to purpose {@code storage} and kind
-     * {@code shed}, it scores 90.
-     *
-     * <p>The parts are not worth the same, and finding that out is what this
-     * scoring is built on. Against llama3.2:3b, weighting a flat tag list
-     * equally let a style word landing on a name by coincidence -- "small"
-     * hitting {@code small_warehouse} -- beat the purpose that answered the
-     * request. So: the <b>kind</b> is worth most, because naming a structure is
-     * more specific than naming a use; the <b>purpose</b> is worth less; and
-     * the <b>style</b> cannot carry a match at all, only break a tie between
-     * two names that already matched. Kind-weighting scored 18/21 against the
-     * flat 16/21 on the same decompositions.
-     *
-     * <p>The raw score is still consulted, because a player who names a
-     * schematic outright should get that schematic.
-     */
-    static int scoreWithFeatures(String key, String query, RequestFeatures features) {
-        int raw = scoreMatch(key, query);
-        if (features == null || features.isEmpty()) return raw;
-
-        Set<String> kt = meaningfulWords(key);
-        if (kt.isEmpty()) return raw;
-
-        boolean purposeHit = hits(features.purpose(), kt);
-        boolean kindHit = hits(features.kind(), kt);
-        if (!purposeHit && !kindHit) return raw;
-
-        int score = 55 + (purposeHit ? 15 : 0) + (kindHit ? 20 : 0);
-        if (hits(features.style(), kt)) score += 4;
-        // The ceiling stays below the 100 reserved for an exact name.
-        return Math.max(raw, Math.min(99, score));
-    }
-
-    /** Does one feature word answer any word of a schematic name? */
-    private static boolean hits(String feature, Set<String> nameWords) {
-        if (feature == null || feature.isEmpty()) return false;
-        for (String w : nameWords) {
-            if (w.equals(feature) || w.contains(feature) || feature.contains(w)) return true;
-        }
-        return false;
-    }
-
-    /**
-     * Best schematic for a decomposed request: the name, or null if nothing
-     * scores at all. {@code features} may be empty, in which case this is
-     * exactly the raw-wording match that came before it.
-     */
-    public String bestMatchName(String query, RequestFeatures features) {
-        String lower = query.toLowerCase().trim();
-        String best = null;
-        int bestScore = 0;
-        for (String key : availableSchematics.keySet()) {
-            int sc = scoreWithFeatures(key, lower, features);
-            // Tie-break toward the shorter (more specific) name.
-            if (sc > bestScore || (sc == bestScore && sc > 0 && best != null
-                    && key.length() < best.length())) {
-                bestScore = sc;
-                best = key;
-            }
-        }
-        return bestScore > 0 ? best : null;
-    }
-
-    /** Score of the best decomposed match, 0 if none. */
-    public int bestMatchScore(String query, RequestFeatures features) {
-        String lower = query.toLowerCase().trim();
-        int bestScore = 0;
-        for (String key : availableSchematics.keySet()) {
-            bestScore = Math.max(bestScore, scoreWithFeatures(key, lower, features));
-        }
-        return bestScore;
-    }
-
-    /** Score of the best match, 0 if none. */
-    public int bestMatchScore(String query) {
-        String lower = query.toLowerCase().trim();
-        int bestScore = 0;
-        for (String key : availableSchematics.keySet()) {
-            bestScore = Math.max(bestScore, scoreMatch(key, lower));
-        }
-        return bestScore;
-    }
-
-    /** Name of the best match, or null. */
-    public String bestMatchName(String query) {
-        Map.Entry<String, SchematicInfo> e = bestMatch(query);
-        return e == null ? null : e.getKey();
-    }
-
-    private SchematicInfo findSchematic(String name) {
-        String lower = name.toLowerCase().trim();
-
-        // 1. Exact match (already lowercased key in map)
-        SchematicInfo info = availableSchematics.get(lower);
-        if (info != null) return info;
-
-        // Refresh and retry exact
-        scanFolder();
-        info = availableSchematics.get(lower);
-        if (info != null) return info;
-
-        // 2. Best scoring match, rather than the first arbitrary containment hit
-        Map.Entry<String, SchematicInfo> best = bestMatch(lower);
-        return best == null ? null : best.getValue();
-    }
-
-    /**
-     * Paste a schematic at player's location.
-     * Accepts fuzzy names — e.g. "castle" matches "gadgets_castle_v2".
-     */
-    public void pasteSchematic(Player player, String name) {
-        SchematicInfo info = findSchematic(name);
-
-        if (info == null) {
-            player.sendMessage(ChatColor.RED + "Schematic not found: " + name);
-            // Show suggestions
-            List<String> suggestions = availableSchematics.keySet().stream()
-                    .filter(k -> {
-                        String n = name.toLowerCase();
-                        return k.contains(n.substring(0, Math.min(3, n.length())));
-                    })
-                    .limit(5)
-                    .sorted()
-                    .collect(java.util.stream.Collectors.toList());
-            if (!suggestions.isEmpty()) {
-                player.sendMessage(ChatColor.GRAY + "Did you mean: " + ChatColor.YELLOW
-                        + String.join(ChatColor.GRAY + ", " + ChatColor.YELLOW, suggestions) + "?");
-            } else {
-                player.sendMessage(ChatColor.GRAY + "Use /jarvis schematic list to see available schematics");
-            }
-            return;
-        }
-
-        // Check if NPC is summoned
-        if (plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId()) == null) {
-            player.sendMessage(ChatColor.RED + "Summon Jarvis first with /jarvis summon");
-            return;
-        }
-
-        // Use native reader for .schem and .schematic files
-        if (info.format == SchematicInfo.SchematicFormat.WORLDEDIT_SCHEM ||
-            info.format == SchematicInfo.SchematicFormat.WORLDEDIT_SCHEMATIC) {
-
-            player.sendMessage(ChatColor.YELLOW + "Jarvis: Pasting schematic: " + ChatColor.WHITE + info.name);
-            schemReader.pasteSchematic(player, info.file);
-            return;
-        }
-
-        // For JSON format, use the old method or WorldEdit
-        if (info.format == SchematicInfo.SchematicFormat.JSON) {
-            if (worldEditEnabled) {
-                player.sendMessage(ChatColor.YELLOW + "Jarvis: Pasting JSON schematic via WorldEdit...");
-                pasteWithWorldEdit(player, info);
-            } else {
-                player.sendMessage(ChatColor.RED + "JSON schematics require WorldEdit.");
-                player.sendMessage(ChatColor.GRAY + "Convert to .schem format or install WorldEdit.");
-            }
-            return;
-        }
-
-        player.sendMessage(ChatColor.RED + "Unsupported schematic format.");
-    }
-
-    /**
-     * Paste schematic using WorldEdit API
-     */
+    /** Paste schematic using WorldEdit API. */
     private void pasteWithWorldEdit(Player player, SchematicInfo info) {
+        File file = info.file().toFile();
         new BukkitRunnable() {
             @Override
             public void run() {
@@ -426,22 +110,19 @@ public class SchematicManager {
                     // Get WorldEdit instance
                     Object worldEdit = worldEditClass.getMethod("getInstance").invoke(null);
 
-                    // Adapt player to WorldEdit
-                    Object wePlayer = bukkitAdapterClass.getMethod("adapt", Player.class).invoke(null, player);
-
                     // Adapt world
                     Object weWorld = bukkitAdapterClass.getMethod("adapt", org.bukkit.World.class)
                         .invoke(null, player.getWorld());
 
                     // Find clipboard format for the file
                     Object format = clipboardFormatClass.getMethod("findByFile", File.class)
-                        .invoke(null, info.file);
+                        .invoke(null, file);
 
                     if (format == null) {
                         new BukkitRunnable() {
                             @Override
                             public void run() {
-                                player.sendMessage(ChatColor.RED + "Unknown schematic format: " + info.fileName);
+                                player.sendMessage(ChatColor.RED + "Unknown schematic format: " + info.fileName());
                             }
                         }.runTask(plugin);
                         return;
@@ -449,7 +130,7 @@ public class SchematicManager {
 
                     // Load the schematic
                     Object clipboard;
-                    try (FileInputStream fis = new FileInputStream(info.file)) {
+                    try (FileInputStream fis = new FileInputStream(file)) {
                         Class<?> clipboardReaderClass = Class.forName("com.sk89q.worldedit.extent.clipboard.io.ClipboardReader");
                         Object reader = format.getClass().getMethod("getReader", InputStream.class).invoke(format, fis);
                         clipboard = clipboardReaderClass.getMethod("read").invoke(reader);
@@ -504,7 +185,7 @@ public class SchematicManager {
                         public void run() {
                             player.sendMessage("");
                             player.sendMessage(ChatColor.GREEN + "========================================");
-                            player.sendMessage(ChatColor.GOLD + "  Schematic Pasted: " + ChatColor.YELLOW + info.name);
+                            player.sendMessage(ChatColor.GOLD + "  Schematic Pasted: " + ChatColor.YELLOW + info.name());
                             player.sendMessage(ChatColor.GREEN + "========================================");
                             player.sendMessage(ChatColor.WHITE + "  Blocks: ~" + blockCount);
                             player.sendMessage(ChatColor.WHITE + "  Location: " + loc.getBlockX() + ", " +
@@ -531,9 +212,8 @@ public class SchematicManager {
         }.runTaskAsynchronously(plugin);
     }
 
-    /**
-     * Save player's WorldEdit selection as a schematic
-     */
+    /** Save player's WorldEdit selection as a schematic. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public void saveSchematic(Player player, String name) {
         if (!worldEditEnabled) {
             player.sendMessage(ChatColor.RED + "WorldEdit is required for saving schematics.");
@@ -584,7 +264,7 @@ public class SchematicManager {
 
                     // Create output file
                     String fileName = name.endsWith(".schem") ? name : name + ".schem";
-                    File outputFile = new File(schematicFolder, fileName);
+                    File outputFile = library.getSchematicFolder().resolve(fileName).toFile();
 
                     // Get Sponge schematic format
                     Class<?> clipboardFormatsClass = Class.forName("com.sk89q.worldedit.extent.clipboard.io.BuiltInClipboardFormat");
@@ -602,7 +282,7 @@ public class SchematicManager {
                     new BukkitRunnable() {
                         @Override
                         public void run() {
-                            scanFolder();
+                            library.scanFolder();
                             player.sendMessage(ChatColor.GREEN + "Schematic saved: " + ChatColor.YELLOW + fileName);
                             player.sendMessage(ChatColor.GRAY + "Location: " + outputFile.getPath());
                         }
@@ -624,8 +304,8 @@ public class SchematicManager {
     }
 
     /**
-     * Rotate clipboard before pasting
-     * Note: Rotation requires WorldEdit
+     * Rotate clipboard before pasting.
+     * Note: Rotation requires WorldEdit.
      */
     public void rotateAndPaste(Player player, String name, int degrees) {
         if (!worldEditEnabled) {
@@ -634,14 +314,15 @@ public class SchematicManager {
             return;
         }
 
-        SchematicInfo info = findSchematic(name);
+        SchematicInfo info = library.findSchematic(name);
         if (info == null) {
             player.sendMessage(ChatColor.RED + "Schematic not found: " + name);
             player.sendMessage(ChatColor.GRAY + "Use /jarvis schematic list to see available schematics");
             return;
         }
 
-        player.sendMessage(ChatColor.YELLOW + "Jarvis: Pasting " + info.name + " rotated " + degrees + " degrees...");
+        player.sendMessage(ChatColor.YELLOW + "Jarvis: Pasting " + info.name() + " rotated " + degrees + " degrees...");
+        File file = info.file().toFile();
 
         new BukkitRunnable() {
             @Override
@@ -659,10 +340,10 @@ public class SchematicManager {
                         .invoke(null, player.getWorld());
 
                     Object format = clipboardFormatClass.getMethod("findByFile", File.class)
-                        .invoke(null, info.file);
+                        .invoke(null, file);
 
                     Object clipboard;
-                    try (FileInputStream fis = new FileInputStream(info.file)) {
+                    try (FileInputStream fis = new FileInputStream(file)) {
                         Object reader = format.getClass().getMethod("getReader", InputStream.class).invoke(format, fis);
                         clipboard = reader.getClass().getMethod("read").invoke(reader);
                     }
@@ -710,7 +391,7 @@ public class SchematicManager {
                     new BukkitRunnable() {
                         @Override
                         public void run() {
-                            player.sendMessage(ChatColor.GREEN + "Pasted " + info.name + " rotated " + degrees + " degrees!");
+                            player.sendMessage(ChatColor.GREEN + "Pasted " + info.name() + " rotated " + degrees + " degrees!");
                             player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
                         }
                     }.runTask(plugin);
@@ -726,81 +407,5 @@ public class SchematicManager {
                 }
             }
         }.runTaskAsynchronously(plugin);
-    }
-
-    // ==================== UTILITY ====================
-
-    private String formatFileSize(long bytes) {
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
-        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
-    }
-
-    // ==================== GETTERS ====================
-
-    public File getSchematicFolder() {
-        return schematicFolder;
-    }
-
-    public Collection<SchematicInfo> getSchematics() {
-        return availableSchematics.values();
-    }
-
-    public SchematicInfo getSchematic(String name) {
-        return availableSchematics.get(name.toLowerCase());
-    }
-
-    public int getSchematicCount() {
-        return availableSchematics.size();
-    }
-
-    public boolean isWorldEditEnabled() {
-        return worldEditEnabled;
-    }
-
-    // ==================== LITEMATIC CONVERSION ====================
-
-    /**
-     * Convert a .litematic file to .schem format
-     */
-    public void convertLitematic(Player player, String name) {
-        litematicConverter.convert(player, name);
-    }
-
-    /**
-     * Convert all .litematic files in the folder
-     */
-    public void convertAllLitematics(Player player) {
-        litematicConverter.convertAll(player);
-    }
-
-    /**
-     * List available .litematic files
-     */
-    public List<String> listLitematicFiles() {
-        return litematicConverter.listLitematicFiles();
-    }
-
-    /**
-     * Show litematic files to player
-     */
-    public void showLitematicFiles(Player player) {
-        List<String> files = litematicConverter.listLitematicFiles();
-
-        if (files.isEmpty()) {
-            player.sendMessage(ChatColor.YELLOW + "No .litematic files found.");
-            player.sendMessage(ChatColor.GRAY + "Place .litematic files in: " + schematicFolder.getPath());
-            return;
-        }
-
-        player.sendMessage("");
-        player.sendMessage(ChatColor.GOLD + "======== Litematic Files ========");
-        for (String file : files) {
-            player.sendMessage(ChatColor.YELLOW + "  [LITEMATIC] " + ChatColor.WHITE + file);
-        }
-        player.sendMessage("");
-        player.sendMessage(ChatColor.GRAY + "Convert one: /jarvis schematic convert <name>");
-        player.sendMessage(ChatColor.GRAY + "Convert all: /jarvis schematic convertall");
-        player.sendMessage(ChatColor.GOLD + "================================");
     }
 }

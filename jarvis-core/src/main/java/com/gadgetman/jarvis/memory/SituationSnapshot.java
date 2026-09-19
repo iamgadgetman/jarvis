@@ -1,5 +1,7 @@
 package com.gadgetman.jarvis.memory;
 
+import com.gadgetman.jarvis.core.platform.World;
+import com.gadgetman.jarvis.core.world.BlockPos;
 import org.json.JSONObject;
 
 /**
@@ -10,13 +12,29 @@ import org.json.JSONObject;
  * retrieves the wrong examples. Retrieval matches request similarity first,
  * then re-ranks on this.
  *
- * <p>Reading the world is the adapter's job (on Paper, {@code PaperSituation}
- * does it on the main thread); this class only builds, compares and describes
- * the JSON, so it can run anywhere.
+ * <p>{@link #capture(World, BlockPos)} reads the world and so is server-thread
+ * only; everything else here only builds, compares and describes the JSON,
+ * so it can run anywhere.
  */
 public final class SituationSnapshot {
 
     private SituationSnapshot() {}
+
+    /**
+     * Capture the situation at a spot. Server thread only.
+     *
+     * @return JSON, or {@code null} if the world could not be read
+     */
+    public static String capture(World world, BlockPos at) {
+        if (world == null || at == null) return null;
+        try {
+            boolean underground = world.highestY(at.x(), at.z()) > at.y() + 2;
+            return capture(world.environment().name(), at.y(), world.biome(at), underground, world.time());
+        } catch (Exception e) {
+            // A snapshot is a nice-to-have; never let it break a build.
+            return null;
+        }
+    }
 
     /**
      * Build a snapshot from facts the adapter has already read.

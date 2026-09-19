@@ -119,8 +119,9 @@ public class Jarvis extends JavaPlugin {
         jarvisNPC.core().setProgression(progressionManager);
 
         // Initialize systems
-        buildingAssistant = new BuildingAssistant(this);
-        schematicManager = new SchematicManager(this);
+        buildingAssistant = new BuildingAssistant(platform, jarvisNPC.core(), aiConnector,
+                experienceMemory, databaseManager, progressionManager);
+        schematicManager = new SchematicManager(this, jarvisNPC.core());
         requestDecomposer = new RequestDecomposer(coreConfig, log, aiConnector, databaseManager);
         actionExecutor = new JarvisActionExecutor(this);
         confirmationManager = new ConfirmationManager(

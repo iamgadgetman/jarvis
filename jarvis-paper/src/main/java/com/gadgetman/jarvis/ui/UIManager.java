@@ -318,7 +318,7 @@ public class UIManager implements Listener {
         var sm = plugin.getSchematicManager();
         List<String> names = new ArrayList<>();
         if (sm != null) {
-            for (var info : sm.getSchematics()) names.add(info.name);
+            for (var info : sm.getSchematics()) names.add(info.name());
         }
         names.sort(String.CASE_INSENSITIVE_ORDER);
 
@@ -804,7 +804,7 @@ public class UIManager implements Listener {
         var sm = plugin.getSchematicManager();
         if (sm == null) return;
         List<String> names = new ArrayList<>();
-        for (var info : sm.getSchematics()) names.add(info.name);
+        for (var info : sm.getSchematics()) names.add(info.name());
         names.sort(String.CASE_INSENSITIVE_ORDER);
 
         int index = page * PER_PAGE + slot;

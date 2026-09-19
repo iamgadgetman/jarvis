@@ -45,7 +45,17 @@ public interface World {
 
     BlockState block(BlockPos pos);
 
-    void setBlock(BlockPos pos, BlockState state);
+    /** Place a block with physics, as a player would. */
+    default void setBlock(BlockPos pos, BlockState state) {
+        setBlock(pos, state, true);
+    }
+
+    /**
+     * Place a block. With {@code physics} off nothing around it updates: no
+     * falling gravel, no popped torches, no water flowing into a build in
+     * progress. Shapes that depend on neighbours are then the caller's to fix.
+     */
+    void setBlock(BlockPos pos, BlockState state, boolean physics);
 
     boolean isSolid(BlockPos pos);
 

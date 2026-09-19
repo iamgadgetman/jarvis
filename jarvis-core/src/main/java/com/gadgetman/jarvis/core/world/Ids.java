@@ -121,6 +121,7 @@ public final class Ids {
     public static final String HOPPER = "minecraft:hopper";
     public static final String INK_SAC = "minecraft:ink_sac";
     public static final String IRON_AXE = "minecraft:iron_axe";
+    public static final String IRON_BARS = "minecraft:iron_bars";
     public static final String IRON_HOE = "minecraft:iron_hoe";
     public static final String IRON_ORE = "minecraft:iron_ore";
     public static final String IRON_PICKAXE = "minecraft:iron_pickaxe";

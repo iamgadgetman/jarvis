@@ -66,7 +66,7 @@ public final class PaperWorld implements World {
     @Override public Vec3 spawn() { return PaperWorlds.vec(w.getSpawnLocation()); }
 
     @Override public BlockState block(BlockPos pos) { return PaperWorlds.state(at(pos).getBlockData()); }
-    @Override public void setBlock(BlockPos pos, BlockState state) { at(pos).setBlockData(PaperWorlds.data(state), true); }
+    @Override public void setBlock(BlockPos pos, BlockState state, boolean physics) { at(pos).setBlockData(PaperWorlds.data(state), physics); }
     @Override public boolean isSolid(BlockPos pos) { return at(pos).getType().isSolid(); }
     @Override public boolean isPassable(BlockPos pos) { return at(pos).isPassable(); }
     @Override public boolean isLiquid(BlockPos pos) { return at(pos).isLiquid(); }

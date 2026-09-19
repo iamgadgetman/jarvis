@@ -350,7 +350,7 @@ public class IntentPipeline {
                 if (schematics != null) {
                     List<String> names = new ArrayList<>();
                     for (var info : schematics.getSchematics()) {
-                        names.add(info.name);
+                        names.add(info.name());
                     }
                     if (!names.isEmpty()) {
                         var decomposer = plugin.getRequestDecomposer();
@@ -393,7 +393,7 @@ public class IntentPipeline {
                                     + "Do add a schematic to the library.");
                         } else if (plugin.getBuildingAssistant() != null) {
                             sink.speak(player, "Nothing suitable in the library — improvising a design, sir.");
-                            plugin.getBuildingAssistant().startBuild(player, desc);
+                            plugin.getBuildingAssistant().startBuild(plugin.owner(player), desc);
                         }
                     }
                 }.runTask(plugin);

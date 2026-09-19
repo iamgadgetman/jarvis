@@ -199,8 +199,8 @@ public class JarvisCommands implements CommandExecutor {
                         player.sendMessage(ChatColor.RED + "Building assistant not available");
                         return true;
                     }
-                    if (first.equals("undo")) assistant.undoLastBuild(player);
-                    else assistant.cancelBuild(player);
+                    if (first.equals("undo")) assistant.undoLastBuild(plugin.owner(player));
+                    else assistant.cancelBuild(plugin.owner(player));
                     return true;
                 }
 
@@ -214,7 +214,7 @@ public class JarvisCommands implements CommandExecutor {
                     if (args.length > 2) {
                         try { size = Integer.parseInt(args[2]); } catch (NumberFormatException ignored) {}
                     }
-                    assistant.buildSimpleStructure(player, first, Math.max(1, Math.min(64, size)));
+                    assistant.buildSimpleStructure(plugin.owner(player), first, Math.max(1, Math.min(64, size)));
                     return true;
                 }
 
@@ -254,7 +254,7 @@ public class JarvisCommands implements CommandExecutor {
                 } else if (assistant != null) {
                     player.sendMessage(ChatColor.GRAY + "Jarvis: Nothing suitable in the library"
                             + " — improvising a design, sir.");
-                    assistant.startBuild(player, request);
+                    assistant.startBuild(plugin.owner(player), request);
                 } else {
                     player.sendMessage(ChatColor.RED + "Building assistant not available");
                 }
@@ -265,7 +265,7 @@ public class JarvisCommands implements CommandExecutor {
                     player.sendMessage(ChatColor.RED + "Building assistant not available");
                     return true;
                 }
-                plugin.getBuildingAssistant().cancelBuild(player);
+                plugin.getBuildingAssistant().cancelBuild(plugin.owner(player));
             }
 
             // Schematic management commands

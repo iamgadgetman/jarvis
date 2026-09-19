@@ -1,5 +1,6 @@
 package com.gadgetman.jarvis.building;
 
+import com.gadgetman.jarvis.core.platform.Log;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Engine;
 import org.graalvm.polyglot.PolyglotException;
@@ -18,7 +19,6 @@ import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Logger;
 
 /**
  * Runs an LLM-written JavaScript build script in a sandbox and collects the
@@ -139,7 +139,7 @@ public class ScriptBuildPlanner {
         LimitExceeded(String message) { super(message); }
     }
 
-    private final Logger log;
+    private final Log log;
     private final int maxBlocks;
     private final int timeoutMs;
     private final int maxHorizontal;
@@ -170,7 +170,7 @@ public class ScriptBuildPlanner {
      */
     private volatile Engine engine;
 
-    public ScriptBuildPlanner(Logger log, int maxBlocks, int timeoutMs,
+    public ScriptBuildPlanner(Log log, int maxBlocks, int timeoutMs,
                               int maxHorizontal, int maxVertical, int maxFillVolume,
                               Set<String> validBlocks) {
         this.log = log;

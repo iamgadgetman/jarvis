@@ -32,6 +32,8 @@ public interface Platform {
 
     Items items();
 
+    BlockTypes blockTypes();
+
     Optional<World> world(WorldId id);
 
     /** Loaded worlds. */

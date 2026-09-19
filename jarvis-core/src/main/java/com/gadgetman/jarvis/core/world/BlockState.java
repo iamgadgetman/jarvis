@@ -49,6 +49,19 @@ public record BlockState(String id, Map<String, String> props) {
         }
     }
 
+    /**
+     * True when this block is the same kind as {@code partial} and agrees on
+     * every property {@code partial} names. A plan that says only
+     * {@code facing=north} matches a stair that is also waterlogged=false.
+     */
+    public boolean matches(BlockState partial) {
+        if (partial == null || !id.equals(partial.id)) return false;
+        for (Map.Entry<String, String> e : partial.props.entrySet()) {
+            if (!e.getValue().equals(props.get(e.getKey()))) return false;
+        }
+        return true;
+    }
+
     public boolean is(String id) {
         return this.id.equals(id);
     }
