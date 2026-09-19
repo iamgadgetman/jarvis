@@ -190,14 +190,9 @@ public class ScriptBuildPlanner {
      * on first start, for one. Callers probe with this and fall back to the
      * JSON planner instead of the plugin failing to load.
      */
+    /** Prefer {@link ScriptEngineProbe#isAvailable()}: calling this links this class, which needs the engine. */
     public static boolean isAvailable() {
-        try {
-            Class.forName("org.graalvm.polyglot.Context", false,
-                    ScriptBuildPlanner.class.getClassLoader());
-            return true;
-        } catch (Throwable t) {
-            return false;
-        }
+        return ScriptEngineProbe.isAvailable();
     }
 
     private Engine engine() {

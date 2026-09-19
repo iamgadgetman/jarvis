@@ -5,7 +5,7 @@ import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.PlayerRequestManager;
 import com.gadgetman.jarvis.ai.AIConnector;
 import com.gadgetman.jarvis.building.BuildingAssistant;
-import com.gadgetman.jarvis.building.ScriptBuildPlanner;
+import com.gadgetman.jarvis.building.ScriptEngineProbe;
 import com.gadgetman.jarvis.core.platform.Audience;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
@@ -845,7 +845,7 @@ public class CommandService implements CommandSink {
         player.message(Colors.GRAY + "  Java: " + Colors.WHITE + System.getProperty("java.version"));
 
         String planner = core.building() == null ? "none" : core.building().getPlanner();
-        boolean graal = ScriptBuildPlanner.isAvailable();
+        boolean graal = ScriptEngineProbe.isAvailable();
         player.message(Colors.GRAY + "  Build planner: " + Colors.WHITE + planner
                 + Colors.GRAY + (graal ? " (GraalJS present)" : " (GraalJS MISSING)"));
 

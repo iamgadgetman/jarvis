@@ -112,13 +112,19 @@ public class BuildingAssistant {
             // be absent -- an offline first start, or a resolver failure. That
             // must not stop the plugin loading, so probe and fall back rather
             // than letting a NoClassDefFoundError escape on first build.
-            if (ScriptBuildPlanner.isAvailable()) {
+            if (ScriptEngineProbe.isAvailable()) {
                 // Snapshot the registry here, on the server thread, so the planner
                 // can reject a bad block id while running async.
                 Set<String> validBlockNames = new HashSet<>(platform.blockTypes().placeableIds());
-                scriptPlanner = new ScriptBuildPlanner(log, scriptMaxBlocks,
-                        scriptTimeoutMs, scriptMaxHorizontal, scriptMaxVertical, scriptMaxFillVolume,
-                        validBlockNames);
+                try {
+                    scriptPlanner = new ScriptBuildPlanner(log, scriptMaxBlocks,
+                            scriptTimeoutMs, scriptMaxHorizontal, scriptMaxVertical, scriptMaxFillVolume,
+                            validBlockNames);
+                } catch (NoClassDefFoundError e) {
+                    log.warn("GraalJS is only partly present (" + e.getMessage() + "); using the JSON planner.");
+                    scriptPlanner = null;
+                    planner = "json";
+                }
             } else {
                 log.warn("build.planner is 'script' but GraalJS is not on the "
                         + "classpath -- falling back to the JSON planner. Check that the server "
