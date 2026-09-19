@@ -29,10 +29,17 @@ public final class YamlConfig implements Config {
 
     private final Map<String, Object> root;
     private final Config fallback;
+    /** Where {@link #save} writes, or null for a document that was never a file. */
+    private final Path file;
 
     private YamlConfig(Map<String, Object> root, Config fallback) {
-        this.root = root;
+        this(root, fallback, null);
+    }
+
+    private YamlConfig(Map<String, Object> root, Config fallback, Path file) {
+        this.root = new java.util.LinkedHashMap<>(root);
         this.fallback = fallback;
+        this.file = file;
     }
 
     public static YamlConfig empty() {
@@ -56,10 +63,10 @@ public final class YamlConfig implements Config {
     }
 
     public static YamlConfig load(Path file, Config fallback) throws IOException {
-        if (file == null || !Files.exists(file)) return new YamlConfig(Map.of(), fallback);
+        if (file == null || !Files.exists(file)) return new YamlConfig(Map.of(), fallback, file);
         try (Reader in = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             Yaml loader = new Yaml(new SafeConstructor(new LoaderOptions()));
-            return new YamlConfig(asMap(loader.load(in)), fallback);
+            return new YamlConfig(asMap(loader.load(in)), fallback, file);
         }
     }
 
@@ -176,5 +183,47 @@ public final class YamlConfig implements Config {
         Config sub = fallback != null ? fallback.section(path) : null;
         Map<String, Object> m = v instanceof Map ? asMap(v) : Map.of();
         return new YamlConfig(m, sub);
+    }
+
+    /** Set a dotted path, creating the mappings along it. A section view's writes do not reach the root. */
+    @Override
+    @SuppressWarnings("unchecked")
+    public void set(String path, Object value) {
+        String[] segs = path.split("\\.");
+        Map<String, Object> cur = root;
+        for (int i = 0; i < segs.length - 1; i++) {
+            Object next = cur.get(segs[i]);
+            if (!(next instanceof Map)) {
+                next = new java.util.LinkedHashMap<String, Object>();
+                cur.put(segs[i], next);
+            } else if (!(next instanceof java.util.LinkedHashMap)) {
+                next = new java.util.LinkedHashMap<>((Map<String, Object>) next);
+                cur.put(segs[i], next);
+            }
+            cur = (Map<String, Object>) next;
+        }
+        cur.put(segs[segs.length - 1], value);
+    }
+
+    @Override
+    public void save() {
+        if (file == null) return;
+        try {
+            YamlFiles.write(file, root);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    @Override
+    public void reload() {
+        if (file == null) return;
+        try {
+            Map<String, Object> fresh = load(file, fallback).root;
+            root.clear();
+            root.putAll(fresh);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
     }
 }

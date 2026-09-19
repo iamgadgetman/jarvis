@@ -2,11 +2,15 @@ package com.gadgetman.jarvis.platform;
 
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Site;
+import com.gadgetman.jarvis.core.text.RichLine;
 import com.gadgetman.jarvis.core.world.BlockPos;
 import com.gadgetman.jarvis.core.world.Item;
 import com.gadgetman.jarvis.core.world.Look;
 import com.gadgetman.jarvis.core.world.Vec3;
 import com.gadgetman.jarvis.core.world.WorldId;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -193,6 +197,20 @@ public final class PaperOwner implements Owner {
     public void message(String text) {
         Player p = p();
         if (p != null && text != null) p.sendMessage(LegacyComponentSerializer.legacySection().deserialize(text));
+    }
+
+    @Override
+    public void rich(RichLine line) {
+        Player p = p();
+        if (p == null) return;
+        Component out = Component.empty();
+        for (RichLine.Part part : line.parts()) {
+            Component c = LegacyComponentSerializer.legacySection().deserialize(part.text());
+            if (part.command() != null) c = c.clickEvent(ClickEvent.runCommand(part.command()));
+            if (part.hover() != null) c = c.hoverEvent(HoverEvent.showText(Component.text(part.hover())));
+            out = out.append(c);
+        }
+        p.sendMessage(out);
     }
 
     @Override

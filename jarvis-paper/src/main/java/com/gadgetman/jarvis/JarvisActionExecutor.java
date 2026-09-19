@@ -1,5 +1,7 @@
 package com.gadgetman.jarvis;
 
+import com.gadgetman.jarvis.commands.ActionExecutor;
+import com.gadgetman.jarvis.core.platform.Owner;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.title.Title;
@@ -24,10 +26,12 @@ import org.json.JSONObject;
 import java.time.Duration;
 
 /**
- * Executes Jarvis action commands triggered via natural language or /jarvis ask.
+ * Executes the server-administration actions the AI can ask for. Core's
+ * {@link ActionExecutor}, implemented with Bukkit because every one of
+ * these reaches for the server directly.
  * Must always be called from the main server thread.
  */
-public class JarvisActionExecutor {
+public class JarvisActionExecutor implements ActionExecutor {
 
     private final Jarvis plugin;
 
@@ -44,11 +48,33 @@ public class JarvisActionExecutor {
         this.plugin = plugin;
     }
 
+    @Override
+    public boolean handles(String actionType) {
+        return switch (actionType) {
+            case "give_item", "enchant", "potion_effect", "heal", "feed",
+                 "set_gamemode", "teleport", "set_time", "set_weather", "set_gamerule",
+                 "summon", "broadcast", "server_say", "lp_group_add", "lp_group_remove",
+                 "warp", "discord_broadcast", "paste_schematic",
+                 "console_command", "console_commands", "clear_mobs", "clear_drops",
+                 "save_world", "set_difficulty", "announce_all", "schedule_broadcast",
+                 "request_item" -> true;
+            default -> false;
+        };
+    }
+
+    @Override
+    public java.util.Set<String> dangerousActions() {
+        return DANGEROUS_ACTIONS;
+    }
+
     /**
      * Execute an action and return a result message.
      * @return human-readable result, or null if action is unknown
      */
-    public String execute(String actionType, JSONObject params, Player requester) {
+    @Override
+    public String execute(String actionType, JSONObject params, Owner owner) {
+        Player requester = Bukkit.getPlayer(owner.id());
+        if (requester == null) return "You must be online for that.";
         if (params == null) params = new JSONObject();
         try {
             return switch (actionType) {
@@ -89,6 +115,7 @@ public class JarvisActionExecutor {
     }
 
     /** Build a short human-readable description of what an action will do. */
+    @Override
     public String describe(String actionType, JSONObject p) {
         if (p == null) p = new JSONObject();
         return switch (actionType) {
@@ -295,8 +322,8 @@ public class JarvisActionExecutor {
     private String executePasteSchematic(JSONObject p, Player requester) {
         String schematic = p.optString("schematic", "");
         if (schematic.isEmpty()) return "No schematic name provided.";
-        if (plugin.getSchematicManager() == null) return "Schematic manager not available.";
-        plugin.getSchematicManager().pasteSchematic(requester, schematic);
+        if (plugin.core().schematics() == null) return "Schematic manager not available.";
+        plugin.core().schematics().pasteSchematic(plugin.owner(requester), schematic);
         return "Pasting schematic '" + schematic + "' at your location.";
     }
 
@@ -400,21 +427,21 @@ public class JarvisActionExecutor {
         int count           = p.optInt("count", 1);
 
         // v0.5.0: persist as a standing duty so it survives restarts
-        if (plugin.getDutyScheduler() != null) {
+        if (plugin.core().duties() != null) {
             if (intervalSec > 0 && count != 1) {
-                plugin.getDutyScheduler().addBroadcast(message, delaySec, intervalSec,
+                plugin.core().duties().addBroadcast(message, delaySec, intervalSec,
                         count > 1 ? count : -1, "chat");
                 return "Duty scheduled: \"" + message + "\" every " + intervalSec + "s"
                         + (count > 1 ? " x" + count : " (until removed — /jarvis duties)");
             }
-            plugin.getDutyScheduler().addBroadcast(message, delaySec, 0, 1, "chat");
+            plugin.core().duties().addBroadcast(message, delaySec, 0, 1, "chat");
             return "Broadcast scheduled in " + delaySec + "s: \"" + message + "\"";
         }
         return "Scheduler unavailable.";
     }
 
     private String executeRequestItem(JSONObject p, Player requester) {
-        if (plugin.getPlayerRequestManager() == null) return "Request system not available.";
+        if (plugin.core().requests() == null) return "Request system not available.";
 
         String item   = p.optString("item", "");
         int amount    = p.optInt("amount", 1);
@@ -422,7 +449,7 @@ public class JarvisActionExecutor {
 
         if (item.isEmpty()) return "Please specify what item you want.";
 
-        int id = plugin.getPlayerRequestManager().addRequest(
+        int id = plugin.core().requests().addRequest(
                 requester.getUniqueId(), requester.getName(), item, amount, reason);
 
         // Notify online admins

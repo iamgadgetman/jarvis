@@ -1,6 +1,7 @@
 package com.gadgetman.jarvis.voice;
 
 import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.intent.IntentPipeline;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
 import de.maxhenkel.voicechat.api.audiochannel.AudioPlayer;
@@ -69,17 +70,17 @@ public class VoiceResponder implements IntentPipeline.Responder {
     }
 
     @Override
-    public void speak(Player player, String jarvisLine) {
+    public void speak(Owner owner, String jarvisLine) {
         if (echoSpokenText) {
-            player.sendMessage(ChatColor.AQUA + "Jarvis: " + ChatColor.WHITE + jarvisLine);
+            owner.message(ChatColor.AQUA + "Jarvis: " + ChatColor.WHITE + jarvisLine);
         }
-        say(player, jarvisLine);
+        plugin.getPlatform().player(owner).ifPresent(p -> say(p, jarvisLine));
     }
 
     @Override
-    public void feedback(Player player, String line) {
+    public void feedback(Owner owner, String line) {
         // Mechanical output — numbers, lists, confirmations. Read, not heard.
-        player.sendMessage(line);
+        owner.message(line);
     }
 
     /**
@@ -193,7 +194,7 @@ public class VoiceResponder implements IntentPipeline.Responder {
 
     private Entity findNpcEntity(Player player) {
         try {
-            NPC npc = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
+            NPC npc = plugin.getNpcProvider().getCitizensNPC(player.getUniqueId());
             if (npc == null || !npc.isSpawned()) return null;
             return npc.getEntity();
         } catch (Exception e) {

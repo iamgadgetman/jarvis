@@ -1,16 +1,16 @@
 package com.gadgetman.jarvis.memory;
 
-import com.gadgetman.jarvis.Jarvis;
-import org.bukkit.ChatColor;
-import org.bukkit.command.CommandSender;
-import org.bukkit.scheduler.BukkitRunnable;
+import com.gadgetman.jarvis.DatabaseManager;
+import com.gadgetman.jarvis.core.platform.Audience;
+import com.gadgetman.jarvis.core.platform.Platform;
+import com.gadgetman.jarvis.core.text.Colors;
 import org.json.JSONObject;
 
 import java.io.BufferedWriter;
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -31,56 +31,50 @@ import java.util.Date;
  * model later, which is where the Ollama tier's ceiling actually sits — the
  * paper's LLaMA2-13B result is the argument for bothering.
  *
- * <p>One line of JSON per row, written off the main thread to the plugin's data
+ * <p>One line of JSON per row, written off the server thread to the data
  * folder. Player UUIDs are not written: the pairs are what has value, and a
  * dataset that leaves the server should not carry who said what.
  */
 public class DatasetExporter {
 
-    private final Jarvis plugin;
+    private final Platform platform;
+    private final DatabaseManager database;
 
-    public DatasetExporter(Jarvis plugin) {
-        this.plugin = plugin;
+    public DatasetExporter(Platform platform, DatabaseManager database) {
+        this.platform = platform;
+        this.database = database;
     }
 
     /**
      * Write both datasets and report back to whoever asked. Returns
      * immediately; the query and the file write are async.
      */
-    public void exportAsync(CommandSender requester) {
+    public void exportAsync(Audience requester) {
         String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date());
-        File folder = new File(plugin.getDataFolder(), "datasets");
+        Path folder = platform.dataDir().resolve("datasets");
 
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                String result;
-                try {
-                    Files.createDirectories(folder.toPath());
-                    File intents = new File(folder, "intents-" + stamp + ".jsonl");
-                    File builds = new File(folder, "builds-" + stamp + ".jsonl");
-                    int intentRows = exportIntents(intents);
-                    int buildRows = exportBuilds(builds);
-                    result = ChatColor.GREEN + "Dataset exported, sir: "
-                            + ChatColor.WHITE + intentRows + " intent pairs, "
-                            + buildRows + " build plans"
-                            + ChatColor.GRAY + " → plugins/Jarvis/datasets/";
-                    plugin.getLogger().info("Dataset export: " + intentRows + " intents to "
-                            + intents.getName() + ", " + buildRows + " builds to " + builds.getName());
-                } catch (Exception e) {
-                    result = ChatColor.RED + "Dataset export failed: " + e.getMessage();
-                    plugin.getLogger().warning("Dataset export failed: " + e.getMessage());
-                }
-
-                final String message = result;
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        requester.sendMessage(message);
-                    }
-                }.runTask(plugin);
+        platform.scheduler().async(() -> {
+            String result;
+            try {
+                Files.createDirectories(folder);
+                Path intents = folder.resolve("intents-" + stamp + ".jsonl");
+                Path builds = folder.resolve("builds-" + stamp + ".jsonl");
+                int intentRows = exportIntents(intents);
+                int buildRows = exportBuilds(builds);
+                result = Colors.GREEN + "Dataset exported, sir: "
+                        + Colors.WHITE + intentRows + " intent pairs, "
+                        + buildRows + " build plans"
+                        + Colors.GRAY + " → " + folder;
+                platform.log().info("Dataset export: " + intentRows + " intents to "
+                        + intents.getFileName() + ", " + buildRows + " builds to " + builds.getFileName());
+            } catch (Exception e) {
+                result = Colors.RED + "Dataset export failed: " + e.getMessage();
+                platform.log().warn("Dataset export failed: " + e.getMessage());
             }
-        }.runTaskAsynchronously(plugin);
+
+            final String message = result;
+            platform.scheduler().sync(() -> requester.message(message));
+        });
     }
 
     /**
@@ -89,10 +83,10 @@ public class DatasetExporter {
      * <p>Rows with no action are skipped: an unlabelled example teaches nothing,
      * and those are the ones where the parse failed.
      */
-    private int exportIntents(File out) throws IOException, SQLException {
+    private int exportIntents(Path out) throws IOException, SQLException {
         int written = 0;
-        try (BufferedWriter w = Files.newBufferedWriter(out.toPath(), StandardCharsets.UTF_8);
-             Connection c = plugin.getDatabaseManager().getConnection();
+        try (BufferedWriter w = Files.newBufferedWriter(out, StandardCharsets.UTF_8);
+             Connection c = database.getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "SELECT player_message, ai_response, action_taken, timestamp "
                      + "FROM chat_interactions WHERE action_taken IS NOT NULL "
@@ -125,10 +119,10 @@ public class DatasetExporter {
      * fine-tune wants both; retrieval, which only ever reads positives, is the
      * one that does not.
      */
-    private int exportBuilds(File out) throws IOException, SQLException {
+    private int exportBuilds(Path out) throws IOException, SQLException {
         int written = 0;
-        try (BufferedWriter w = Files.newBufferedWriter(out.toPath(), StandardCharsets.UTF_8);
-             Connection c = plugin.getDatabaseManager().getConnection();
+        try (BufferedWriter w = Files.newBufferedWriter(out, StandardCharsets.UTF_8);
+             Connection c = database.getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "SELECT task_type, request_text, situation, plan, outcome, provider, created_at "
                      + "FROM build_experiences ORDER BY created_at");

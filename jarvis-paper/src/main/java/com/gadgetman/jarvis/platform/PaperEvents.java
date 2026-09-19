@@ -8,6 +8,7 @@ import com.gadgetman.jarvis.core.platform.events.ButlerDamagedEvent;
 import com.gadgetman.jarvis.core.platform.events.ChatEvent;
 import com.gadgetman.jarvis.core.platform.events.DeathEvent;
 import com.gadgetman.jarvis.core.platform.events.Event;
+import com.gadgetman.jarvis.core.platform.events.ItemUseEvent;
 import com.gadgetman.jarvis.core.platform.events.JoinEvent;
 import com.gadgetman.jarvis.core.platform.events.OwnerDamagedEvent;
 import com.gadgetman.jarvis.core.platform.events.PortalEvent;
@@ -20,7 +21,10 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -68,7 +72,8 @@ public final class PaperEvents implements Events, Listener {
         };
     }
 
-    private void publish(Event event) {
+    /** Hand core an event from outside this listener, such as a Citizens click. */
+    public void publish(Event event) {
         List<Consumer<Object>> list = handlers.get(event.getClass());
         if (list == null) return;
         for (Consumer<Object> h : list) {
@@ -129,5 +134,18 @@ public final class PaperEvents implements Events, Listener {
         butlerResolver.apply(victim).ifPresent(ownerId ->
                 publish(new ButlerDamagedEvent(ownerId,
                         Optional.of(new PaperEntity(event.getDamager())), event.getFinalDamage())));
+    }
+
+    /** Only items that carry a core marker are reported; everything else is the game's business. */
+    @EventHandler(priority = EventPriority.NORMAL)
+    public void onInteract(PlayerInteractEvent event) {
+        if (!handlers.containsKey(ItemUseEvent.class)) return;
+        if (event.getHand() != EquipmentSlot.HAND) return;
+        if (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
+        ItemStack held = event.getItem();
+        if (held == null || !held.hasItemMeta()) return;
+        Item item = PaperItems.toItem(held);
+        if (item.marker() == null) return;
+        publish(new ItemUseEvent(new PaperOwner(event.getPlayer().getUniqueId()), item, event::setCancelled));
     }
 }

@@ -1,45 +1,27 @@
 package com.gadgetman.jarvis;
 
-import org.bukkit.NamespacedKey;
-import org.bukkit.Material;
-import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.plugin.java.JavaPlugin;
+import com.gadgetman.jarvis.commands.JarvisCommands;
 import com.gadgetman.jarvis.core.platform.Config;
 import com.gadgetman.jarvis.core.platform.Log;
-import com.gadgetman.jarvis.core.platform.Scheduler;
 import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.core.platform.Scheduler;
+import com.gadgetman.jarvis.npc.provider.CitizensButlers;
+import com.gadgetman.jarvis.npc.provider.CitizensInteractListener;
+import com.gadgetman.jarvis.npc.provider.CitizensNPCProvider;
 import com.gadgetman.jarvis.platform.PaperPlatform;
-import com.gadgetman.jarvis.ai.AIConnector;
-import com.gadgetman.jarvis.npc.JarvisNPC;
-import com.gadgetman.jarvis.commands.JarvisCommands;
-import com.gadgetman.jarvis.ui.UIManager;
-import com.gadgetman.jarvis.DatabaseManager;
-import com.gadgetman.jarvis.building.BuildingAssistant;
-import com.gadgetman.jarvis.memory.ExperienceMemory;
-import com.gadgetman.jarvis.recovery.TaskRecoveryHandler;
 import com.gadgetman.jarvis.schematics.SchematicManager;
-import com.gadgetman.jarvis.schematics.RequestDecomposer;
-import com.gadgetman.jarvis.intent.IntentPipeline;
-import com.gadgetman.jarvis.progression.ProgressionManager;
-import com.gadgetman.jarvis.ui.TaskMonitor;
+import com.gadgetman.jarvis.ui.PaperBell;
 import com.gadgetman.jarvis.voice.VoiceBridge;
-import com.gadgetman.jarvis.listeners.ChatListener;
-import com.gadgetman.jarvis.steward.DutyScheduler;
-import com.gadgetman.jarvis.steward.MorningReport;
-import com.gadgetman.jarvis.npc.portal.PortalScout;
-import com.gadgetman.jarvis.steward.remarks.Remarks;
-import com.gadgetman.jarvis.listeners.PlayerConnectionListener;
-import com.gadgetman.jarvis.listeners.PlayerEventListener;
-import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 
 /**
- * Jarvis AI Butler Plugin
- * Version: 0.1.0
+ * Jarvis AI Butler, the Paper plugin.
  *
- * Main plugin class that manages all subsystems
+ * <p>A bootstrap: it builds the {@link PaperPlatform}, gives core a Citizens
+ * body for the butler and a Bukkit executor for the admin actions, and
+ * constructs {@link JarvisCore}. Everything the butler does lives in core;
+ * what is left here is registration with the server.
  */
 public class Jarvis extends JavaPlugin {
 
@@ -52,27 +34,11 @@ public class Jarvis extends JavaPlugin {
 
     // The platform core talks through; see docs/dev/platform-interface.md.
     private PaperPlatform platform;
+    private JarvisCore core;
 
-    private AIConnector aiConnector;
-    private JarvisNPC jarvisNPC;
-    private UIManager uiManager;
-    private DatabaseManager databaseManager;
-    private BuildingAssistant buildingAssistant;
+    private CitizensNPCProvider npcProvider;
     private SchematicManager schematicManager;
-    private JarvisActionExecutor actionExecutor;
-    private ConfirmationManager confirmationManager;
-    private PlayerRequestManager playerRequestManager;
-    private DutyScheduler dutyScheduler;
-    private MorningReport morningReport;
-    private ExperienceMemory experienceMemory;
-    private TaskRecoveryHandler taskRecoveryHandler;
-    private RequestDecomposer requestDecomposer;
-    private IntentPipeline intentPipeline;
     private VoiceBridge voiceBridge;
-    private TaskMonitor taskMonitor;
-    private ProgressionManager progressionManager;
-    private Remarks remarks;
-    private PortalScout portalScout;
 
     @Override
     public void onEnable() {
@@ -81,97 +47,45 @@ public class Jarvis extends JavaPlugin {
         getLogger().info("Jarvis AI Companion v" + version + " enabling...");
 
         saveDefaultConfig();
-
-        platform = new PaperPlatform(this);
-        platform.registerEvents();
-        Config coreConfig = platform.config();
-        Log log = platform.log();
-        Scheduler scheduler = platform.scheduler();
-
-        aiConnector = new AIConnector(coreConfig, log);
-
         // databases.yml is not covered by saveDefaultConfig(), which only writes
         // config.yml. Without this the data folder has no databases.yml, no data
         // source is ever registered, and every getConnection() throws.
         saveResource("databases.yml", false);
 
-        databaseManager = new DatabaseManager(coreConfig, log, getDataFolder().toPath());
-        databaseManager.initializeDatabaseConnections();
+        platform = new PaperPlatform(this);
+        platform.registerEvents();
 
-        experienceMemory = new ExperienceMemory(coreConfig, log, scheduler, databaseManager);
-        taskRecoveryHandler = new TaskRecoveryHandler(coreConfig, log, scheduler, aiConnector);
-
-        if (getServer().getPluginManager().getPlugin("Citizens") != null) {
-            jarvisNPC = new JarvisNPC(this);
-            getLogger().info("NPC system initialized.");
-        } else {
+        if (getServer().getPluginManager().getPlugin("Citizens") == null) {
             getLogger().warning("Citizens not found - NPC features disabled.");
             return;
         }
 
-        getCommand("jarvis").setExecutor(new JarvisCommands(this));
+        // The butler's body, and the server-administration actions: the two
+        // things core cannot supply for itself.
+        npcProvider = new CitizensNPCProvider(this);
+        CitizensButlers butlers = new CitizensButlers(this, npcProvider);
+        // So a blow landed on him reaches his Defender as a ButlerDamagedEvent.
+        platform.paperEvents().butlerResolver(butlers::ownerOf);
 
-        uiManager = new UIManager(this);
+        core = new JarvisCore(platform, version, butlers, new JarvisActionExecutor(this));
+        core.start();
 
-        // Service record — created before anything can issue him a tool.
-        progressionManager = new ProgressionManager(platform, databaseManager);
-        progressionManager.attach(jarvisNPC.core());
-        jarvisNPC.core().setProgression(progressionManager);
+        // WorldEdit, when present, accelerates JSON pastes and adds clipboard
+        // saves and rotated pastes.
+        schematicManager = new SchematicManager(this, core.schematics());
+        core.setSchematicExtras(schematicManager);
 
-        // Initialize systems
-        buildingAssistant = new BuildingAssistant(platform, jarvisNPC.core(), aiConnector,
-                experienceMemory, databaseManager, progressionManager);
-        schematicManager = new SchematicManager(this, jarvisNPC.core());
-        requestDecomposer = new RequestDecomposer(coreConfig, log, aiConnector, databaseManager);
-        actionExecutor = new JarvisActionExecutor(this);
-        confirmationManager = new ConfirmationManager(
-                getConfig().getLong("confirmation-timeout-seconds", 30));
-        playerRequestManager = new PlayerRequestManager();
-        dutyScheduler = new DutyScheduler(platform);
-        morningReport = new MorningReport(platform, jarvisNPC.core(), playerRequestManager, dutyScheduler);
-
-        // Idle commentary. Off unless steward.remarks.enabled; start() is a
-        // no-op otherwise, so nothing ticks for a server that has not asked.
-        remarks = new Remarks(platform, jarvisNPC.core());
-        remarks.start();
-
-        // Portals: he notes the ones we pass, and can do the 1:8 arithmetic
-        // whether or not he has ever seen one.
-        portalScout = new PortalScout(platform, jarvisNPC.core());
-        portalScout.start();
-
-        // The one road from an utterance to an action; chat and voice both use it.
-        intentPipeline = new IntentPipeline(this);
+        // Bukkit registration
+        JarvisCommands commands = new JarvisCommands(this);
+        getCommand("jarvis").setExecutor(commands);
+        getCommand("jarvis").setTabCompleter(commands);
+        getServer().getPluginManager().registerEvents(new PaperBell(platform.paperEvents()), this);
+        getServer().getPluginManager().registerEvents(
+                new CitizensInteractListener(npcProvider, platform.paperEvents()), this);
 
         // Ears. No-ops unless voice.enabled and Simple Voice Chat is installed.
         voiceBridge = new VoiceBridge(this);
         voiceBridge.register();
-
-        // Boss bar for long jobs, plus the order queue.
-        taskMonitor = new TaskMonitor(this);
-        taskMonitor.start();
-
-        // Register listeners
-        getServer().getPluginManager().registerEvents(new ChatListener(this), this);
-        getServer().getPluginManager().registerEvents(new PlayerConnectionListener(this), this);
-        getServer().getPluginManager().registerEvents(new PlayerEventListener(this), this);
-
-        // Periodic cleanup of old requests (every 5 minutes)
-        getServer().getScheduler().runTaskTimer(this,
-                () -> playerRequestManager.cleanOld(), 6000L, 6000L);
-
-        // TPS monitor — warn admins if TPS drops below 18
-        double tpsThreshold = getConfig().getDouble("butler.tps-warn-threshold", 18.0);
-        getServer().getScheduler().runTaskTimer(this, () -> {
-            double[] tps = getServer().getTPS();
-            if (tps.length > 0 && tps[0] < tpsThreshold) {
-                String msg = org.bukkit.ChatColor.RED + "[Jarvis] Warning: Server TPS is "
-                        + String.format("%.1f", tps[0]) + " (threshold: " + tpsThreshold + ")";
-                for (org.bukkit.entity.Player p : getServer().getOnlinePlayers()) {
-                    if (p.hasPermission("jarvis.admin")) p.sendMessage(msg);
-                }
-            }
-        }, 1200L, 1200L); // every 60 seconds
 
         getLogger().info("Jarvis AI Companion v" + version + " enabled successfully!");
         getLogger().info("NPC, mining, building, and steward systems are at your service.");
@@ -179,58 +93,12 @@ public class Jarvis extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        if (progressionManager != null) {
-            progressionManager.saveAll();
-        }
-        if (taskMonitor != null) {
-            taskMonitor.shutdown();
-        }
-        if (dutyScheduler != null) {
-            dutyScheduler.shutdown();
-        }
-        if (remarks != null) {
-            remarks.shutdown();
-        }
-        if (portalScout != null) {
-            portalScout.shutdown();
-        }
         if (voiceBridge != null) {
             voiceBridge.shutdown();
         }
-        if (jarvisNPC != null) {
-            jarvisNPC.core().shutdown();
-            jarvisNPC.dismissAll();
+        if (core != null) {
+            core.shutdown();
         }
-        if (buildingAssistant != null) {
-            buildingAssistant.shutdown();
-        }
-        if (databaseManager != null) {
-            databaseManager.closeDatabases();
-        }
-        getLogger().info("Jarvis AI Companion v" + version + " disabled.");
-    }
-
-    public void reload() {
-        reloadConfig();
-        if (aiConnector != null) {
-            aiConnector.reloadConfig();
-        }
-        if (experienceMemory != null) {
-            experienceMemory.reload();
-        }
-        if (taskRecoveryHandler != null) {
-            taskRecoveryHandler.reload();
-        }
-        if (requestDecomposer != null) {
-            requestDecomposer.reload();
-        }
-        if (remarks != null) {
-            remarks.reload();
-        }
-        if (portalScout != null) {
-            portalScout.reload();
-        }
-        getLogger().info("Jarvis v" + version + " reloaded!");
     }
 
     // ========== GETTERS ==========
@@ -238,6 +106,11 @@ public class Jarvis extends JavaPlugin {
     /** Everything core needs from the server, in one place. */
     public PaperPlatform getPlatform() {
         return platform;
+    }
+
+    /** Jarvis himself. Null when Citizens is missing. */
+    public JarvisCore core() {
+        return core;
     }
 
     /** Core's handle for a player. Cheap; make one whenever a core call needs it. */
@@ -258,189 +131,20 @@ public class Jarvis extends JavaPlugin {
         return platform.scheduler();
     }
 
-    public AIConnector getAIConnector() {
-        return aiConnector;
+    /** The Citizens registry, for the one place that needs the NPC entity itself. */
+    public CitizensNPCProvider getNpcProvider() {
+        return npcProvider;
     }
 
-    public JarvisNPC getJarvisNPC() {
-        return jarvisNPC;
-    }
-    
-    public DatabaseManager getDatabaseManager() {
-        return databaseManager;
-    }
-    
-    public BuildingAssistant getBuildingAssistant() {
-        return buildingAssistant;
-    }
-    
     public SchematicManager getSchematicManager() {
         return schematicManager;
-    }
-
-    public JarvisActionExecutor getActionExecutor() {
-        return actionExecutor;
-    }
-
-    public ConfirmationManager getConfirmationManager() {
-        return confirmationManager;
-    }
-
-    public PlayerRequestManager getPlayerRequestManager() {
-        return playerRequestManager;
-    }
-
-    public DutyScheduler getDutyScheduler() {
-        return dutyScheduler;
-    }
-
-    public MorningReport getMorningReport() {
-        return morningReport;
-    }
-
-    public ExperienceMemory getExperienceMemory() {
-        return experienceMemory;
-    }
-
-    public TaskRecoveryHandler getTaskRecoveryHandler() {
-        return taskRecoveryHandler;
-    }
-
-    public RequestDecomposer getRequestDecomposer() {
-        return requestDecomposer;
-    }
-
-    public ProgressionManager getProgressionManager() {
-        return progressionManager;
-    }
-
-    public TaskMonitor getTaskMonitor() {
-        return taskMonitor;
     }
 
     public VoiceBridge getVoiceBridge() {
         return voiceBridge;
     }
 
-    public PortalScout getPortalScout() {
-        return portalScout;
-    }
-
-    public Remarks getRemarks() {
-        return remarks;
-    }
-
-    public IntentPipeline getIntentPipeline() {
-        return intentPipeline;
-    }
-
     public String getVersion() {
         return version;
-    }
-
-    // ========== DEBUG ==========
-
-    public void printDebug(CommandSender requester) {
-        getLogger().info("==== Jarvis Debug Info v" + version + " ====");
-        requester.sendMessage("==== Jarvis Debug Info v" + version + " ====");
-
-        if (aiConnector == null) {
-            getLogger().warning("AI connector not initialized");
-            requester.sendMessage("§cAI connector not initialized");
-        } else {
-            String provider = aiConnector.getProvider();
-            String modelName = aiConnector.getModel();
-            boolean hasKey = aiConnector.hasApiKey();
-            boolean autoMode = aiConnector.isAutoMode();
-
-            String info = "AI Provider: " + provider + ", model: " + modelName;
-            if (autoMode) {
-                info += " §7(auto mode)";
-            }
-            getLogger().info(info);
-            requester.sendMessage("§e" + info);
-
-            // Show provider status in auto mode
-            if (autoMode) {
-                requester.sendMessage("§7--- AI Provider Status ---");
-                for (var entry : aiConnector.getProviderStatus().entrySet()) {
-                    String status = entry.getValue();
-                    String color = status.contains("active") ? "§a" :
-                                   status.contains("available") ? "§e" :
-                                   status.contains("cooldown") ? "§c" : "§7";
-                    requester.sendMessage("§7  " + entry.getKey() + ": " + color + status);
-                }
-            }
-        }
-
-        if (jarvisNPC == null) {
-            getLogger().warning("NPC system not initialized");
-            requester.sendMessage("§cNPC system not initialized");
-        } else {
-            String npcInfo = "Active NPCs: " + jarvisNPC.getActiveNpcCount();
-            String taskInfo = "Active tasks: " + jarvisNPC.getActiveTaskCount();
-            getLogger().info(npcInfo);
-            getLogger().info(taskInfo);
-            requester.sendMessage("§a" + npcInfo);
-            requester.sendMessage("§a" + taskInfo);
-        }
-
-        if (databaseManager == null) {
-            getLogger().warning("Database manager not initialized");
-            requester.sendMessage("§cDatabase manager not initialized");
-        } else {
-            getLogger().info("Database connections initialized");
-            requester.sendMessage("§aDatabase connections initialized");
-        }
-
-        if (experienceMemory == null || !experienceMemory.isEnabled()) {
-            requester.sendMessage("§7Experience memory: disabled");
-        } else {
-            int successes = experienceMemory.getSuccessCount();
-            boolean unlocked = experienceMemory.isReducedModeBuildUnlocked();
-            requester.sendMessage("§aExperience memory: §f" + successes + " successful builds"
-                    + (unlocked ? " §2(reduced-mode freeform builds unlocked)"
-                                : " §7(reduced-mode freeform builds still locked)"));
-            var embedder = experienceMemory.getEmbeddingClient();
-            requester.sendMessage("§7  embeddings: " + embedder.getModel() + " — "
-                    + (embedder.isAvailable() ? "§aok" : "§ccooling down: " + embedder.getLastError()));
-        }
-
-        if (taskRecoveryHandler == null || !taskRecoveryHandler.isEnabled()) {
-            requester.sendMessage("§7Self-explain recovery: disabled");
-        } else {
-            requester.sendMessage("§aSelf-explain recovery: §fenabled");
-        }
-
-        if (requestDecomposer == null || !requestDecomposer.isEnabled()) {
-            requester.sendMessage("§7Schematic feature tags: disabled");
-        } else {
-            requester.sendMessage("§aSchematic feature tags: §fenabled §7("
-                    + requestDecomposer.getCachedCount() + " requests decomposed this session)");
-        }
-
-        // Show systems status
-        requester.sendMessage("§7--- Systems Status ---");
-        requester.sendMessage("§aCore NPC & Mining: §2v0.1.0 (Citizens pathfinding + timed block breaking)");
-        requester.sendMessage("§aBuilding System: §2Functional");
-        requester.sendMessage("§aSchematic System: §2Functional");
-
-        requester.sendMessage("§7==========================");
-    }
-
-    // ========== CONTROLLER BELL ==========
-
-    public NamespacedKey getControllerKey() {
-        return new NamespacedKey(this, "jarvis-controller");
-    }
-
-    public ItemStack getControllerBell() {
-        ItemStack bell = new ItemStack(Material.BELL);
-        ItemMeta meta = bell.getItemMeta();
-        meta.setDisplayName("§6Jarvis Controller");
-        meta.setLore(java.util.List.of("§7Right-click to open menu", "§7Works when placed too!"));
-        meta.getPersistentDataContainer().set(getControllerKey(), PersistentDataType.BYTE, (byte) 1);
-        bell.setItemMeta(meta);
-        return bell;
     }
 }

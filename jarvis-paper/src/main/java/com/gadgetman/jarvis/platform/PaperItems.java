@@ -22,6 +22,9 @@ public final class PaperItems {
     /** Where an item's core marker is kept on Paper. */
     public static final NamespacedKey MARKER = new NamespacedKey("jarvis", "marker");
 
+    /** The mark the controller bell carried before markers existed; bells already in pockets still have it. */
+    private static final NamespacedKey LEGACY_CONTROLLER = new NamespacedKey("jarvis", "jarvis-controller");
+
     /** The material for an id such as {@code minecraft:diamond_sword}. */
     public static Material material(String id) {
         Material m = Material.matchMaterial(id);
@@ -60,6 +63,9 @@ public final class PaperItems {
             if (meta.hasLore()) lore = meta.getLore();
             unbreakable = meta.isUnbreakable();
             marker = meta.getPersistentDataContainer().get(MARKER, PersistentDataType.STRING);
+            if (marker == null && meta.getPersistentDataContainer().has(LEGACY_CONTROLLER, PersistentDataType.BYTE)) {
+                marker = com.gadgetman.jarvis.ui.ControllerBell.MARKER;
+            }
         }
         return new Item(id(stack.getType()), stack.getAmount(), enchants, name, lore, marker, unbreakable);
     }

@@ -34,6 +34,11 @@ public interface Platform {
 
     BlockTypes blockTypes();
 
+    Ui ui();
+
+    /** What is running, for the version screen: "Purpur 1.21.4 (API 1.21.4-R0.1-SNAPSHOT)". */
+    String serverVersion();
+
     Optional<World> world(WorldId id);
 
     /** Loaded worlds. */

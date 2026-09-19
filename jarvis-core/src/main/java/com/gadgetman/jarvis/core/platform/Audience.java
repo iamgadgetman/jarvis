@@ -1,5 +1,7 @@
 package com.gadgetman.jarvis.core.platform;
 
+import com.gadgetman.jarvis.core.text.RichLine;
+
 /**
  * Someone core can talk to: a player or the console.
  *
@@ -8,6 +10,11 @@ package com.gadgetman.jarvis.core.platform;
 public interface Audience {
 
     void message(String text);
+
+    /** A line with clickable parts. Falls back to the plain text. */
+    default void rich(RichLine line) {
+        message(line.plain());
+    }
 
     default void actionBar(String text) {
         message(text);

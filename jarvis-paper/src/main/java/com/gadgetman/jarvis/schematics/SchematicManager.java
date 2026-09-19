@@ -2,7 +2,6 @@ package com.gadgetman.jarvis.schematics;
 
 import com.gadgetman.jarvis.Jarvis;
 import com.gadgetman.jarvis.core.platform.Owner;
-import com.gadgetman.jarvis.npc.ButlerService;
 import com.gadgetman.jarvis.schematics.SchematicLibrary.SchematicInfo;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
@@ -15,18 +14,16 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.Path;
-import java.util.Collection;
 
 /**
- * The Paper face of the schematic library.
+ * WorldEdit's contribution to the schematic library.
  *
  * <p>Scanning, matching, the native .schem paste and the litematic
- * conversion live in core's {@link SchematicLibrary}. What stays here is
+ * conversion live in core's {@link SchematicLibrary}. What is here is
  * WorldEdit: the JSON paste it accelerates, saving a clipboard, and rotated
  * pastes, all reached by reflection so WorldEdit stays an optional plugin.
  */
-public class SchematicManager {
+public class SchematicManager implements SchematicExtras {
 
     private final Jarvis plugin;
     private final SchematicLibrary library;
@@ -35,20 +32,11 @@ public class SchematicManager {
     private boolean worldEditEnabled = false;
     private boolean pasteAir = false;
 
-    public SchematicManager(Jarvis plugin, ButlerService butlers) {
+    public SchematicManager(Jarvis plugin, SchematicLibrary library) {
         this.plugin = plugin;
+        this.library = library;
         this.pasteAir = plugin.getConfig().getBoolean("schematics.paste-air", false);
-        this.library = new SchematicLibrary(plugin.getPlatform(), butlers);
         initializeWorldEdit();
-    }
-
-    /** The platform-free library behind this facade. */
-    public SchematicLibrary library() {
-        return library;
-    }
-
-    private Owner o(Player player) {
-        return plugin.owner(player);
     }
 
     /** Initialize WorldEdit integration. */
@@ -68,23 +56,6 @@ public class SchematicManager {
             plugin.getLogger().warning("WorldEdit not found - schematic paste will use fallback method");
         }
     }
-
-    // ==================== DELEGATED TO CORE ====================
-
-    public void scanFolder() { library.scanFolder(); }
-    public void listSchematics(Player player) { library.listSchematics(o(player)); }
-    public void pasteSchematic(Player player, String name) { library.pasteSchematic(o(player), name); }
-    public String bestMatchName(String query) { return library.bestMatchName(query); }
-    public int bestMatchScore(String query) { return library.bestMatchScore(query); }
-    public String bestMatchName(String query, RequestFeatures features) { return library.bestMatchName(query, features); }
-    public int bestMatchScore(String query, RequestFeatures features) { return library.bestMatchScore(query, features); }
-    public Path getSchematicFolder() { return library.getSchematicFolder(); }
-    public Collection<SchematicInfo> getSchematics() { return library.getSchematics(); }
-    public SchematicInfo getSchematic(String name) { return library.getSchematic(name); }
-    public int getSchematicCount() { return library.getSchematicCount(); }
-    public void convertLitematic(Player player, String name) { library.convertLitematic(o(player), name); }
-    public void convertAllLitematics(Player player) { library.convertAllLitematics(o(player)); }
-    public void showLitematicFiles(Player player) { library.showLitematicFiles(o(player)); }
 
     public boolean isWorldEditEnabled() {
         return worldEditEnabled;
@@ -213,8 +184,11 @@ public class SchematicManager {
     }
 
     /** Save player's WorldEdit selection as a schematic. */
+    @Override
     @SuppressWarnings({"unchecked", "rawtypes"})
-    public void saveSchematic(Player player, String name) {
+    public void saveClipboard(Owner owner, String name) {
+        Player player = plugin.getPlatform().player(owner).orElse(null);
+        if (player == null) return;
         if (!worldEditEnabled) {
             player.sendMessage(ChatColor.RED + "WorldEdit is required for saving schematics.");
             return;
@@ -307,7 +281,10 @@ public class SchematicManager {
      * Rotate clipboard before pasting.
      * Note: Rotation requires WorldEdit.
      */
-    public void rotateAndPaste(Player player, String name, int degrees) {
+    @Override
+    public void rotateAndPaste(Owner owner, String name, int degrees) {
+        Player player = plugin.getPlatform().player(owner).orElse(null);
+        if (player == null) return;
         if (!worldEditEnabled) {
             player.sendMessage(ChatColor.RED + "Rotation requires WorldEdit.");
             player.sendMessage(ChatColor.GRAY + "Use /jarvis schematic paste " + name + " for normal paste.");

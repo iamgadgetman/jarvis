@@ -47,4 +47,13 @@ public interface Config {
 
     /** A view rooted at the path. Never null. */
     Config section(String path);
+
+    /** Change a value in memory. {@link #save} writes it out. */
+    void set(String path, Object value);
+
+    /** Write the document back to where it came from, when it came from somewhere. */
+    void save();
+
+    /** Re-read the document from where it came from, dropping unsaved changes. */
+    void reload();
 }

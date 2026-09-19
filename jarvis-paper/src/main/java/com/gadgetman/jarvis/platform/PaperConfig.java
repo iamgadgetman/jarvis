@@ -57,4 +57,19 @@ public final class PaperConfig implements Config {
     public Config section(String path) {
         return new PaperConfig(plugin, full(path) + ".");
     }
+
+    @Override
+    public void set(String path, Object value) {
+        plugin.getConfig().set(full(path), value);
+    }
+
+    @Override
+    public void save() {
+        plugin.saveConfig();
+    }
+
+    @Override
+    public void reload() {
+        plugin.reloadConfig();
+    }
 }

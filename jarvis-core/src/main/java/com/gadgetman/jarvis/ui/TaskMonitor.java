@@ -1,29 +1,28 @@
 package com.gadgetman.jarvis.ui;
 
-import com.gadgetman.jarvis.Jarvis;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.boss.BarColor;
-import org.bukkit.boss.BarStyle;
-import org.bukkit.boss.BossBar;
-import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
+import com.gadgetman.jarvis.JarvisCore;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.core.platform.Platform;
+import com.gadgetman.jarvis.core.platform.Task;
+import com.gadgetman.jarvis.core.text.Colors;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * TaskMonitor — what Jarvis is doing, and what he'll do next.
+ * What Jarvis is doing, and what he'll do next.
  *
  * <p>Two features that want the same heartbeat:
  *
  * <ul>
- *   <li>A boss bar showing the current task, so a long job reports itself
+ *   <li>A progress bar showing the current task, so a long job reports itself
  *       without filling the chat box. The bar's fill is how full his pockets
  *       are, which is the number that actually matters mid-mine — he turns for
  *       home at {@code mining.auto-return-threshold}.</li>
@@ -40,31 +39,30 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class TaskMonitor {
 
-    private final Jarvis plugin;
-    private final Map<UUID, BossBar> bars = new ConcurrentHashMap<>();
+    private final JarvisCore core;
+    private final Platform platform;
     private final Map<UUID, Deque<String>> queues = new ConcurrentHashMap<>();
     private final Map<UUID, Long> idleSince = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> showing = new ConcurrentHashMap<>();
 
     private final boolean barEnabled;
     private final boolean queueEnabled;
-    private BukkitRunnable heartbeat;
+    private Task heartbeat;
 
-    public TaskMonitor(Jarvis plugin) {
-        this.plugin       = plugin;
-        this.barEnabled   = plugin.getConfig().getBoolean("ui.task-bar", true);
-        this.queueEnabled = plugin.getConfig().getBoolean("ui.task-queue", true);
+    public TaskMonitor(JarvisCore core) {
+        this.core = core;
+        this.platform = core.platform();
+        this.barEnabled   = platform.config().getBoolean("ui.task-bar", true);
+        this.queueEnabled = platform.config().getBoolean("ui.task-queue", true);
     }
 
     public void start() {
         if (!barEnabled && !queueEnabled) return;
-        heartbeat = new BukkitRunnable() {
-            @Override public void run() {
-                for (Player player : Bukkit.getOnlinePlayers()) {
-                    tick(player);
-                }
+        heartbeat = platform.scheduler().every(20L, 10L, self -> {   // twice a second
+            for (Owner player : platform.players().online()) {
+                tick(player);
             }
-        };
-        heartbeat.runTaskTimer(plugin, 20L, 10L);   // twice a second
+        });
     }
 
     public void shutdown() {
@@ -72,59 +70,53 @@ public class TaskMonitor {
             heartbeat.cancel();
             heartbeat = null;
         }
-        bars.values().forEach(BossBar::removeAll);
-        bars.clear();
+        for (UUID id : showing.keySet()) {
+            platform.players().byId(id).ifPresent(platform.ui()::hideProgressBar);
+        }
+        showing.clear();
         queues.clear();
     }
 
     // ==================== HEARTBEAT ====================
 
-    private void tick(Player player) {
-        UUID id = player.getUniqueId();
-        var npc = plugin.getJarvisNPC();
-        String task = npc.getNPCForPlayer(id) == null ? null : npc.describeCurrentTask(id);
+    private void tick(Owner player) {
+        UUID id = player.id();
+        var npc = core.butlers();
+        String task = npc.exists(player) ? npc.describeCurrentTask(id) : null;
 
         if (barEnabled) updateBar(player, task);
         if (queueEnabled) advanceQueue(player, task);
     }
 
-    private void updateBar(Player player, String task) {
-        UUID id = player.getUniqueId();
+    private void updateBar(Owner player, String task) {
+        UUID id = player.id();
 
         if (task == null) {
-            BossBar bar = bars.remove(id);
-            if (bar != null) bar.removeAll();
+            if (showing.remove(id) != null) platform.ui().hideProgressBar(player);
             return;
         }
 
         int queued = queueSize(id);
-        String title = ChatColor.AQUA + task
-                + (queued > 0 ? ChatColor.GRAY + "  (+" + queued + " queued)" : "");
+        String title = Colors.AQUA + task
+                + (queued > 0 ? Colors.GRAY + "  (+" + queued + " queued)" : "");
 
         double fill = lootFullness(player);
         if (fill >= 0) {
-            title += ChatColor.DARK_GRAY + "  ·  " + ChatColor.WHITE
-                    + Math.round(fill * 100) + "% full";
+            title += Colors.DARK_GRAY + "  ·  " + Colors.WHITE + Math.round(fill * 100) + "% full";
         }
 
-        final String barTitle = title;
-        BossBar bar = bars.computeIfAbsent(id, k -> {
-            BossBar b = Bukkit.createBossBar(barTitle, BarColor.BLUE, BarStyle.SEGMENTED_10);
-            b.addPlayer(player);
-            return b;
-        });
-        bar.setTitle(barTitle);
-        bar.setProgress(fill < 0 ? 1.0 : Math.max(0, Math.min(1, fill)));
+        showing.put(id, Boolean.TRUE);
         // Turns amber as his pockets fill, so "he's about to head back" is
         // something you see rather than something you get told.
-        bar.setColor(fill >= 0.9 ? BarColor.YELLOW : BarColor.BLUE);
+        platform.ui().progressBar(player, title,
+                fill < 0 ? 1.0 : Math.max(0, Math.min(1, fill)), fill >= 0.9);
     }
 
     /** @return 0..1 how full Jarvis's inventory is, or -1 if unknown */
-    private double lootFullness(Player player) {
+    private double lootFullness(Owner player) {
         try {
-            if (!plugin.getJarvisNPC().exists(player)) return -1;
-            int used = plugin.getJarvisNPC().lootSlotsUsed(player);
+            if (!core.butlers().exists(player)) return -1;
+            int used = core.butlers().lootSlotsUsed(player);
             return used / 27.0;
         } catch (Exception e) {
             return -1;
@@ -146,15 +138,16 @@ public class TaskMonitor {
         return new ArrayList<>(queueFor(id));
     }
 
-    public void enqueue(Player player, String command) {
-        queueFor(player.getUniqueId()).addLast(command);
-        player.sendMessage(ChatColor.AQUA + "Jarvis: " + ChatColor.WHITE
-                + "Noted — that's " + queueSize(player.getUniqueId()) + " in hand, sir.");
+    /** Line up "/jarvis {@code order}" for when he is free. */
+    public void enqueue(Owner player, String order) {
+        queueFor(player.id()).addLast(order);
+        player.message(Colors.AQUA + "Jarvis: " + Colors.WHITE
+                + "Noted — that's " + queueSize(player.id()) + " in hand, sir.");
     }
 
-    public void clearQueue(Player player) {
-        queueFor(player.getUniqueId()).clear();
-        player.sendMessage(ChatColor.GRAY + "Jarvis: Consider the list torn up, sir.");
+    public void clearQueue(Owner player) {
+        queueFor(player.id()).clear();
+        player.message(Colors.GRAY + "Jarvis: Consider the list torn up, sir.");
     }
 
     /**
@@ -165,8 +158,8 @@ public class TaskMonitor {
      * they re-target — one tick of "no task" is not the same as being done,
      * and without this the queue would eat its whole list in a second.
      */
-    private void advanceQueue(Player player, String task) {
-        UUID id = player.getUniqueId();
+    private void advanceQueue(Owner player, String task) {
+        UUID id = player.id();
         Deque<String> queue = queues.get(id);
         if (queue == null || queue.isEmpty()) {
             idleSince.remove(id);
@@ -177,7 +170,7 @@ public class TaskMonitor {
             idleSince.remove(id);
             return;
         }
-        if (plugin.getJarvisNPC().getNPCForPlayer(id) == null) return;   // not summoned; hold the list
+        if (!core.butlers().exists(player)) return;   // not summoned; hold the list
 
         long now = System.currentTimeMillis();
         Long since = idleSince.putIfAbsent(id, now);
@@ -188,7 +181,8 @@ public class TaskMonitor {
         String next = queue.pollFirst();
         if (next == null) return;
 
-        player.sendMessage(ChatColor.AQUA + "Jarvis: " + ChatColor.WHITE + "Next: " + next);
-        player.performCommand(next);
+        player.message(Colors.AQUA + "Jarvis: " + Colors.WHITE + "Next: /jarvis " + next);
+        core.commands().jarvis(player, Optional.of(player),
+                Arrays.asList(next.trim().split("\\s+")), false);
     }
 }

@@ -9,6 +9,7 @@ import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Players;
 import com.gadgetman.jarvis.core.platform.Scheduler;
+import com.gadgetman.jarvis.core.platform.Ui;
 import com.gadgetman.jarvis.core.platform.World;
 import com.gadgetman.jarvis.core.world.BlockState;
 import com.gadgetman.jarvis.core.world.WorldId;
@@ -46,7 +47,14 @@ public final class PaperPlatform implements Platform {
             org.bukkit.Material m = org.bukkit.Material.matchMaterial(id);
             return m == null ? 64 : m.getMaxStackSize();
         }
+
+        @Override
+        public Optional<String> resolve(String name) {
+            org.bukkit.Material m = name == null ? null : org.bukkit.Material.matchMaterial(name);
+            return m == null || !m.isItem() ? Optional.empty() : Optional.of(m.getKey().toString());
+        }
     };
+    private final PaperUi ui = new PaperUi();
 
     private final BlockTypes blockTypes = new BlockTypes() {
         @Override
@@ -80,9 +88,10 @@ public final class PaperPlatform implements Platform {
         this.events = new PaperEvents(log);
     }
 
-    /** Register the event bridge with Bukkit. Call once from onEnable. */
+    /** Register the event bridge and the menu listener with Bukkit. Call once from onEnable. */
     public void registerEvents() {
         Bukkit.getPluginManager().registerEvents(events, plugin);
+        Bukkit.getPluginManager().registerEvents(ui, plugin);
     }
 
     @Override public String name() { return "paper"; }
@@ -94,6 +103,12 @@ public final class PaperPlatform implements Platform {
     @Override public Events events() { return events; }
     @Override public Items items() { return items; }
     @Override public BlockTypes blockTypes() { return blockTypes; }
+    @Override public Ui ui() { return ui; }
+
+    @Override
+    public String serverVersion() {
+        return Bukkit.getName() + " " + Bukkit.getMinecraftVersion() + " (API " + Bukkit.getBukkitVersion() + ")";
+    }
 
     /** The event bridge, for the adapter to tell it whose butler an entity is. */
     public PaperEvents paperEvents() { return events; }

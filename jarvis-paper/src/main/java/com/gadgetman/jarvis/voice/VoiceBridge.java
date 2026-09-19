@@ -279,8 +279,7 @@ public class VoiceBridge implements VoicechatPlugin {
     }
 
     private void handleUtterance(Player player, short[] pcm) {
-        if (requireSummoned
-                && plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId()) == null) {
+        if (requireSummoned && !plugin.core().butlers().exists(plugin.owner(player))) {
             return;
         }
 
@@ -315,8 +314,8 @@ public class VoiceBridge implements VoicechatPlugin {
                         }
                         IntentPipeline.Responder sink = responder != null
                                 ? responder : IntentPipeline.CHAT_RESPONDER;
-                        plugin.getIntentPipeline().submit(
-                                player, order.toLowerCase(), IntentPipeline.Source.VOICE, sink);
+                        plugin.core().intents().submit(
+                                plugin.owner(player), order.toLowerCase(), IntentPipeline.Source.VOICE, sink);
                     }
                 }.runTask(plugin);
             }
