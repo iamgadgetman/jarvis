@@ -857,7 +857,8 @@ repositories are not reachable from the development sandbox) and attaches
   or respawning, and the use, attack and jump actions. The spawn looks the
   name up at Mojang and dresses him in that account's skin, as Citizens does
   for the Paper butler, falling back to an offline profile and a default
-  skin when the lookup fails. Four mixins install them: `PlayerListMixin` (spawn position
+  skin when the lookup fails. Confirmed in a world: he arrives in his
+  uniform, so the adapter can spawn its butler the same way. Four mixins install them: `PlayerListMixin` (spawn position
   and the fake packet listener), `ServerPlayerMixin` (an action pack per
   player, ticked for fakes only), `ConnectionAccessor` (a channel so the
   connection counts as open) and `CommandsMixin` (registers `/jspike`).
