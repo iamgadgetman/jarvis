@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "jarvis-spike",
+  "version": "${version}",
+  "name": "Jarvis Fabric Spike",
+  "description": "A fake player walked by Jarvis's pathfinder: the proving ground for a Fabric butler.",
+  "authors": ["Jarvis Minecraft Plugin Contributors"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.gadgetman.jarvis.fabric.spike.SpikeMod"]
+  },
+  "mixins": ["jarvis-spike.mixins.json"],
+  "depends": {
+    "minecraft": ">=26.3",
+    "fabricloader": ">=0.19.5",
+    "java": ">=25"
+  }
+}

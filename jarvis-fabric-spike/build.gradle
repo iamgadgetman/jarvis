@@ -1,0 +1,69 @@
+// The Fabric spike from docs/dev/platform-interface.md: a fake player driven
+// by jarvis-nav, to prove the pieces a Fabric adapter would need. It is a
+// Gradle project on purpose (Fabric's toolchain is Loom, a Gradle plugin) and
+// is not part of the Maven reactor. It compiles jarvis-nav and the four core
+// value types it needs straight from their sources, so nothing has to be
+// installed to a local Maven repository first.
+plugins {
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+base {
+    archivesName = 'jarvis-fabric-spike'
+}
+
+version = project.mod_version
+group = 'com.gadgetman'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    // No Fabric API: the spike registers its command and hooks with mixins,
+    // the way Carpet does, so the only runtime dependency is the loader.
+}
+
+// The core value types the pathfinder speaks: copied into the build tree so a
+// source-set include filter is not needed on the whole of jarvis-core.
+def coreTypes = tasks.register('coreTypes', Sync) {
+    from('../jarvis-core/src/main/java') {
+        include 'com/gadgetman/jarvis/core/world/BlockPos.java'
+        include 'com/gadgetman/jarvis/core/world/Vec3.java'
+        include 'com/gadgetman/jarvis/core/world/Facing.java'
+        include 'com/gadgetman/jarvis/core/world/Look.java'
+    }
+    into layout.buildDirectory.dir('generated/core-types')
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir coreTypes
+            srcDir '../jarvis-nav/src/main/java'
+        }
+    }
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = 'UTF-8'
+    it.options.release = 25
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+    from('THIRD-PARTY-LICENSES.md')
+}
