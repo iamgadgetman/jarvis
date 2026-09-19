@@ -1,6 +1,9 @@
 package com.gadgetman.jarvis.schematics;
 
-import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.DatabaseManager;
+import com.gadgetman.jarvis.ai.AIConnector;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Log;
 import org.json.JSONObject;
 
 import java.sql.Connection;
@@ -37,18 +40,24 @@ public class RequestDecomposer {
     /** Beyond this the text is not a build request, it is an essay. */
     private static final int MAX_KEY_LENGTH = 255;
 
-    private final Jarvis plugin;
+    private final Config config;
+    private final Log log;
+    private final AIConnector ai;
+    private final DatabaseManager database;
     private final Map<String, RequestFeatures> cache = new ConcurrentHashMap<>();
 
     private boolean enabled = true;
 
-    public RequestDecomposer(Jarvis plugin) {
-        this.plugin = plugin;
+    public RequestDecomposer(Config config, Log log, AIConnector ai, DatabaseManager database) {
+        this.config = config;
+        this.log = log;
+        this.ai = ai;
+        this.database = database;
         loadConfig();
     }
 
     private void loadConfig() {
-        this.enabled = plugin.getConfig().getBoolean("schematics.feature-tags.enabled", true);
+        this.enabled = config.getBoolean("schematics.feature-tags.enabled", true);
     }
 
     public void reload() {
@@ -91,17 +100,17 @@ public class RequestDecomposer {
 
         RequestFeatures features;
         try {
-            features = parseFeatures(plugin.getAIConnector().decomposeBuildRequest(description));
+            features = parseFeatures(ai.decomposeBuildRequest(description));
         } catch (Exception e) {
             // Not worth caching a failure: the box may be back by the next ask.
-            plugin.getLogger().fine("Request decomposition failed: " + e.getMessage());
+            log.fine("Request decomposition failed: " + e.getMessage());
             return RequestFeatures.none();
         }
         if (features.isEmpty()) return RequestFeatures.none();
 
         cache.put(key, features);
         saveToDb(key, features);
-        plugin.getLogger().fine("Decomposed \"" + description + "\" to " + features);
+        log.fine("Decomposed \"" + description + "\" to " + features);
         return features;
     }
 
@@ -137,7 +146,7 @@ public class RequestDecomposer {
     // ==================== CACHE ====================
 
     private RequestFeatures loadFromDb(String key) {
-        try (Connection c = plugin.getDatabaseManager().getConnection();
+        try (Connection c = database.getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "SELECT tags FROM request_features WHERE request_key = ?")) {
             ps.setString(1, key);
@@ -150,13 +159,13 @@ public class RequestDecomposer {
                 return f.isEmpty() ? null : f;
             }
         } catch (SQLException e) {
-            plugin.getLogger().fine("Feature cache read failed: " + e.getMessage());
+            log.fine("Feature cache read failed: " + e.getMessage());
             return null;
         }
     }
 
     private void saveToDb(String key, RequestFeatures features) {
-        try (Connection c = plugin.getDatabaseManager().getConnection();
+        try (Connection c = database.getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "INSERT OR REPLACE INTO request_features "
                      + "(request_key, tags, created_at) VALUES (?, ?, ?)")) {
@@ -165,7 +174,7 @@ public class RequestDecomposer {
             ps.setLong(3, System.currentTimeMillis());
             ps.executeUpdate();
         } catch (SQLException e) {
-            plugin.getLogger().fine("Feature cache write failed: " + e.getMessage());
+            log.fine("Feature cache write failed: " + e.getMessage());
         }
     }
 }

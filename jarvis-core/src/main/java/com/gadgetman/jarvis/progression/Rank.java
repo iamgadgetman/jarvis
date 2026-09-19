@@ -1,7 +1,6 @@
 package com.gadgetman.jarvis.progression;
 
-import org.bukkit.Material;
-import org.bukkit.enchantments.Enchantment;
+import com.gadgetman.jarvis.core.world.Ids;
 
 import java.util.List;
 import java.util.Map;
@@ -18,51 +17,54 @@ import java.util.Map;
  * <p>Kit is never worse than iron: he starts there. Nothing in the ladder can
  * take equipment away, and every tool he is issued is unbreakable — a butler
  * who needs his pickaxe replaced is a chore, not a servant.
+ *
+ * <p>Tools and enchantments are namespaced ids (see {@link Ids}); the adapter
+ * that issues the kit resolves them to its own item and enchantment types.
  */
 public enum Rank {
 
-    HIRED("Hired", 0, Material.IRON_PICKAXE, Map.of()),
+    HIRED("Hired", 0, Ids.IRON_PICKAXE, Map.of()),
 
-    ACQUAINTED("Acquainted", 25, Material.IRON_PICKAXE,
-            Map.of(Enchantment.EFFICIENCY, 1)),
+    ACQUAINTED("Acquainted", 25, Ids.IRON_PICKAXE,
+            Map.of(Ids.ENCHANT_EFFICIENCY, 1)),
 
-    RELIABLE("Reliable", 75, Material.DIAMOND_PICKAXE,
-            Map.of(Enchantment.EFFICIENCY, 1)),
+    RELIABLE("Reliable", 75, Ids.DIAMOND_PICKAXE,
+            Map.of(Ids.ENCHANT_EFFICIENCY, 1)),
 
-    PRACTISED("Practised", 150, Material.DIAMOND_PICKAXE,
-            Map.of(Enchantment.EFFICIENCY, 3, Enchantment.SHARPNESS, 1)),
+    PRACTISED("Practised", 150, Ids.DIAMOND_PICKAXE,
+            Map.of(Ids.ENCHANT_EFFICIENCY, 3, Ids.ENCHANT_SHARPNESS, 1)),
 
-    TRUSTED("Trusted", 300, Material.DIAMOND_PICKAXE,
-            Map.of(Enchantment.EFFICIENCY, 3, Enchantment.SHARPNESS, 1,
-                   Enchantment.FORTUNE, 1, Enchantment.LOOTING, 1)),
+    TRUSTED("Trusted", 300, Ids.DIAMOND_PICKAXE,
+            Map.of(Ids.ENCHANT_EFFICIENCY, 3, Ids.ENCHANT_SHARPNESS, 1,
+                   Ids.ENCHANT_FORTUNE, 1, Ids.ENCHANT_LOOTING, 1)),
 
-    SEASONED("Seasoned", 500, Material.DIAMOND_PICKAXE,
-            Map.of(Enchantment.EFFICIENCY, 5, Enchantment.SHARPNESS, 3,
-                   Enchantment.FORTUNE, 1, Enchantment.LOOTING, 1)),
+    SEASONED("Seasoned", 500, Ids.DIAMOND_PICKAXE,
+            Map.of(Ids.ENCHANT_EFFICIENCY, 5, Ids.ENCHANT_SHARPNESS, 3,
+                   Ids.ENCHANT_FORTUNE, 1, Ids.ENCHANT_LOOTING, 1)),
 
-    VALUED("Valued", 800, Material.DIAMOND_PICKAXE,
-            Map.of(Enchantment.EFFICIENCY, 5, Enchantment.SHARPNESS, 3,
-                   Enchantment.FORTUNE, 2, Enchantment.LOOTING, 2)),
+    VALUED("Valued", 800, Ids.DIAMOND_PICKAXE,
+            Map.of(Ids.ENCHANT_EFFICIENCY, 5, Ids.ENCHANT_SHARPNESS, 3,
+                   Ids.ENCHANT_FORTUNE, 2, Ids.ENCHANT_LOOTING, 2)),
 
     /** Where combat stops being one escalating melee stat and gains a second shape. */
-    INDISPENSABLE("Indispensable", 1500, Material.NETHERITE_PICKAXE,
-            Map.of(Enchantment.EFFICIENCY, 5, Enchantment.SHARPNESS, 4,
-                   Enchantment.FORTUNE, 3, Enchantment.LOOTING, 3,
-                   Enchantment.POWER, 3),
+    INDISPENSABLE("Indispensable", 1500, Ids.NETHERITE_PICKAXE,
+            Map.of(Ids.ENCHANT_EFFICIENCY, 5, Ids.ENCHANT_SHARPNESS, 4,
+                   Ids.ENCHANT_FORTUNE, 3, Ids.ENCHANT_LOOTING, 3,
+                   Ids.ENCHANT_POWER, 3),
             java.util.EnumSet.of(Capability.ARCHERY)),
 
     /** The first rank that buys a capability rather than a better metal. */
-    PEERLESS("Peerless", 2500, Material.NETHERITE_PICKAXE,
-            Map.of(Enchantment.EFFICIENCY, 5, Enchantment.SHARPNESS, 5,
-                   Enchantment.FORTUNE, 3, Enchantment.LOOTING, 3,
-                   Enchantment.POWER, 4, Enchantment.PUNCH, 1),
+    PEERLESS("Peerless", 2500, Ids.NETHERITE_PICKAXE,
+            Map.of(Ids.ENCHANT_EFFICIENCY, 5, Ids.ENCHANT_SHARPNESS, 5,
+                   Ids.ENCHANT_FORTUNE, 3, Ids.ENCHANT_LOOTING, 3,
+                   Ids.ENCHANT_POWER, 4, Ids.ENCHANT_PUNCH, 1),
             java.util.EnumSet.of(Capability.ARCHERY, Capability.WIDE_BORE)),
 
-    WITHOUT_EQUAL("Without Equal", 4000, Material.NETHERITE_PICKAXE,
-            Map.of(Enchantment.EFFICIENCY, 5, Enchantment.SHARPNESS, 5,
-                   Enchantment.FORTUNE, 3, Enchantment.LOOTING, 3,
-                   Enchantment.FIRE_ASPECT, 2,
-                   Enchantment.POWER, 5, Enchantment.PUNCH, 2, Enchantment.FLAME, 1),
+    WITHOUT_EQUAL("Without Equal", 4000, Ids.NETHERITE_PICKAXE,
+            Map.of(Ids.ENCHANT_EFFICIENCY, 5, Ids.ENCHANT_SHARPNESS, 5,
+                   Ids.ENCHANT_FORTUNE, 3, Ids.ENCHANT_LOOTING, 3,
+                   Ids.ENCHANT_FIRE_ASPECT, 2,
+                   Ids.ENCHANT_POWER, 5, Ids.ENCHANT_PUNCH, 2, Ids.ENCHANT_FLAME, 1),
             java.util.EnumSet.of(Capability.ARCHERY, Capability.WIDE_BORE, Capability.TRIDENT));
 
     /**
@@ -82,17 +84,20 @@ public enum Rank {
         ARCHERY
     }
 
+    /** The metal a rank's tools are made of. */
+    public enum Tier { IRON, DIAMOND, NETHERITE }
+
     private final String title;
     private final int service;
-    private final Material pickaxe;
-    private final Map<Enchantment, Integer> enchantments;
+    private final String pickaxe;
+    private final Map<String, Integer> enchantments;
     private final java.util.Set<Capability> capabilities;
 
-    Rank(String title, int service, Material pickaxe, Map<Enchantment, Integer> enchantments) {
+    Rank(String title, int service, String pickaxe, Map<String, Integer> enchantments) {
         this(title, service, pickaxe, enchantments, java.util.EnumSet.noneOf(Capability.class));
     }
 
-    Rank(String title, int service, Material pickaxe, Map<Enchantment, Integer> enchantments,
+    Rank(String title, int service, String pickaxe, Map<String, Integer> enchantments,
          java.util.Set<Capability> capabilities) {
         this.title        = title;
         this.service      = service;
@@ -105,26 +110,30 @@ public enum Rank {
 
     public String title()                       { return title; }
     public int serviceRequired()                { return service; }
-    public Map<Enchantment, Integer> enchants() { return enchantments; }
+    /** Enchantment id to level, for every tool kind; the adapter keeps the ones that apply. */
+    public Map<String, Integer> enchants()      { return enchantments; }
 
     /** Ordinal position, 1-based, for display. */
     public int number() { return ordinal() + 1; }
 
-    /** The material family for this rank, mapped onto a given tool type. */
-    public Material toolFor(ToolKind kind) {
-        String tier = switch (pickaxe) {
-            case NETHERITE_PICKAXE -> "NETHERITE";
-            case DIAMOND_PICKAXE   -> "DIAMOND";
-            default                -> "IRON";
-        };
+    /** The metal this rank issues. */
+    public Tier tier() {
+        if (Ids.NETHERITE_PICKAXE.equals(pickaxe)) return Tier.NETHERITE;
+        if (Ids.DIAMOND_PICKAXE.equals(pickaxe)) return Tier.DIAMOND;
+        return Tier.IRON;
+    }
+
+    /** The item id for this rank's version of a tool kind. */
+    public String toolFor(ToolKind kind) {
+        String metal = tier().name().toLowerCase();
         return switch (kind) {
-            case PICKAXE -> Material.valueOf(tier + "_PICKAXE");
-            case SWORD   -> Material.valueOf(tier + "_SWORD");
-            case TRIDENT -> Material.TRIDENT;
-            case BOW     -> Material.BOW;               // has no tiers either
-            case AXE     -> Material.valueOf(tier + "_AXE");
-            case HOE     -> Material.valueOf(tier + "_HOE");
-            case ROD     -> Material.FISHING_ROD;      // has no tiers
+            case PICKAXE -> Ids.NAMESPACE + metal + "_pickaxe";
+            case SWORD   -> Ids.NAMESPACE + metal + "_sword";
+            case TRIDENT -> Ids.TRIDENT;
+            case BOW     -> Ids.BOW;                    // has no tiers either
+            case AXE     -> Ids.NAMESPACE + metal + "_axe";
+            case HOE     -> Ids.NAMESPACE + metal + "_hoe";
+            case ROD     -> Ids.FISHING_ROD;            // has no tiers
         };
     }
 
@@ -176,11 +185,11 @@ public enum Rank {
         if (prev == null) return "an iron kit, unbreakable";
 
         StringBuilder sb = new StringBuilder();
-        if (prev.pickaxe != pickaxe) {
-            sb.append(switch (pickaxe) {
-                case NETHERITE_PICKAXE -> "a netherite kit";
-                case DIAMOND_PICKAXE   -> "a diamond kit";
-                default                -> "an iron kit";
+        if (!prev.pickaxe.equals(pickaxe)) {
+            sb.append(switch (tier()) {
+                case NETHERITE -> "a netherite kit";
+                case DIAMOND   -> "a diamond kit";
+                case IRON      -> "an iron kit";
             });
         }
         for (var e : enchantments.entrySet()) {
@@ -202,9 +211,9 @@ public enum Rank {
         return sb.length() == 0 ? "nothing he'll admit to" : sb.toString();
     }
 
-    public static String pretty(Enchantment enchantment) {
-        String key = enchantment.getKey().getKey().replace('_', ' ');
-        return Character.toUpperCase(key.charAt(0)) + key.substring(1);
+    /** {@code minecraft:fire_aspect} reads as {@code Fire aspect}. */
+    public static String pretty(String enchantId) {
+        return Ids.pretty(enchantId);
     }
 
     public static String roman(int n) {

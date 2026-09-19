@@ -1,7 +1,5 @@
 package com.gadgetman.jarvis.memory;
 
-import org.bukkit.Location;
-import org.bukkit.World;
 import org.json.JSONObject;
 
 /**
@@ -12,54 +10,32 @@ import org.json.JSONObject;
  * retrieves the wrong examples. Retrieval matches request similarity first,
  * then re-ranks on this.
  *
- * Every getter here touches the world, so {@link #capture} MUST run on the main
- * thread. Callers capture before going async and carry the JSON across.
+ * <p>Reading the world is the adapter's job (on Paper, {@code PaperSituation}
+ * does it on the main thread); this class only builds, compares and describes
+ * the JSON, so it can run anywhere.
  */
 public final class SituationSnapshot {
 
     private SituationSnapshot() {}
 
     /**
-     * Capture the situation as a compact JSON string. Main thread only.
+     * Build a snapshot from facts the adapter has already read.
      *
-     * @return JSON, or {@code null} if the location is unusable
+     * @param dimension the world's environment name, as the adapter reports it
+     * @param y         block height of the request
+     * @param biome     biome key, for a tiebreak on similarity
+     * @param underground whether the spot is enclosed under terrain
+     * @param time      world time in ticks, for day or night
+     * @return JSON, never null
      */
-    public static String capture(Location loc) {
-        if (loc == null || loc.getWorld() == null) return null;
-
-        World world = loc.getWorld();
+    public static String capture(String dimension, int y, String biome, boolean underground, long time) {
         JSONObject json = new JSONObject();
-
-        try {
-            json.put("dimension", world.getEnvironment().name());
-            json.put("y", loc.getBlockY());
-            json.put("biome", biomeName(loc));
-            json.put("underground", isUnderground(loc));
-            json.put("time", world.getTime() < 12300 ? "day" : "night");
-        } catch (Exception e) {
-            // A snapshot is a nice-to-have; never let it break a build.
-            return null;
-        }
-
+        json.put("dimension", dimension);
+        json.put("y", y);
+        json.put("biome", biome);
+        json.put("underground", underground);
+        json.put("time", time < 12300 ? "day" : "night");
         return json.toString();
-    }
-
-    private static String biomeName(Location loc) {
-        try {
-            return loc.getBlock().getBiome().getKey().getKey();
-        } catch (Throwable t) {
-            // Biome moved from enum to registry interface across versions;
-            // the string form is good enough for a similarity score.
-            return String.valueOf(loc.getBlock().getBiome());
-        }
-    }
-
-    private static boolean isUnderground(Location loc) {
-        try {
-            return loc.getWorld().getHighestBlockYAt(loc) > loc.getBlockY() + 2;
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     /**

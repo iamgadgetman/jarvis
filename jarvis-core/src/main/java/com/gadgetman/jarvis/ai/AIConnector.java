@@ -1,9 +1,9 @@
 package com.gadgetman.jarvis.ai;
 
-import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import org.bukkit.configuration.ConfigurationSection;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -51,7 +51,8 @@ public class AIConnector {
      */
     private static final int BUILD_SCRIPT_MAX_TOKENS = 16000;
 
-    private final Jarvis plugin;
+    private final Config config;
+    private final Log log;
 
     // Current provider settings
     private String provider;
@@ -161,17 +162,17 @@ public class AIConnector {
         }
     }
 
-    public AIConnector(Jarvis plugin) {
-        this.plugin = plugin;
+    public AIConnector(Config config, Log log) {
+        this.config = config;
+        this.log = log;
         reloadConfig();
     }
 
     public void reloadConfig() {
-        ConfigurationSection ai = plugin.getConfig().getConfigurationSection("ai");
-        if (ai == null) {
-            plugin.getLogger().warning("Missing ai configuration section; using defaults.");
-            ai = plugin.getConfig().createSection("ai");
+        if (!config.isSection("ai")) {
+            log.warn("Missing ai configuration section; using defaults.");
         }
+        Config ai = config.section("ai");
 
         // Check for auto mode
         String configProvider = ai.getString("provider", "openai").toLowerCase();
@@ -209,7 +210,7 @@ public class AIConnector {
         }
 
         // ---- v0.3.0 tiered routing ----
-        this.ollamaConfigured = ai.isConfigurationSection("ollama");
+        this.ollamaConfigured = ai.isSection("ollama");
         this.lightTimeoutSeconds = ai.getInt("light-timeout-seconds", 5);
         this.heavyTimeoutSeconds = ai.getInt("heavy-timeout-seconds", 240);
 
@@ -253,7 +254,7 @@ public class AIConnector {
         if (heavyRoute.isEmpty() && !lightRoute.isEmpty()) heavyRoute.addAll(lightRoute);
 
         // Log configuration
-        plugin.getLogger().info("AI routing — light: " + lightRoute + ", heavy: " + heavyRoute
+        log.info("AI routing — light: " + lightRoute + ", heavy: " + heavyRoute
                 + (reducedMode ? " [REDUCED MODE: Ollama only]" : ""));
     }
 
@@ -272,11 +273,11 @@ public class AIConnector {
         return out;
     }
 
-    private void loadProviderConfig(ConfigurationSection ai, String name, String defaultEndpoint, String defaultModel) {
+    private void loadProviderConfig(Config ai, String name, String defaultEndpoint, String defaultModel) {
         ProviderConfig config = new ProviderConfig();
-        ConfigurationSection section = ai.getConfigurationSection(name);
 
-        if (section != null) {
+        if (ai.isSection(name)) {
+            Config section = ai.section(name);
             config.apiKey = section.getString("api-key", "");
             config.model = section.getString("model", defaultModel);
             String configEndpoint = section.getString("endpoint");
@@ -1028,7 +1029,7 @@ public class AIConnector {
         for (String tryProvider : route) {
             ProviderHealth health = providerHealth.computeIfAbsent(tryProvider, k -> new ProviderHealth());
             if (!health.isAvailable()) {
-                plugin.getLogger().fine("Skipping " + tryProvider + " (cooldown: "
+                log.fine("Skipping " + tryProvider + " (cooldown: "
                         + health.getCooldownRemaining() / 1000 + "s)");
                 continue;
             }
@@ -1041,8 +1042,8 @@ public class AIConnector {
                         timeoutOverride, maxTokens);
                 health.recordSuccess();
 
-                if (lastUsage != null && plugin.getConfig().getBoolean("ai.log-usage", false)) {
-                    plugin.getLogger().info("AI usage [" + tier + "/" + tryProvider + "] " + lastUsage);
+                if (lastUsage != null && this.config.getBoolean("ai.log-usage", false)) {
+                    log.info("AI usage [" + tier + "/" + tryProvider + "] " + lastUsage);
                 }
                 lastServed.put(tier, tryProvider);
 
@@ -1058,7 +1059,7 @@ public class AIConnector {
             } catch (Exception e) {
                 health.recordFailure(e.getMessage());
                 lastException = e;
-                plugin.getLogger().warning("AI provider " + tryProvider + " failed ("
+                log.warn("AI provider " + tryProvider + " failed ("
                         + tier + " tier): " + e.getMessage());
             }
         }

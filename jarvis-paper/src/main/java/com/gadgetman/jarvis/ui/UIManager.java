@@ -462,9 +462,7 @@ public class UIManager implements Listener {
     }
 
     private String kitLine(com.gadgetman.jarvis.progression.Rank rank) {
-        StringBuilder sb = new StringBuilder(
-                rank.toolFor(com.gadgetman.jarvis.progression.Rank.ToolKind.PICKAXE)
-                        .name().split("_")[0].toLowerCase());
+        StringBuilder sb = new StringBuilder(rank.tier().name().toLowerCase());
         for (var e : rank.enchants().entrySet()) {
             sb.append(", ").append(com.gadgetman.jarvis.progression.Rank.pretty(e.getKey()))
               .append(' ').append(com.gadgetman.jarvis.progression.Rank.roman(e.getValue()));

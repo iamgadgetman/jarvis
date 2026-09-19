@@ -1,6 +1,7 @@
 package com.gadgetman.jarvis.voice;
 
-import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Log;
 
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
@@ -33,7 +34,7 @@ import java.util.UUID;
  */
 public class SpeechService {
 
-    private final Jarvis plugin;
+    private final Log log;
     private final HttpClient http;
 
     private final String endpoint;
@@ -44,9 +45,8 @@ public class SpeechService {
     private final String apiKey;
     private final int timeoutSeconds;
 
-    public SpeechService(Jarvis plugin) {
-        this.plugin         = plugin;
-        var cfg             = plugin.getConfig();
+    public SpeechService(Config cfg, Log log) {
+        this.log            = log;
         this.endpoint       = stripTrailingSlash(cfg.getString("voice.endpoint", "http://127.0.0.1:8000"));
         this.sttModel       = cfg.getString("voice.stt-model", "guillaumekln/faster-whisper-base.en");
         this.ttsModel       = cfg.getString("voice.tts-model", "speaches-ai/piper-en_GB-alan-medium");
@@ -99,7 +99,7 @@ public class SpeechService {
 
             HttpResponse<String> res = http.send(req.build(), HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() != 200) {
-                plugin.getLogger().warning("Speech transcription failed: HTTP " + res.statusCode()
+                log.warn("Speech transcription failed: HTTP " + res.statusCode()
                         + " — " + trim(res.body()));
                 return null;
             }
@@ -108,7 +108,7 @@ public class SpeechService {
             return text.isEmpty() ? null : text;
 
         } catch (Exception e) {
-            plugin.getLogger().warning("Speech transcription error: " + e.getMessage());
+            log.warn("Speech transcription error: " + e.getMessage());
             return null;
         }
     }
@@ -144,13 +144,13 @@ public class SpeechService {
 
             HttpResponse<byte[]> res = http.send(req.build(), HttpResponse.BodyHandlers.ofByteArray());
             if (res.statusCode() != 200) {
-                plugin.getLogger().warning("Speech synthesis failed: HTTP " + res.statusCode());
+                log.warn("Speech synthesis failed: HTTP " + res.statusCode());
                 return null;
             }
             return resampleTo48k(readWav(res.body()));
 
         } catch (Exception e) {
-            plugin.getLogger().warning("Speech synthesis error: " + e.getMessage());
+            log.warn("Speech synthesis error: " + e.getMessage());
             return null;
         }
     }

@@ -1,7 +1,9 @@
 package com.gadgetman.jarvis.memory;
 
-import com.gadgetman.jarvis.Jarvis;
-import org.bukkit.scheduler.BukkitRunnable;
+import com.gadgetman.jarvis.DatabaseManager;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Log;
+import com.gadgetman.jarvis.core.platform.Scheduler;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -43,7 +45,10 @@ public class ExperienceMemory {
             "a", "an", "the", "me", "my", "some", "please", "can", "you", "build",
             "make", "create", "for", "with", "of", "and", "to", "in", "on", "at", "it"));
 
-    private final Jarvis plugin;
+    private final Config config;
+    private final Log log;
+    private final Scheduler scheduler;
+    private final DatabaseManager database;
     private final EmbeddingClient embeddings;
 
     // Positive experiences only — the retrievable set.
@@ -59,28 +64,31 @@ public class ExperienceMemory {
     private double minKeywordRelevance = 0.15;
     private int maxPlanChars = 1200;
 
-    public ExperienceMemory(Jarvis plugin) {
-        this.plugin = plugin;
-        this.embeddings = new EmbeddingClient(plugin);
+    public ExperienceMemory(Config config, Log log, Scheduler scheduler, DatabaseManager database) {
+        this.config = config;
+        this.log = log;
+        this.scheduler = scheduler;
+        this.database = database;
+        this.embeddings = new EmbeddingClient(config, log);
         loadConfig();
 
         if (enabled) {
             loadCacheAsync();
         } else {
-            plugin.getLogger().info("Experience memory disabled in config.");
+            log.info("Experience memory disabled in config.");
         }
     }
 
     private void loadConfig() {
-        this.enabled = plugin.getConfig().getBoolean("memory.enabled", true);
-        this.maxExamples = plugin.getConfig().getInt("memory.max-examples-in-prompt", 3);
+        this.enabled = config.getBoolean("memory.enabled", true);
+        this.maxExamples = config.getInt("memory.max-examples-in-prompt", 3);
         this.minSuccessesForReducedMode =
-                plugin.getConfig().getInt("memory.min-successes-for-reduced-mode-builds", 20);
+                config.getInt("memory.min-successes-for-reduced-mode-builds", 20);
         this.negativeWindowMinutes =
-                plugin.getConfig().getInt("memory.negative-signal-window-minutes", 10);
-        this.minTextRelevance = plugin.getConfig().getDouble("memory.min-text-relevance", 0.55);
-        this.minKeywordRelevance = plugin.getConfig().getDouble("memory.min-keyword-relevance", 0.15);
-        this.maxPlanChars = plugin.getConfig().getInt("memory.max-plan-chars", 1200);
+                config.getInt("memory.negative-signal-window-minutes", 10);
+        this.minTextRelevance = config.getDouble("memory.min-text-relevance", 0.55);
+        this.minKeywordRelevance = config.getDouble("memory.min-keyword-relevance", 0.15);
+        this.maxPlanChars = config.getInt("memory.max-plan-chars", 1200);
     }
 
     public void reload() {
@@ -120,23 +128,20 @@ public class ExperienceMemory {
     public void record(BuildExperience experience) {
         if (!enabled || experience == null) return;
 
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                // Only positives are ever retrieved, so only positives are worth
-                // paying an embedding call for.
-                if (experience.getOutcome().isPositive()) {
-                    experience.setEmbedding(embeddings.embed(experience.getRequestText()));
-                }
-                if (insert(experience) && experience.getOutcome().isPositive()) {
-                    addToCache(experience);
-                    if (experience.getPlayerId() != null) {
-                        lastSuccess.put(experience.getPlayerId(),
-                                new long[]{experience.getId(), experience.getCreatedAt()});
-                    }
+        scheduler.async(() -> {
+            // Only positives are ever retrieved, so only positives are worth
+            // paying an embedding call for.
+            if (experience.getOutcome().isPositive()) {
+                experience.setEmbedding(embeddings.embed(experience.getRequestText()));
+            }
+            if (insert(experience) && experience.getOutcome().isPositive()) {
+                addToCache(experience);
+                if (experience.getPlayerId() != null) {
+                    lastSuccess.put(experience.getPlayerId(),
+                            new long[]{experience.getId(), experience.getCreatedAt()});
                 }
             }
-        }.runTaskAsynchronously(plugin);
+        });
     }
 
     /**
@@ -156,26 +161,23 @@ public class ExperienceMemory {
             return;
         }
 
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (updateOutcome(id, BuildExperience.Outcome.UNDONE)) {
-                    experience.setOutcome(BuildExperience.Outcome.UNDONE);
-                    cache.removeIf(e -> e.getId() == id);
-                    if (experience.getPlayerId() != null) {
-                        long[] recent = lastSuccess.get(experience.getPlayerId());
-                        if (recent != null && recent[0] == id) {
-                            lastSuccess.remove(experience.getPlayerId());
-                        }
+        scheduler.async(() -> {
+            if (updateOutcome(id, BuildExperience.Outcome.UNDONE)) {
+                experience.setOutcome(BuildExperience.Outcome.UNDONE);
+                cache.removeIf(e -> e.getId() == id);
+                if (experience.getPlayerId() != null) {
+                    long[] recent = lastSuccess.get(experience.getPlayerId());
+                    if (recent != null && recent[0] == id) {
+                        lastSuccess.remove(experience.getPlayerId());
                     }
-                    plugin.getLogger().fine("Experience " + id + " demoted to UNDONE.");
                 }
+                log.fine("Experience " + id + " demoted to UNDONE.");
             }
-        }.runTaskAsynchronously(plugin);
+        });
     }
 
     private boolean updateOutcome(long id, BuildExperience.Outcome outcome) {
-        try (Connection c = plugin.getDatabaseManager().getConnection();
+        try (Connection c = database.getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "UPDATE build_experiences SET outcome = ?, outcome_signal = ? WHERE id = ?")) {
             ps.setString(1, outcome.name());
@@ -183,7 +185,7 @@ public class ExperienceMemory {
             ps.setLong(3, id);
             return ps.executeUpdate() > 0;
         } catch (SQLException ex) {
-            plugin.getLogger().warning("Failed to update experience outcome: " + ex.getMessage());
+            log.warn("Failed to update experience outcome: " + ex.getMessage());
             return false;
         }
     }
@@ -201,17 +203,14 @@ public class ExperienceMemory {
         long[] recent = lastSuccess.get(playerId);
         long knownId = (recent != null && recent[1] >= cutoff) ? recent[0] : -1;
 
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                long demoted = demote(playerId, knownId, cutoff);
-                if (demoted >= 0) {
-                    cache.removeIf(e -> e.getId() == demoted);
-                    lastSuccess.remove(playerId);
-                    plugin.getLogger().fine("Experience " + demoted + " demoted to UNDONE.");
-                }
+        scheduler.async(() -> {
+            long demoted = demote(playerId, knownId, cutoff);
+            if (demoted >= 0) {
+                cache.removeIf(e -> e.getId() == demoted);
+                lastSuccess.remove(playerId);
+                log.fine("Experience " + demoted + " demoted to UNDONE.");
             }
-        }.runTaskAsynchronously(plugin);
+        });
     }
 
     // ==================== RETRIEVAL ====================
@@ -328,7 +327,7 @@ public class ExperienceMemory {
                 + "(player_id, task_type, request_text, situation, plan, outcome, outcome_signal, "
                 + "provider, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
-        try (Connection c = plugin.getDatabaseManager().getConnection();
+        try (Connection c = database.getConnection();
              PreparedStatement ps = c.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
             ps.setString(1, e.getPlayerId() == null ? null : e.getPlayerId().toString());
@@ -349,14 +348,14 @@ public class ExperienceMemory {
             return true;
 
         } catch (SQLException ex) {
-            plugin.getLogger().warning("Failed to record build experience: " + ex.getMessage());
+            log.warn("Failed to record build experience: " + ex.getMessage());
             return false;
         }
     }
 
     /** @return the demoted row id, or -1 if nothing qualified */
     private long demote(UUID playerId, long knownId, long cutoff) {
-        try (Connection c = plugin.getDatabaseManager().getConnection()) {
+        try (Connection c = database.getConnection()) {
             long targetId = knownId;
 
             if (targetId < 0) {
@@ -382,35 +381,32 @@ public class ExperienceMemory {
             }
 
         } catch (SQLException ex) {
-            plugin.getLogger().warning("Failed to demote undone build: " + ex.getMessage());
+            log.warn("Failed to demote undone build: " + ex.getMessage());
             return -1;
         }
     }
 
     private void loadCacheAsync() {
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                List<BuildExperience> loaded = loadPositives();
-                cache.clear();
-                cache.addAll(loaded);
+        scheduler.async(() -> {
+            List<BuildExperience> loaded = loadPositives();
+            cache.clear();
+            cache.addAll(loaded);
 
-                int missing = 0;
-                for (BuildExperience e : loaded) {
-                    if (!e.hasEmbedding()) missing++;
-                }
-
-                plugin.getLogger().info("Experience memory: " + loaded.size()
-                        + " successful builds loaded"
-                        + (missing > 0 ? " (" + missing + " awaiting embeddings)" : "")
-                        + (isReducedModeBuildUnlocked()
-                            ? " — reduced-mode freeform builds UNLOCKED"
-                            : " — " + Math.max(0, minSuccessesForReducedMode - loaded.size())
-                              + " more to unlock reduced-mode freeform builds"));
-
-                if (missing > 0) backfillEmbeddings(loaded);
+            int missing = 0;
+            for (BuildExperience e : loaded) {
+                if (!e.hasEmbedding()) missing++;
             }
-        }.runTaskAsynchronously(plugin);
+
+            log.info("Experience memory: " + loaded.size()
+                    + " successful builds loaded"
+                    + (missing > 0 ? " (" + missing + " awaiting embeddings)" : "")
+                    + (isReducedModeBuildUnlocked()
+                        ? " — reduced-mode freeform builds UNLOCKED"
+                        : " — " + Math.max(0, minSuccessesForReducedMode - loaded.size())
+                          + " more to unlock reduced-mode freeform builds"));
+
+            if (missing > 0) backfillEmbeddings(loaded);
+        });
     }
 
     private List<BuildExperience> loadPositives() {
@@ -419,7 +415,7 @@ public class ExperienceMemory {
                 + "provider, embedding, created_at FROM build_experiences "
                 + "WHERE outcome = 'SUCCESS' ORDER BY created_at DESC LIMIT " + CACHE_SIZE;
 
-        try (Connection c = plugin.getDatabaseManager().getConnection();
+        try (Connection c = database.getConnection();
              PreparedStatement ps = c.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
 
@@ -449,7 +445,7 @@ public class ExperienceMemory {
             }
 
         } catch (SQLException ex) {
-            plugin.getLogger().warning("Failed to load experience memory: " + ex.getMessage());
+            log.warn("Failed to load experience memory: " + ex.getMessage());
         }
         return out;
     }
@@ -469,7 +465,7 @@ public class ExperienceMemory {
             if (vec == null) break;
 
             e.setEmbedding(vec);
-            try (Connection c = plugin.getDatabaseManager().getConnection();
+            try (Connection c = database.getConnection();
                  PreparedStatement ps = c.prepareStatement(
                          "UPDATE build_experiences SET embedding = ? WHERE id = ?")) {
                 ps.setString(1, EmbeddingClient.serialize(vec));
@@ -477,12 +473,12 @@ public class ExperienceMemory {
                 ps.executeUpdate();
                 done++;
             } catch (SQLException ex) {
-                plugin.getLogger().warning("Embedding backfill failed: " + ex.getMessage());
+                log.warn("Embedding backfill failed: " + ex.getMessage());
                 return;
             }
         }
         if (done > 0) {
-            plugin.getLogger().info("Experience memory: backfilled " + done + " embeddings.");
+            log.info("Experience memory: backfilled " + done + " embeddings.");
         }
     }
 }

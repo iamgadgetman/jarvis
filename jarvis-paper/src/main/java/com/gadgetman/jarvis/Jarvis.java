@@ -7,6 +7,11 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Log;
+import com.gadgetman.jarvis.core.platform.Scheduler;
+import com.gadgetman.jarvis.platform.PaperConfig;
+import com.gadgetman.jarvis.platform.PaperScheduler;
 import com.gadgetman.jarvis.ai.AIConnector;
 import com.gadgetman.jarvis.npc.JarvisNPC;
 import com.gadgetman.jarvis.commands.JarvisCommands;
@@ -45,6 +50,11 @@ public class Jarvis extends JavaPlugin {
      */
     private String version = "unknown";
 
+    // The platform handles core talks through; see docs/dev/platform-interface.md.
+    private Config coreConfig;
+    private Log log;
+    private Scheduler scheduler;
+
     private AIConnector aiConnector;
     private JarvisNPC jarvisNPC;
     private UIManager uiManager;
@@ -74,17 +84,21 @@ public class Jarvis extends JavaPlugin {
 
         saveDefaultConfig();
 
-        aiConnector = new AIConnector(this);
+        coreConfig = new PaperConfig(this);
+        log = Log.of(getLogger());
+        scheduler = new PaperScheduler(this);
+
+        aiConnector = new AIConnector(coreConfig, log);
 
         // databases.yml is not covered by saveDefaultConfig(), which only writes
         // config.yml. Without this the data folder has no databases.yml, no data
         // source is ever registered, and every getConnection() throws.
         saveResource("databases.yml", false);
 
-        databaseManager = new DatabaseManager(this);
+        databaseManager = new DatabaseManager(coreConfig, log, getDataFolder().toPath());
         databaseManager.initializeDatabaseConnections();
 
-        experienceMemory = new ExperienceMemory(this);
+        experienceMemory = new ExperienceMemory(coreConfig, log, scheduler, databaseManager);
         taskRecoveryHandler = new TaskRecoveryHandler(this);
 
         if (getServer().getPluginManager().getPlugin("Citizens") != null) {
@@ -105,7 +119,7 @@ public class Jarvis extends JavaPlugin {
         // Initialize systems
         buildingAssistant = new BuildingAssistant(this);
         schematicManager = new SchematicManager(this);
-        requestDecomposer = new RequestDecomposer(this);
+        requestDecomposer = new RequestDecomposer(coreConfig, log, aiConnector, databaseManager);
         actionExecutor = new JarvisActionExecutor(this);
         confirmationManager = new ConfirmationManager(
                 getConfig().getLong("confirmation-timeout-seconds", 30));
@@ -215,6 +229,19 @@ public class Jarvis extends JavaPlugin {
     }
 
     // ========== GETTERS ==========
+
+    /** Core's view of config.yml. Bukkit-side code may keep using getConfig(). */
+    public Config getCoreConfig() {
+        return coreConfig;
+    }
+
+    public Log getLog() {
+        return log;
+    }
+
+    public Scheduler getScheduler() {
+        return scheduler;
+    }
 
     public AIConnector getAIConnector() {
         return aiConnector;

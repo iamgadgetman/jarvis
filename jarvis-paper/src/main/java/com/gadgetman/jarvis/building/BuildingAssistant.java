@@ -3,7 +3,7 @@ package com.gadgetman.jarvis.building;
 import com.gadgetman.jarvis.Jarvis;
 import com.gadgetman.jarvis.memory.BuildExperience;
 import com.gadgetman.jarvis.memory.ExperienceMemory;
-import com.gadgetman.jarvis.memory.SituationSnapshot;
+import com.gadgetman.jarvis.platform.PaperSituation;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -252,7 +252,7 @@ public class BuildingAssistant {
         // Capture the world state before going async — every getter in
         // SituationSnapshot touches the world and is main-thread only.
         final Location origin = player.getLocation();
-        final String situationJson = SituationSnapshot.capture(origin);
+        final String situationJson = PaperSituation.capture(origin);
         // Build height is a world lookup, so it is read here with everything
         // else the async planner needs, and travels with the request.
         final ScriptBuildPlanner.WorldBounds worldBounds = new ScriptBuildPlanner.WorldBounds(

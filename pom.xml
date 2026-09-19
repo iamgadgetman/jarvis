@@ -30,7 +30,8 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Bytecode targets Java 17 so the jars run on 1.21.x (Java 21) and
-             26.x (Java 25) servers alike. Build with JDK 21 or newer. -->
+             26.x (Java 25) servers alike. Build with JDK 25: the 26.x server API
+             the Paper module compiles against ships Java 25 class files. -->
         <maven.compiler.release>17</maven.compiler.release>
 
         <junit.version>5.11.3</junit.version>

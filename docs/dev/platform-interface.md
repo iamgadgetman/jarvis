@@ -1,6 +1,6 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** steps 1 and 2 done. Steps 3 to 9 not started.
+**Status:** steps 1 to 3 done. Steps 4 to 9 not started.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -638,6 +638,23 @@ before. Order matters: each introduces the interfaces the next needs.
    snakeyaml with the same keys. Move `AIConnector`, `DatabaseManager`,
    `ExperienceMemory`, progression, `ConfirmationManager`. Paper hands core its
    data directory; `config.yml` keeps its format.
+   *Done.* Core has the value types in `core.world`, and `Config`, `Log`,
+   `Scheduler` and `Task` in `core.platform` (Log and Scheduler came forward
+   from step 4 because the classes moving here log and run async work).
+   `core.config.YamlConfig` is the snakeyaml reader with an optional fallback
+   for defaults; the Paper adapter instead wraps `plugin.getConfig()` in
+   `platform.PaperConfig`, so `/jarvis reload` and the bundled defaults keep
+   working unchanged. `platform.PaperScheduler` wraps the Bukkit scheduler and
+   `platform.PaperItems` resolves ids to `Material` and `Enchantment`.
+   Moved and rewritten: AIConnector, DatabaseManager, ExperienceMemory,
+   EmbeddingClient, RequestDecomposer, SpeechService (constructor injection
+   of Config, Log, Scheduler, the data directory and their collaborators),
+   Rank (string ids, plus a `tier()` accessor), ServiceRecord, Armament,
+   Engagement, WeaponDoctrine, and SituationSnapshot (its Bukkit reader is
+   now `platform.PaperSituation`). DatabaseManager lost its unused
+   NPC-inventory persistence, which was the only ItemStack code in it.
+   `ProgressionManager` stays in Paper until Owner (step 4) and Butler
+   (step 5) exist: it needs the player, the NPC and an ItemStack.
 4. **Scheduler, Log, Players, World, Entity, Events.** Add the interfaces and
    `PaperPlatform`. Move `Observer`, `Remarks`, `DutyScheduler`,
    `MorningReport`, `PortalScout`, `RecoveryService`, `SituationSnapshot`,

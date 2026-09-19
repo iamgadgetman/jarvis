@@ -1,6 +1,8 @@
 package com.gadgetman.jarvis.progression;
 
 import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.core.world.Ids;
+import com.gadgetman.jarvis.platform.PaperItems;
 import com.gadgetman.jarvis.progression.ServiceRecord.Discipline;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -130,15 +132,16 @@ public class ProgressionManager {
      */
     public ItemStack kitItem(Player player, Rank.ToolKind kind) {
         Rank rank = rankOf(player);
-        ItemStack item = new ItemStack(rank.toolFor(kind));
+        ItemStack item = new ItemStack(PaperItems.material(rank.toolFor(kind)));
         ItemMeta meta = item.getItemMeta();
         if (meta == null) return item;
 
         meta.setUnbreakable(true);
         Material material = item.getType();
         for (var e : rank.enchants().entrySet()) {
-            if (appliesTo(kind, material, e.getKey())) {
-                meta.addEnchant(e.getKey(), e.getValue(), true);
+            org.bukkit.enchantments.Enchantment ench = PaperItems.enchantment(e.getKey());
+            if (ench != null && appliesTo(kind, material, e.getKey())) {
+                meta.addEnchant(ench, e.getValue(), true);
             }
         }
         if (material == Material.TRIDENT) {
@@ -170,9 +173,8 @@ public class ProgressionManager {
     }
 
     /** Only put an enchantment where it does something. */
-    private static boolean appliesTo(Rank.ToolKind kind, Material material,
-                                     org.bukkit.enchantments.Enchantment ench) {
-        String id = ench.getKey().getKey();
+    private static boolean appliesTo(Rank.ToolKind kind, Material material, String enchantId) {
+        String id = Ids.key(enchantId);
         // A trident takes none of the sword enchantments -- Sharpness on one is
         // simply ignored -- so it gets its own set below rather than inheriting.
         if (material == Material.TRIDENT) return id.equals("fire_aspect");

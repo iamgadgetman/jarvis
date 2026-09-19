@@ -1,6 +1,7 @@
 package com.gadgetman.jarvis.memory;
 
-import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -28,7 +29,8 @@ import java.nio.charset.StandardCharsets;
  */
 public class EmbeddingClient {
 
-    private final Jarvis plugin;
+    private final Config config;
+    private final Log log;
 
     private String endpoint = "http://localhost:11434";
     private String model = "nomic-embed-text";
@@ -42,8 +44,9 @@ public class EmbeddingClient {
     private volatile long cooldownUntil = 0;
     private volatile String lastError = "";
 
-    public EmbeddingClient(Jarvis plugin) {
-        this.plugin = plugin;
+    public EmbeddingClient(Config config, Log log) {
+        this.config = config;
+        this.log = log;
         reloadConfig();
     }
 
@@ -53,16 +56,16 @@ public class EmbeddingClient {
         // live on the same host: a big chat model on one box and a 274 MB
         // embedder on another is a reasonable split, and without this the
         // embedder had to be pulled onto whichever host served chat.
-        String shared = plugin.getConfig().getString("ai.ollama.endpoint", "http://localhost:11434");
-        String override = plugin.getConfig().getString("memory.embedding-endpoint", "");
+        String shared = config.getString("ai.ollama.endpoint", "http://localhost:11434");
+        String override = config.getString("memory.embedding-endpoint", "");
         this.endpoint = (override == null || override.isBlank()) ? shared : override;
-        this.model = plugin.getConfig().getString("memory.embedding-model", "nomic-embed-text");
+        this.model = config.getString("memory.embedding-model", "nomic-embed-text");
         // Measured against a reference Ollama box: 14.3 s cold, 16 ms warm. Without a
         // keep_alive the model unloads on Ollama's default timer and the first
         // build after any idle period eats the full reload. The model is 274 MB,
         // so keeping it resident is cheap.
-        this.keepAlive = plugin.getConfig().getString("memory.embedding-keep-alive", "30m");
-        this.timeoutSeconds = plugin.getConfig().getInt("memory.embedding-timeout-seconds", 30);
+        this.keepAlive = config.getString("memory.embedding-keep-alive", "30m");
+        this.timeoutSeconds = config.getInt("memory.embedding-timeout-seconds", 30);
         this.consecutiveFailures = 0;
         this.cooldownUntil = 0;
     }
@@ -154,7 +157,7 @@ public class EmbeddingClient {
         consecutiveFailures++;
         if (consecutiveFailures >= FAILURES_BEFORE_COOLDOWN) {
             cooldownUntil = System.currentTimeMillis() + COOLDOWN_MS;
-            plugin.getLogger().warning("Embeddings unavailable (" + lastError
+            log.warn("Embeddings unavailable (" + lastError
                     + "); falling back to keyword matching for 5 minutes.");
         }
     }

@@ -111,7 +111,7 @@ public class VoiceBridge implements VoicechatPlugin {
 
     public VoiceBridge(Jarvis plugin) {
         this.plugin    = plugin;
-        this.speech    = new SpeechService(plugin);
+        this.speech    = new SpeechService(plugin.getCoreConfig(), plugin.getLog());
         var cfg        = plugin.getConfig();
         this.enabled   = cfg.getBoolean("voice.enabled", false);
         this.gate      = cfg.getString("voice.gate", "whisper").toLowerCase();

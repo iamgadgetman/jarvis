@@ -25,6 +25,14 @@
             <groupId>org.json</groupId>
             <artifactId>json</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+        </dependency>
         <!-- The polyglot API only, so ScriptBuildPlanner compiles. The JS
              engine itself is a runtime concern of the adapter: Paper's
              library loader fetches it, and the planner checks for it with

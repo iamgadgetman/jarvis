@@ -1265,7 +1265,8 @@ public class JarvisNPC implements Listener {
         ItemStack held = getToolInHand(npc);
         if (held != null && held.getType() != Material.AIR && !isIssuedKit(held)) return;
 
-        Material want = progression.rankOf(player).toolFor(kind);
+        Material want = com.gadgetman.jarvis.platform.PaperItems.material(
+                progression.rankOf(player).toolFor(kind));
         if (held != null && held.getType() == want) return;
 
         equipKit(player, kind);
