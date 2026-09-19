@@ -22,6 +22,20 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+        </dependency>
+        <!-- The polyglot API only, so ScriptBuildPlanner compiles. The JS
+             engine itself is a runtime concern of the adapter: Paper's
+             library loader fetches it, and the planner checks for it with
+             Class.forName before touching it. -->
+        <dependency>
+            <groupId>org.graalvm.polyglot</groupId>
+            <artifactId>polyglot</artifactId>
+            <version>${graaljs.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>

@@ -1,6 +1,6 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** step 1 done (module split). Steps 2 to 9 not started.
+**Status:** steps 1 and 2 done. Steps 3 to 9 not started.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -624,6 +624,15 @@ before. Order matters: each introduces the interfaces the next needs.
    blocked by the network policy there), so the first thing step 2 does is
    `mvn clean package` on a machine that can reach them.
 2. **Pure files to core.** Move the 18 files with no server imports. No edits.
+   *Done for 11 of the 18*, plus their three tests: ConfirmationManager,
+   PlayerRequestManager, ScriptBuildPlanner, BuildExperience, Compass,
+   PortalLink, PortalSighting, RequestFeatures, Observation, RemarkDoctrine,
+   RemarkSubject. Core gained `org.json` and the GraalVM polyglot API
+   (provided scope) to compile them. The other seven have real code
+   dependencies on Bukkit-facing classes and move in step 3: Armament,
+   Engagement, WeaponDoctrine and ServiceRecord use `Rank` (Material and
+   Enchantment constants); EmbeddingClient, RequestDecomposer and
+   SpeechService take the plugin object for config and logging.
 3. **Value types and Config.** Add `BlockPos`, `Vec3`, `Look`, `Facing`,
    `WorldId`, `BlockState`, `Tag`, `Item`, `Ids`. Add core `Config` backed by
    snakeyaml with the same keys. Move `AIConnector`, `DatabaseManager`,
