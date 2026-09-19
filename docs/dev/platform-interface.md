@@ -853,9 +853,11 @@ repositories are not reachable from the development sandbox) and attaches
 - Items 1 to 4 are done. Carpet's fake player, connection, packet listener,
   action pack and ray tracer are vendored under
   `com.gadgetman.jarvis.fabric.spike.fake` (MIT, attributed in
-  `THIRD-PARTY-LICENSES.md`), trimmed to offline profiles (no Mojang lookup,
-  no saved player data), no shadowing or respawning, and the use, attack and
-  jump actions. Four mixins install them: `PlayerListMixin` (spawn position
+  `THIRD-PARTY-LICENSES.md`), trimmed to no saved player data, no shadowing
+  or respawning, and the use, attack and jump actions. The spawn looks the
+  name up at Mojang and dresses him in that account's skin, as Citizens does
+  for the Paper butler, falling back to an offline profile and a default
+  skin when the lookup fails. Four mixins install them: `PlayerListMixin` (spawn position
   and the fake packet listener), `ServerPlayerMixin` (an action pack per
   player, ticked for fakes only), `ConnectionAccessor` (a channel so the
   connection counts as open) and `CommandsMixin` (registers `/jspike`).
@@ -870,8 +872,8 @@ repositories are not reachable from the development sandbox) and attaches
   jump and a `USE` on the shut door ahead. `dig` first picks a place to
   stand beside or on top of the block, walks there, then looks at the block
   and holds `ATTACK` until it is air.
-- `/jspike spawn [name]`, `goto x y z`, `dig x y z`, `stop`, `status`, `kill`.
-  Operators only. One fake at a time. `status` says where he is and the
+- `/jspike spawn [name]` (Jarvis by default), `goto x y z`, `dig x y z`,
+  `stop`, `status`, `kill`. Operators only. One fake at a time. `status` says where he is and the
   driver's last word (path size and nodes, stuck, arrived, dug, no path).
 - Item 5: the first in-world run, on a Fabric 26.3 server with the jar from
   the workflow, spawned, walked and dug as intended. The fake player and the

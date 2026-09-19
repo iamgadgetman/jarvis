@@ -27,7 +27,8 @@ Drop the jar into `mods/` of a Fabric server (or client) for Minecraft 26.3 with
 Fabric Loader 0.19.5 or later. No Fabric API needed. Then, as an operator:
 
 ```
-/jspike spawn             a fake player called Jeeves appears where you stand
+/jspike spawn             Jarvis appears where you stand, in his uniform
+/jspike spawn <name>      or someone else, wearing that account's skin
 /jspike goto  x y z       he walks there
 /jspike dig   x y z       he walks within reach and breaks that block
 /jspike status            where he is and what he is doing
@@ -36,7 +37,9 @@ Fabric Loader 0.19.5 or later. No Fabric API needed. Then, as an operator:
 ```
 
 The server log reports each plan (`path N steps, M nodes`) and each replan
-after he gets stuck or strays.
+after he gets stuck or strays. The skin comes from the Mojang account of that
+name, looked up the way Citizens does it on Paper; on an offline-mode server
+or without network he spawns with a default skin and the log says why.
 
 ## What is Carpet's
 

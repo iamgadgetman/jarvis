@@ -17,6 +17,8 @@ public final class SpikeMod implements ModInitializer {
 
     /** The one fake player the spike manages, or null. */
     private static FakePlayer current;
+    /** True between a spawn being asked for and the player arriving. */
+    private static boolean spawning;
 
     @Override
     public void onInitialize() {
@@ -30,5 +32,14 @@ public final class SpikeMod implements ModInitializer {
 
     public static void setCurrent(FakePlayer player) {
         current = player;
+        spawning = false;
+    }
+
+    public static boolean isSpawning() {
+        return spawning;
+    }
+
+    public static void setSpawning(boolean value) {
+        spawning = value;
     }
 }
