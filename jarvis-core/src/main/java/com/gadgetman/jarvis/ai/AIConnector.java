@@ -1357,6 +1357,57 @@ public class AIConnector {
 
     // ==================== GETTERS ====================
 
+    // ==================== SETUP SUPPORT ====================
+
+    /** Every provider this connector knows how to talk to, in the default priority order. */
+    public static final List<String> KNOWN_PROVIDERS = List.of("ollama", "claude", "openai", "grok", "gemini");
+
+    /** True when the provider is in the priority list, the connector's idea of "enabled". */
+    public boolean isEnabled(String providerName) {
+        return providerPriority.contains(providerName);
+    }
+
+    public boolean hasApiKey(String providerName) {
+        ProviderConfig c = providerConfigs.get(providerName);
+        return c != null && c.hasApiKey();
+    }
+
+    public String modelOf(String providerName) {
+        ProviderConfig c = providerConfigs.get(providerName);
+        return c == null ? "" : c.model;
+    }
+
+    public String endpointOf(String providerName) {
+        ProviderConfig c = providerConfigs.get(providerName);
+        return c == null ? "" : c.endpoint;
+    }
+
+    /** One provider's health in a word or two, whether or not it is enabled. */
+    public String describe(String providerName) {
+        if (!providerConfigs.containsKey(providerName)) return "unknown";
+        if (!isEnabled(providerName)) return "disabled";
+        ProviderConfig config = providerConfigs.get(providerName);
+        if (!"ollama".equals(providerName) && !config.hasApiKey()) return "no API key";
+        ProviderHealth health = providerHealth.get(providerName);
+        if (health != null && !health.isAvailable()) return "cooldown (" + health.getCooldownRemaining() / 1000 + "s)";
+        return "available";
+    }
+
+    /**
+     * One small request straight to a provider, past the routing, to see
+     * whether it answers. Blocks; call it off the server thread. Returns the
+     * reply, trimmed; throws with the reason when it does not answer.
+     */
+    public String probe(String providerName) throws Exception {
+        if (!providerConfigs.containsKey(providerName)) throw new IllegalArgumentException("Unknown provider: " + providerName);
+        if (!"ollama".equals(providerName) && !hasApiKey(providerName)) throw new IllegalStateException("no API key set");
+        String reply = sendRequestForProvider(providerName, "Reply with the single word: ready",
+                "You are a connectivity check. Answer with one word.", false, 20, 16);
+        ProviderHealth health = providerHealth.get(providerName);
+        if (health != null) health.recordSuccess();
+        return reply == null ? "" : reply.trim();
+    }
+
     public String getProvider() {
         return provider;
     }

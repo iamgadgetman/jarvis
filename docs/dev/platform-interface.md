@@ -1016,6 +1016,39 @@ the nested driver, and the AI routing.
 
 ---
 
+## AI setup from the menu
+
+*Built.* The one thing an operator had to edit config.yml for was the AI
+section; now it is a page of the bell menu, in core, so both adapters have
+it. Three pieces:
+
+- **`YamlConfig` saves in place.** A changed value is edited into the
+  file's existing text (`YamlInPlace`), scalar or list, keeping every
+  comment and the spacing before an inline one; only a path missing from
+  the text falls back to a full dump. Before this, the first save from the
+  Settings page on Fabric stripped config.yml of its comments.
+- **`Prompts`** asks a question in chat and takes the next line the player
+  types as the answer, on the server thread, with a minute's timeout and
+  "cancel". `ChatTrigger` offers every line to it first and cancels the
+  line when it was an answer, so a pasted API key reaches neither public
+  chat nor the server's chat log. `ChatTrigger` now subscribes even when
+  natural language is off, for this.
+- **`AiSettings`** is the operator's view of the providers: enabled (the
+  priority list), key, address, model; each write goes to config.yml and
+  the connector re-reads it at once. It also lists an Ollama server's
+  models (`/api/tags`) and tests a provider with one tiny request straight
+  past the routing (`AIConnector.probe`), both off the server thread.
+
+In the menu: Admin, then "AI setup" shows one entry per provider (right
+click enables or disables, left click opens it); a provider's page has the
+on/off switch, the key or the server address (asked in chat), the model (a
+picker of what the Ollama server has pulled, or typed for the cloud ones)
+and "Test connection". `/jarvis ai status|enable|disable|key|endpoint|model
+|models|test` are the same as words, for the console; `key` warns that
+commands are logged. Admin only, bar `status`.
+
+---
+
 ## Open questions
 
 - **Item marker for the controller bell.** Settled: Paper keeps it in a

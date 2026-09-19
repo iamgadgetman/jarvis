@@ -1,6 +1,7 @@
 package com.gadgetman.jarvis;
 
 import com.gadgetman.jarvis.ai.AIConnector;
+import com.gadgetman.jarvis.ai.AiSettings;
 import com.gadgetman.jarvis.building.BuildingAssistant;
 import com.gadgetman.jarvis.commands.ActionExecutor;
 import com.gadgetman.jarvis.commands.CommandService;
@@ -30,6 +31,7 @@ import com.gadgetman.jarvis.steward.DutyScheduler;
 import com.gadgetman.jarvis.steward.MorningReport;
 import com.gadgetman.jarvis.steward.remarks.Remarks;
 import com.gadgetman.jarvis.ui.Menus;
+import com.gadgetman.jarvis.ui.Prompts;
 import com.gadgetman.jarvis.ui.TaskMonitor;
 
 import java.util.ArrayList;
@@ -70,6 +72,8 @@ public final class JarvisCore {
     private Remarks remarks;
     private PortalScout portalScout;
     private IntentPipeline intents;
+    private Prompts prompts;
+    private AiSettings aiSettings;
     private ChatTrigger chatTrigger;
     private Courtesies courtesies;
     private TaskMonitor taskMonitor;
@@ -130,7 +134,9 @@ public final class JarvisCore {
         // The one road from an utterance to an action; chat, voice and the
         // command's fallback all use it.
         intents = new IntentPipeline(this);
-        chatTrigger = new ChatTrigger(platform, intents);
+        prompts = new Prompts(platform);
+        aiSettings = new AiSettings(platform, ai);
+        chatTrigger = new ChatTrigger(platform, intents, prompts);
         chatTrigger.start();
         courtesies = new Courtesies(platform, ai);
         courtesies.start();
@@ -230,6 +236,10 @@ public final class JarvisCore {
     public Remarks remarks() { return remarks; }
     public PortalScout portalScout() { return portalScout; }
     public IntentPipeline intents() { return intents; }
+    /** Questions answered in chat, for menus that need a typed value. */
+    public Prompts prompts() { return prompts; }
+    /** The AI providers as an operator sets them up. */
+    public AiSettings aiSettings() { return aiSettings; }
     public TaskMonitor taskMonitor() { return taskMonitor; }
     public Menus menus() { return menus; }
     public CommandSink commands() { return commands; }

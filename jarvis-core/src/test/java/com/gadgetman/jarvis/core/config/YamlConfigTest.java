@@ -105,4 +105,75 @@ class YamlConfigTest {
         assertEquals(11, again.getInt("mining.torch-spacing", 0));
         assertEquals("http://localhost:11434", again.getString("ai.ollama.endpoint", "x"), "the rest survived the write");
     }
+
+    private static final String COMMENTED = """
+            # Jarvis configuration
+            ai:
+              # which provider
+              provider: auto   # or a name
+              provider-priority:
+                - ollama
+                - claude
+              ollama:
+                endpoint: "http://localhost:11434"
+                model: mistral  # Options: mistral, llama3.2
+              claude:
+                api-key: ""
+                model: claude-haiku-4-5
+            mining:
+              torch-spacing: 8   # blocks between torches
+            """;
+
+    @Test
+    void savingAChangeKeepsTheComments() throws java.io.IOException {
+        java.nio.file.Path file = java.nio.file.Files.createTempFile("jarvis-config", ".yml");
+        java.nio.file.Files.writeString(file, COMMENTED);
+        YamlConfig c = YamlConfig.load(file);
+
+        c.set("ai.ollama.model", "llama3.2");
+        c.set("ai.claude.api-key", "sk-ant-123");
+        c.set("ai.ollama.endpoint", "http://10.0.0.5:11434");
+        c.set("mining.torch-spacing", 11);
+        c.save();
+
+        String text = java.nio.file.Files.readString(file);
+        assertTrue(text.contains("# Jarvis configuration"), "header comment kept");
+        assertTrue(text.contains("  # which provider"), "block comment kept");
+        assertTrue(text.contains("model: llama3.2  # Options: mistral, llama3.2"), "inline comment kept: " + text);
+        assertTrue(text.contains("api-key: \"sk-ant-123\""), "quoted stays quoted: " + text);
+        assertTrue(text.contains("endpoint: \"http://10.0.0.5:11434\""), "a value with a colon is quoted: " + text);
+        assertTrue(text.contains("torch-spacing: 11   # blocks between torches"), "number with its comment: " + text);
+        assertEquals("auto", YamlConfig.load(file).getString("ai.provider", "x"), "untouched values unchanged");
+        assertEquals("sk-ant-123", YamlConfig.load(file).getString("ai.claude.api-key", "x"));
+        assertEquals("llama3.2", YamlConfig.load(file).getString("ai.ollama.model", "x"));
+    }
+
+    @Test
+    void savingAListRewritesJustTheList() throws java.io.IOException {
+        java.nio.file.Path file = java.nio.file.Files.createTempFile("jarvis-config", ".yml");
+        java.nio.file.Files.writeString(file, COMMENTED);
+        YamlConfig c = YamlConfig.load(file);
+
+        c.set("ai.provider-priority", java.util.List.of("claude", "ollama", "openai"));
+        c.save();
+
+        String text = java.nio.file.Files.readString(file);
+        assertTrue(text.contains("  provider-priority:\n    - claude\n    - ollama\n    - openai\n  ollama:"), text);
+        assertEquals(java.util.List.of("claude", "ollama", "openai"), YamlConfig.load(file).getStringList("ai.provider-priority"));
+        assertTrue(text.contains("# Jarvis configuration"));
+    }
+
+    @Test
+    void aPathNotInTheTextFallsBackToAFullWrite() throws java.io.IOException {
+        java.nio.file.Path file = java.nio.file.Files.createTempFile("jarvis-config", ".yml");
+        java.nio.file.Files.writeString(file, COMMENTED);
+        YamlConfig c = YamlConfig.load(file);
+
+        c.set("ai.grok.api-key", "xai-1");
+        c.save();
+
+        YamlConfig again = YamlConfig.load(file);
+        assertEquals("xai-1", again.getString("ai.grok.api-key", "x"));
+        assertEquals("mistral", again.getString("ai.ollama.model", "x"), "everything else survives the dump");
+    }
 }

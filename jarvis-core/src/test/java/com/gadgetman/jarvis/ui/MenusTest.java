@@ -116,4 +116,42 @@ class MenusTest {
         assertEquals("Jarvis — Service Record", f.platform.ui().menuFor(p).title());
         assertTrue(f.platform.ui().slotNamed(p, "Ore mined") >= 0);
     }
+
+    @Test
+    @DisplayName("an operator sets up a provider from the admin page: toggle, key by chat, model")
+    void aiSetupFromTheMenu() {
+        p.op = true;
+        ringBell();
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Admin"), false);
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "AI setup"), false);
+        assertEquals("Jarvis — AI providers", f.platform.ui().menuFor(p).title());
+
+        int claude = f.platform.ui().slotNamed(p, "Claude");
+        f.platform.ui().click(p, claude, true);          // right-click: disable
+        assertFalse(f.core.aiSettings().isEnabled("claude"));
+        assertTrue(f.platform.ui().slotNamed(p, "Claude OFF") >= 0 || f.platform.ui().slotNamed(p, "Claude") >= 0);
+        f.platform.ui().click(p, claude, true);          // and back on
+        assertTrue(f.core.aiSettings().isEnabled("claude"));
+
+        f.platform.ui().click(p, claude, false);         // left-click: its page
+        assertEquals("Jarvis — Claude", f.platform.ui().menuFor(p).title());
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "API key"), false);
+        assertFalse(f.platform.ui().isOpen(p), "the menu closes so the key can be typed");
+        assertTrue(f.core.prompts().isWaiting(p));
+
+        AtomicBoolean cancelled = new AtomicBoolean();
+        f.platform.events().publish(new com.gadgetman.jarvis.core.platform.events.ChatEvent(p, "sk-ant-menu", cancelled::set));
+        assertTrue(cancelled.get(), "the key never reaches chat");
+        assertEquals("sk-ant-menu", f.platform.config().getString("ai.claude.api-key", ""));
+        assertTrue(f.core.ai().hasApiKey("claude"));
+        assertTrue(f.platform.ui().isOpen(p), "back on the provider page");
+        assertTrue(f.platform.ui().slotNamed(p, "API key") >= 0);
+    }
+
+    @Test
+    @DisplayName("a player without admin rights never sees the AI page")
+    void aiSetupNeedsAdmin() {
+        ringBell();
+        assertEquals(-1, f.platform.ui().slotNamed(p, "Admin"));
+    }
 }

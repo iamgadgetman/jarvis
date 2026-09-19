@@ -31,6 +31,8 @@ public final class YamlConfig implements Config {
     private final Config fallback;
     /** Where {@link #save} writes, or null for a document that was never a file. */
     private final Path file;
+    /** Paths changed since the last load or save, so {@link #save} can edit them in place. */
+    private final Map<String, Object> changed = new java.util.LinkedHashMap<>();
 
     private YamlConfig(Map<String, Object> root, Config fallback) {
         this(root, fallback, null);
@@ -203,13 +205,38 @@ public final class YamlConfig implements Config {
             cur = (Map<String, Object>) next;
         }
         cur.put(segs[segs.length - 1], value);
+        changed.put(path, value);
     }
 
+    /**
+     * Write the document back. Values changed through {@link #set} are
+     * edited into the file's existing text, so its comments survive; only
+     * when a changed path is not in the text, or there is no text yet, is
+     * the whole document dumped.
+     */
     @Override
     public void save() {
         if (file == null) return;
         try {
+            if (Files.exists(file) && !changed.isEmpty()) {
+                String text = Files.readString(file, StandardCharsets.UTF_8);
+                boolean allPlaced = true;
+                for (Map.Entry<String, Object> e : changed.entrySet()) {
+                    String next = YamlInPlace.set(text, e.getKey(), e.getValue());
+                    if (next == null) {
+                        allPlaced = false;
+                        break;
+                    }
+                    text = next;
+                }
+                if (allPlaced) {
+                    Files.writeString(file, text, StandardCharsets.UTF_8);
+                    changed.clear();
+                    return;
+                }
+            }
             YamlFiles.write(file, root);
+            changed.clear();
         } catch (IOException e) {
             throw new java.io.UncheckedIOException(e);
         }
@@ -222,6 +249,7 @@ public final class YamlConfig implements Config {
             Map<String, Object> fresh = load(file, fallback).root;
             root.clear();
             root.putAll(fresh);
+            changed.clear();
         } catch (IOException e) {
             throw new java.io.UncheckedIOException(e);
         }

@@ -6,6 +6,7 @@ import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Subscription;
 import com.gadgetman.jarvis.core.platform.Task;
 import com.gadgetman.jarvis.core.platform.events.ChatEvent;
+import com.gadgetman.jarvis.ui.Prompts;
 
 import java.util.Locale;
 import java.util.Map;
@@ -24,6 +25,7 @@ public class ChatTrigger {
 
     private final Platform platform;
     private final IntentPipeline pipeline;
+    private final Prompts prompts;
     private final boolean enabled;
     private final String prefix;
     private final boolean requirePrefix;
@@ -34,8 +36,13 @@ public class ChatTrigger {
     private Task cleanup;
 
     public ChatTrigger(Platform platform, IntentPipeline pipeline) {
+        this(platform, pipeline, null);
+    }
+
+    public ChatTrigger(Platform platform, IntentPipeline pipeline, Prompts prompts) {
         this.platform = platform;
         this.pipeline = pipeline;
+        this.prompts = prompts;
         Config cfg = platform.config();
         this.enabled       = cfg.getBoolean("natural-language.enabled", true);
         this.prefix        = cfg.getString("natural-language.prefix", "jarvis").toLowerCase(Locale.ROOT);
@@ -44,8 +51,10 @@ public class ChatTrigger {
     }
 
     public void start() {
-        if (!enabled) return;
+        // Subscribed even when natural language is off, so an open question
+        // can still be answered; the pipeline part below honours the switch.
         subscription = platform.events().on(ChatEvent.class, this::onChat);
+        if (!enabled) return;
         cleanup = platform.scheduler().every(1200L, 1200L, self -> {
             long cutoff = System.currentTimeMillis() - 60000;
             lastCommandTime.entrySet().removeIf(e -> e.getValue() < cutoff);
@@ -60,6 +69,12 @@ public class ChatTrigger {
     /** May arrive off the server thread; the pipeline hops where it needs to be. */
     private void onChat(ChatEvent event) {
         Owner player = event.who();
+        // A line that answers a question he asked never reaches chat or the pipeline.
+        if (prompts != null && prompts.offer(player, event.text())) {
+            event.cancel().accept(true);
+            return;
+        }
+        if (!enabled) return;
         String message = event.text().toLowerCase(Locale.ROOT).trim();
 
         boolean shouldProcess;

@@ -129,4 +129,33 @@ class CommandServiceTest {
         assertTrue(p.wasTold("Service Record"));
         assertTrue(p.wasTold("Ore 4"), String.join("\n", p.plainMessages()));
     }
+
+    @Test
+    @DisplayName("/jarvis ai sets up providers for admins and refuses everyone else")
+    void aiSetupCommands() {
+        run(p, "ai", "key", "claude", "sk-1");
+        assertTrue(p.wasTold("permission"));
+        assertFalse(f.core.ai().hasApiKey("claude"));
+
+        p.op = true;
+        run(p, "ai", "key", "claude", "sk-1");
+        assertTrue(f.core.ai().hasApiKey("claude"));
+        assertTrue(p.wasTold("server log"), "warned that commands are logged");
+
+        run(p, "ai", "disable", "gemini");
+        assertFalse(f.core.ai().isEnabled("gemini"));
+        run(p, "ai", "model", "ollama", "llama3.2");
+        assertEquals("llama3.2", f.core.ai().modelOf("ollama"));
+        run(p, "ai", "endpoint", "ollama", "nope");
+        assertTrue(p.wasTold("starts with http"));
+        run(p, "ai", "test", "ollama");
+        assertTrue(p.wasTold("failed"));
+        run(p, "ai", "enable", "bard");
+        assertTrue(p.wasTold("not 'bard'"));
+
+        var tab = f.core.commands().jarvis(p, Optional.of(p), List.of("ai", "ena"), true);
+        assertEquals(List.of("enable"), tab);
+        var providers = f.core.commands().jarvis(p, Optional.of(p), List.of("ai", "key", "c"), true);
+        assertEquals(List.of("claude"), providers);
+    }
 }

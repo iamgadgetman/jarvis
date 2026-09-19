@@ -4,6 +4,7 @@ import com.gadgetman.jarvis.ConfirmationManager;
 import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.PlayerRequestManager;
 import com.gadgetman.jarvis.ai.AIConnector;
+import com.gadgetman.jarvis.ai.AiSettings;
 import com.gadgetman.jarvis.building.BuildingAssistant;
 import com.gadgetman.jarvis.building.ScriptEngineProbe;
 import com.gadgetman.jarvis.core.platform.Audience;
@@ -87,7 +88,18 @@ public class CommandService implements CommandSink {
     }
 
     private List<String> complete(List<String> args) {
-        if (args.size() > 1) return List.of();
+        if (args.size() > 1) {
+            if (!args.get(0).equalsIgnoreCase("ai")) return List.of();
+            List<String> pool = args.size() == 2 ? AI_SUBCOMMANDS
+                    : args.size() == 3 && !args.get(1).equalsIgnoreCase("status") ? AiSettings.PROVIDERS
+                    : List.of();
+            String prefix = args.get(args.size() - 1).toLowerCase(Locale.ROOT);
+            List<String> out = new ArrayList<>();
+            for (String c : pool) {
+                if (c.startsWith(prefix)) out.add(c);
+            }
+            return out;
+        }
         String prefix = args.isEmpty() ? "" : args.get(0).toLowerCase(Locale.ROOT);
         List<String> out = new ArrayList<>();
         for (String c : COMPLETIONS) {
@@ -110,6 +122,15 @@ public class CommandService implements CommandSink {
             case "debug" -> {
                 if (!isAdmin(sender, asPlayer)) { sender.message(Colors.RED + "You don't have permission."); return; }
                 core.printDebug(sender);
+                return;
+            }
+            case "ai" -> {
+                if (args.size() <= 1 || args.get(1).equalsIgnoreCase("status")) {
+                    showAiStatus(sender);
+                    return;
+                }
+                if (!isAdmin(sender, asPlayer)) { sender.message(Colors.RED + "You don't have permission."); return; }
+                handleAiSetup(sender, args);
                 return;
             }
             // Console-friendly like reload and debug: an admin dumping training data
@@ -247,7 +268,6 @@ public class CommandService implements CommandSink {
                 });
             }
 
-            case "ai" -> showAiStatus(player);
             case "report", "briefing", "status" -> {
                 if (core.morningReport() != null) core.morningReport().deliver(player, false);
             }
@@ -650,7 +670,7 @@ public class CommandService implements CommandSink {
     // ==================== AI ====================
 
     /** /jarvis ai — routing and provider health at a glance. */
-    private void showAiStatus(Owner player) {
+    private void showAiStatus(Audience player) {
         AIConnector ai = core.ai();
         player.message(Colors.GOLD + "═══ Jarvis AI Status ═══");
         if (ai.isReducedMode()) {
@@ -675,6 +695,94 @@ public class CommandService implements CommandSink {
             player.message(Colors.GRAY + "  " + entry.getKey() + ": " + color + status);
         }
         player.message(Colors.GOLD + "════════════════════════");
+    }
+
+    private static final List<String> AI_SUBCOMMANDS = List.of(
+            "status", "enable", "disable", "key", "endpoint", "model", "models", "test");
+
+    /**
+     * {@code /jarvis ai enable|disable|key|endpoint|model|test <provider> [value]}
+     * and {@code /jarvis ai models}: the bell menu's AI page as words, for the
+     * console and for anyone who prefers typing.
+     */
+    private void handleAiSetup(Audience sender, List<String> args) {
+        AiSettings settings = core.aiSettings();
+        String what = args.get(1).toLowerCase(Locale.ROOT);
+        if (what.equals("models")) {
+            String target = args.size() > 2 ? settings.resolve(args.get(2)) : "ollama";
+            if (!"ollama".equals(target)) {
+                sender.message(Colors.RED + "Jarvis: Only an Ollama server can be asked what it offers, sir.");
+                return;
+            }
+            sender.message(Colors.GRAY + "Jarvis: Asking " + settings.endpoint("ollama") + "...");
+            settings.ollamaModels(
+                    models -> sender.message(models.isEmpty()
+                            ? Colors.YELLOW + "Jarvis: The server has no models pulled yet, sir."
+                            : Colors.GREEN + "Jarvis: Models on offer: " + Colors.WHITE + String.join(", ", models)),
+                    why -> sender.message(Colors.RED + "Jarvis: I could not reach it, sir: " + why));
+            return;
+        }
+        if (!AI_SUBCOMMANDS.contains(what)) {
+            sender.message(Colors.RED + "Usage: /jarvis ai [status | enable | disable | key | endpoint | model | models | test] <provider> [value]");
+            return;
+        }
+        if (args.size() < 3) {
+            sender.message(Colors.RED + "Usage: /jarvis ai " + what + " <" + String.join("|", AiSettings.PROVIDERS) + ">"
+                    + (what.equals("key") || what.equals("endpoint") || what.equals("model") ? " <value>" : ""));
+            return;
+        }
+        String provider = settings.resolve(args.get(2));
+        if (provider == null) {
+            sender.message(Colors.RED + "Jarvis: I know " + String.join(", ", AiSettings.PROVIDERS) + ", sir; not '" + args.get(2) + "'.");
+            return;
+        }
+        String value = rest(args, 3);
+        switch (what) {
+            case "enable" -> {
+                settings.setEnabled(provider, true);
+                sender.message(Colors.GREEN + "Jarvis: " + provider + " is on the list, sir. Status: " + settings.status(provider) + ".");
+            }
+            case "disable" -> {
+                settings.setEnabled(provider, false);
+                sender.message(Colors.YELLOW + "Jarvis: " + provider + " is off the list, sir.");
+            }
+            case "key" -> {
+                if (!settings.needsKey(provider)) {
+                    sender.message(Colors.GRAY + "Jarvis: " + provider + " needs no key, sir.");
+                    return;
+                }
+                if (value.isEmpty()) {
+                    sender.message(Colors.RED + "Usage: /jarvis ai key " + provider + " <key>");
+                    return;
+                }
+                settings.setKey(provider, value);
+                sender.message(Colors.GREEN + "Jarvis: Key for " + provider + " stored, sir.");
+                sender.message(Colors.GRAY + "A word of caution: commands are written to the server log. "
+                        + "The bell menu asks for keys in chat instead, which is not.");
+            }
+            case "endpoint" -> {
+                if (!settings.setEndpoint(provider, value)) {
+                    sender.message(Colors.RED + "Jarvis: An address starts with http:// or https://, sir.");
+                    return;
+                }
+                sender.message(Colors.GREEN + "Jarvis: " + provider + " will be asked at "
+                        + (value.isEmpty() ? "its default address" : value) + ", sir.");
+            }
+            case "model" -> {
+                if (value.isEmpty()) {
+                    sender.message(Colors.RED + "Usage: /jarvis ai model " + provider + " <model>");
+                    return;
+                }
+                settings.setModel(provider, value);
+                sender.message(Colors.GREEN + "Jarvis: " + provider + " will use " + value + ", sir.");
+            }
+            case "test" -> {
+                sender.message(Colors.GRAY + "Jarvis: Trying " + provider + " (" + settings.model(provider) + ")...");
+                settings.test(provider, verdict -> sender.message(
+                        (verdict.startsWith("failed") ? Colors.RED : Colors.GREEN) + "Jarvis: " + provider + " " + verdict));
+            }
+            default -> showAiStatus(sender);
+        }
     }
 
     // ==================== CONFIRMATIONS AND REQUESTS ====================

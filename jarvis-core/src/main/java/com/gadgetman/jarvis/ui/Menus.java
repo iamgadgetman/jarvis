@@ -1,6 +1,7 @@
 package com.gadgetman.jarvis.ui;
 
 import com.gadgetman.jarvis.JarvisCore;
+import com.gadgetman.jarvis.ai.AiSettings;
 import com.gadgetman.jarvis.core.platform.Config;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
@@ -618,8 +619,8 @@ public class Menus {
 
         m.put(11, item(Ids.WRITABLE_BOOK, Colors.GOLD + "Pending requests", Colors.GRAY + "Item requests awaiting a decision"),
                 c -> { if (p.hasPermission("jarvis.admin")) run(p, "requests"); });
-        m.put(12, item(Ids.AMETHYST_SHARD, Colors.LIGHT_PURPLE + "AI status", Colors.GRAY + "Routing and provider health"),
-                c -> { if (p.hasPermission("jarvis.admin")) run(p, "ai"); });
+        m.put(12, item(Ids.AMETHYST_SHARD, Colors.LIGHT_PURPLE + "AI setup", Colors.GRAY + "Providers, keys, models and a test"),
+                c -> { if (p.hasPermission("jarvis.admin")) open(p, aiSetup(p)); });
         m.put(13, item(Ids.REPEATER, Colors.AQUA + "Reload config", Colors.GRAY + "Re-read config.yml"),
                 c -> { if (p.hasPermission("jarvis.admin")) run(p, "reload"); });
         m.put(14, item(Ids.CHEST_MINECART, Colors.YELLOW + "Export dataset", Colors.GRAY + "Dump intent & build pairs as JSONL"),
@@ -627,6 +628,176 @@ public class Menus {
 
         m.put(31, back(), c -> open(p, main(p)));
         return m.build();
+    }
+
+    // ==================== AI SETUP ====================
+
+    private static String providerTitle(String provider) {
+        return switch (provider) {
+            case "ollama" -> "Ollama";
+            case "claude" -> "Claude";
+            case "openai" -> "OpenAI";
+            case "grok" -> "Grok";
+            case "gemini" -> "Gemini";
+            default -> provider;
+        };
+    }
+
+    private static String providerIcon(String provider) {
+        return switch (provider) {
+            case "ollama" -> Ids.LANTERN;
+            case "claude" -> Ids.AMETHYST_SHARD;
+            case "openai" -> Ids.ENDER_EYE;
+            case "grok" -> Ids.END_ROD;
+            case "gemini" -> Ids.NAUTILUS_SHELL;
+            default -> Ids.PAPER;
+        };
+    }
+
+    private static String statusColour(String status) {
+        if (status.startsWith("available")) return Colors.GREEN;
+        if (status.startsWith("cooldown")) return Colors.RED;
+        if (status.startsWith("no API key")) return Colors.YELLOW;
+        return Colors.GRAY;
+    }
+
+    private static Item backTo(String where) {
+        return item(Ids.ARROW, Colors.WHITE + "Back", Colors.GRAY + "Return to " + where);
+    }
+
+    /** One row of providers: left to set one up, right to switch it on or off. */
+    private Menu aiSetup(Owner p) {
+        Builder m = new Builder("Jarvis — AI providers", 3);
+        AiSettings s = core.aiSettings();
+        int slot = 10;
+        for (String provider : AiSettings.PROVIDERS) {
+            boolean on = s.isEnabled(provider);
+            String status = s.status(provider);
+            List<String> lore = new ArrayList<>();
+            lore.add(Colors.GRAY + "Status: " + statusColour(status) + status);
+            lore.add(Colors.GRAY + "Model: " + Colors.WHITE + s.model(provider));
+            if (s.needsKey(provider)) {
+                lore.add(Colors.GRAY + "Key: " + (s.hasKey(provider) ? Colors.GREEN + "set" : Colors.RED + "not set"));
+            } else {
+                lore.add(Colors.GRAY + "Server: " + Colors.WHITE + s.endpoint(provider));
+            }
+            lore.add(Colors.DARK_GRAY + "Left: set up  ·  Right: " + (on ? "disable" : "enable"));
+            Item icon = Item.of(on ? providerIcon(provider) : Ids.GRAY_DYE)
+                    .named((on ? Colors.AQUA : Colors.DARK_GRAY) + providerTitle(provider) + " " + onOff(on))
+                    .withLore(lore);
+            m.put(slot++, icon, c -> {
+                if (!p.hasPermission("jarvis.admin")) return;
+                if (c.right()) {
+                    s.setEnabled(provider, !s.isEnabled(provider));
+                    open(p, aiSetup(p));
+                } else {
+                    open(p, aiProvider(p, provider));
+                }
+            });
+        }
+        m.put(16, item(Ids.BOOK, Colors.WHITE + "Routing status", Colors.GRAY + "Light and heavy routes, in chat"),
+                c -> run(p, "ai"));
+        m.put(22, backTo("the admin page"), c -> open(p, admin(p)));
+        return m.build();
+    }
+
+    /** One provider: on or off, its key or address, its model, and a test. */
+    private Menu aiProvider(Owner p, String provider) {
+        Builder m = new Builder("Jarvis — " + providerTitle(provider), 3);
+        AiSettings s = core.aiSettings();
+        boolean on = s.isEnabled(provider);
+        String status = s.status(provider);
+        m.label(4, item(providerIcon(provider), Colors.AQUA + providerTitle(provider),
+                Colors.GRAY + "Status: " + statusColour(status) + status));
+
+        m.put(10, item(on ? Ids.LIME_DYE : Ids.GRAY_DYE, Colors.WHITE + "Enabled: " + onOff(on),
+                Colors.GRAY + (on ? "In the list of providers he may use" : "Skipped until switched on"),
+                Colors.DARK_GRAY + "Click to toggle"),
+                c -> { s.setEnabled(provider, !s.isEnabled(provider)); open(p, aiProvider(p, provider)); });
+
+        if (s.needsKey(provider)) {
+            m.put(11, item(Ids.NAME_TAG, Colors.YELLOW + "API key: " + (s.hasKey(provider) ? Colors.GREEN + "set" : Colors.RED + "not set"),
+                    Colors.GRAY + "Click, then paste the key in chat.", Colors.GRAY + "Nobody else sees it; it is not logged."),
+                    c -> askInChat(p, "Paste the " + providerTitle(provider) + " API key.", key -> {
+                        s.setKey(provider, key);
+                        p.message(Colors.GREEN + "Jarvis: Key for " + providerTitle(provider) + " stored, sir.");
+                        open(p, aiProvider(p, provider));
+                    }));
+            m.put(12, item(Ids.BOOK, Colors.AQUA + "Model: " + Colors.WHITE + s.model(provider),
+                    Colors.GRAY + "Click, then type the model name in chat."),
+                    c -> askInChat(p, "Which " + providerTitle(provider) + " model? (Currently " + s.model(provider) + ".)", model -> {
+                        s.setModel(provider, model);
+                        p.message(Colors.GREEN + "Jarvis: " + providerTitle(provider) + " will use " + model + ", sir.");
+                        open(p, aiProvider(p, provider));
+                    }));
+        } else {
+            m.put(11, item(Ids.COMPASS, Colors.YELLOW + "Server: " + Colors.WHITE + s.endpoint(provider),
+                    Colors.GRAY + "Click, then type the address in chat.", Colors.DARK_GRAY + "For example http://10.0.0.5:11434"),
+                    c -> askInChat(p, "Where is the Ollama server? (Currently " + s.endpoint(provider) + ".)", url -> {
+                        if (!s.setEndpoint(provider, url)) {
+                            p.message(Colors.RED + "Jarvis: An address starts with http:// or https://, sir. Left as it was.");
+                        } else {
+                            p.message(Colors.GREEN + "Jarvis: I shall ask " + s.endpoint(provider) + ", sir.");
+                        }
+                        open(p, aiProvider(p, provider));
+                    }));
+            m.put(12, item(Ids.BOOK, Colors.AQUA + "Model: " + Colors.WHITE + s.model(provider),
+                    Colors.GRAY + "Click to pick from what the server has pulled."),
+                    c -> {
+                        p.message(Colors.GRAY + "Jarvis: Asking " + s.endpoint(provider) + " what it offers...");
+                        s.ollamaModels(models -> {
+                            if (models.isEmpty()) {
+                                p.message(Colors.YELLOW + "Jarvis: The server has no models pulled yet, sir. "
+                                        + "Try 'ollama pull mistral' on it.");
+                                open(p, aiProvider(p, provider));
+                            } else {
+                                open(p, ollamaModelPicker(p, models));
+                            }
+                        }, why -> {
+                            p.message(Colors.RED + "Jarvis: I could not reach it, sir: " + why);
+                            open(p, aiProvider(p, provider));
+                        });
+                    });
+        }
+
+        m.put(14, item(Ids.REDSTONE, Colors.GREEN + "Test connection",
+                Colors.GRAY + "One small request; the verdict comes in chat."),
+                c -> {
+                    p.message(Colors.GRAY + "Jarvis: Trying " + providerTitle(provider) + " (" + s.model(provider) + ")...");
+                    s.test(provider, verdict -> p.message(
+                            (verdict.startsWith("failed") ? Colors.RED : Colors.GREEN) + "Jarvis: " + providerTitle(provider) + " " + verdict));
+                });
+
+        m.put(22, backTo("the providers"), c -> open(p, aiSetup(p)));
+        return m.build();
+    }
+
+    /** The models an Ollama server offers, one per slot. */
+    private Menu ollamaModelPicker(Owner p, List<String> models) {
+        int shown = Math.min(models.size(), 45);
+        int rows = Math.min(6, (shown + 8) / 9 + 1);
+        Builder m = new Builder("Jarvis — Ollama models", rows);
+        AiSettings s = core.aiSettings();
+        String current = s.model("ollama");
+        for (int i = 0; i < shown; i++) {
+            String model = models.get(i);
+            boolean chosen = model.equals(current);
+            m.put(i, item(chosen ? Ids.LIME_DYE : Ids.PAPER, (chosen ? Colors.GREEN : Colors.WHITE) + model,
+                    Colors.GRAY + (chosen ? "In use" : "Click to use this one")),
+                    c -> {
+                        s.setModel("ollama", model);
+                        p.message(Colors.GREEN + "Jarvis: Ollama will use " + model + ", sir.");
+                        open(p, aiProvider(p, "ollama"));
+                    });
+        }
+        m.put(rows * 9 - 5, backTo("Ollama"), c -> open(p, aiProvider(p, "ollama")));
+        return m.build();
+    }
+
+    /** Close the menu and ask for a typed value; the answer comes back on the server thread. */
+    private void askInChat(Owner p, String question, java.util.function.Consumer<String> answer) {
+        close(p);
+        core.prompts().ask(p, question, answer);
     }
 
     // ==================== CONFIRM ====================
