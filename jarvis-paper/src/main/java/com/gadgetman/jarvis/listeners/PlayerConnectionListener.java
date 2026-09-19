@@ -10,7 +10,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 /**
  * PlayerConnectionListener - Handles player disconnect events
  *
- * On quit: Drops NPC inventory items, cleans up all state maps, destroys NPC
+ * On quit: forgets the per-session state the Paper side keeps for a player.
  */
 public class PlayerConnectionListener implements Listener {
 
@@ -24,10 +24,8 @@ public class PlayerConnectionListener implements Listener {
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
 
-        // Handle NPC cleanup - drops inventory items and destroys NPC
-        if (plugin.getJarvisNPC() != null) {
-            plugin.getJarvisNPC().handlePlayerDisconnect(player);
-        }
+        // The NPC itself is cleaned up by core's ButlerService, which
+        // subscribes to the platform's QuitEvent; only Paper-side state is here.
 
         // Idle-remark cooldowns are per-session state; the mute is not, and stays.
         if (plugin.getRemarks() != null) {

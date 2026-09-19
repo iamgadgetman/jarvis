@@ -71,10 +71,6 @@ public final class CitizensButler implements Butler {
         return npc != null && npc.isSpawned() && npc.getEntity() != null ? npc : null;
     }
 
-    private Player player() {
-        return Bukkit.getPlayer(ownerId);
-    }
-
     private Location location() {
         NPC npc = npc();
         if (npc == null) return null;
@@ -91,6 +87,18 @@ public final class CitizensButler implements Butler {
     // ---- identity and place ----
 
     @Override public Owner owner() { return plugin.getPlatform().players().owner(ownerId); }
+
+    @Override
+    public void spawn(World world, Vec3 at, String name) {
+        provider.spawn(ownerId, PaperWorlds.location(PaperWorlds.handle(world), at), name);
+    }
+
+    @Override
+    public void despawn() {
+        provider.despawn(ownerId);
+    }
+
+    @Override public boolean exists() { return provider.exists(ownerId); }
     @Override public boolean isSpawned() { return spawnedNpc() != null; }
 
     @Override
@@ -335,13 +343,12 @@ public final class CitizensButler implements Butler {
     @Override
     public void breakBlock(BlockPos pos, Item tool, double speedModifier, Consumer<Boolean> onDone) {
         NPC npc = spawnedNpc();
-        Player player = player();
-        if (npc == null || player == null) {
+        if (npc == null) {
             onDone.accept(false);
             return;
         }
         org.bukkit.block.Block block = npc.getEntity().getWorld().getBlockAt(pos.x(), pos.y(), pos.z());
-        provider.breakBlock(player, block, PaperItems.toStack(tool), speedModifier, onDone);
+        provider.breakBlock(ownerId, block, PaperItems.toStack(tool), speedModifier, onDone);
     }
 
     @Override
@@ -430,9 +437,9 @@ public final class CitizensButler implements Butler {
     }
 
     @Override
-    public boolean addToInventory(Item item) {
+    public Item addToInventory(Item item) {
         NPC npc = npc();
-        if (npc == null || item.isEmpty()) return false;
+        if (npc == null || item.isEmpty()) return item;
         ItemStack stack = PaperItems.toStack(item);
         Inventory invTrait = npc.getOrAddTrait(Inventory.class);
         ItemStack[] contents = invTrait.getContents();
@@ -447,7 +454,7 @@ public final class CitizensButler implements Butler {
                     stack.setAmount(stack.getAmount() - toAdd);
                     if (stack.getAmount() <= 0) {
                         invTrait.setContents(contents);
-                        return true;
+                        return Item.EMPTY;
                     }
                 }
             }
@@ -456,10 +463,11 @@ public final class CitizensButler implements Butler {
             if (contents[i] == null || contents[i].getType() == Material.AIR) {
                 contents[i] = stack;
                 invTrait.setContents(contents);
-                return true;
+                return Item.EMPTY;
             }
         }
-        return false;
+        invTrait.setContents(contents);
+        return item.withCount(stack.getAmount());
     }
 
     @Override

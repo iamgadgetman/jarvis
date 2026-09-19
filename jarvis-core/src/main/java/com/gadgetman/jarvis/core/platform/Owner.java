@@ -45,6 +45,15 @@ public interface Owner extends Audience {
     /** Experience level. */
     int level();
 
+    /** Hunger, 0 to 20. */
+    int foodLevel();
+
+    /**
+     * How worn the held item is, 0 (new) to 1 (about to break), or a negative
+     * number when it does not wear.
+     */
+    double heldItemWear();
+
     boolean isSneaking();
 
     /** The game mode's lower-case name: survival, creative, adventure, spectator. */

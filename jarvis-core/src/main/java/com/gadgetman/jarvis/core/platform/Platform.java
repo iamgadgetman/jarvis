@@ -30,6 +30,8 @@ public interface Platform {
 
     Events events();
 
+    Items items();
+
     Optional<World> world(WorldId id);
 
     /** Loaded worlds. */

@@ -13,6 +13,7 @@ import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.Damageable;
 
 import java.util.List;
 import java.util.Locale;
@@ -107,6 +108,24 @@ public final class PaperOwner implements Owner {
     public int level() {
         Player p = p();
         return p == null ? 0 : p.getLevel();
+    }
+
+    @Override
+    public int foodLevel() {
+        Player p = p();
+        return p == null ? 20 : p.getFoodLevel();
+    }
+
+    @Override
+    public double heldItemWear() {
+        Player p = p();
+        if (p == null) return -1;
+        ItemStack held = p.getInventory().getItemInMainHand();
+        if (held == null || held.getType().isAir()) return -1;
+        int max = held.getType().getMaxDurability();
+        if (max <= 20) return -1;                       // not a tool, or wears too little to matter
+        if (!(held.getItemMeta() instanceof Damageable d)) return -1;
+        return d.getDamage() / (double) max;
     }
 
     @Override

@@ -147,7 +147,7 @@ public class UIManager implements Listener {
                 ChatColor.GRAY + "Briefing, standing duties"));
         var progression = plugin.getProgressionManager();
         if (progression != null && progression.isEnabled()) {
-            var rank = progression.rankOf(p);
+            var rank = progression.rankOf(plugin.owner(p));
             m.setItem(26, item(Material.GOLDEN_HELMET, ChatColor.GOLD + "Service record",
                     ChatColor.GRAY + "Rank " + rank.number() + " — " + rank.title(),
                     ChatColor.DARK_GRAY + "What he's earned, and what's next"));
@@ -195,7 +195,7 @@ public class UIManager implements Listener {
 
         var prog = plugin.getProgressionManager();
         boolean canTunnel = prog == null
-                || prog.has(p, com.gadgetman.jarvis.progression.Rank.Capability.WIDE_BORE);
+                || prog.has(plugin.owner(p), com.gadgetman.jarvis.progression.Rank.Capability.WIDE_BORE);
         if (canTunnel) {
             m.setItem(9, item(Material.NETHERITE_PICKAXE, ChatColor.GOLD + "Drive a tunnel",
                     ChatColor.GRAY + "A straight 3x3 passage where he faces",
@@ -406,9 +406,9 @@ public class UIManager implements Listener {
     private Inventory createServiceRecord(Player p) {
         Inventory m = menu(JarvisMenu.Type.SERVICE_RECORD, 6, "Jarvis — Service Record");
         var progression = plugin.getProgressionManager();
-        var record = progression.recordOf(p);
-        var rank   = progression.rankOf(p);
-        boolean exempt = progression.isExempt(p);
+        var record = progression.recordOf(plugin.owner(p));
+        var rank   = progression.rankOf(plugin.owner(p));
+        boolean exempt = progression.isExempt(plugin.owner(p));
 
         m.setItem(4, item(Material.GOLDEN_HELMET,
                 ChatColor.GOLD + "Rank " + rank.number() + " — " + rank.title(),

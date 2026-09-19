@@ -4,10 +4,12 @@ import com.gadgetman.jarvis.core.platform.Events;
 import com.gadgetman.jarvis.core.platform.Log;
 import com.gadgetman.jarvis.core.platform.Site;
 import com.gadgetman.jarvis.core.platform.Subscription;
+import com.gadgetman.jarvis.core.platform.events.ButlerDamagedEvent;
 import com.gadgetman.jarvis.core.platform.events.ChatEvent;
 import com.gadgetman.jarvis.core.platform.events.DeathEvent;
 import com.gadgetman.jarvis.core.platform.events.Event;
 import com.gadgetman.jarvis.core.platform.events.JoinEvent;
+import com.gadgetman.jarvis.core.platform.events.OwnerDamagedEvent;
 import com.gadgetman.jarvis.core.platform.events.PortalEvent;
 import com.gadgetman.jarvis.core.platform.events.QuitEvent;
 import com.gadgetman.jarvis.core.world.Item;
@@ -16,6 +18,8 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.entity.Player;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
@@ -25,9 +29,12 @@ import org.bukkit.inventory.ItemStack;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Core's {@link Events} over Bukkit's. One listener, registered by the
@@ -38,8 +45,16 @@ public final class PaperEvents implements Events, Listener {
     private final Log log;
     private final Map<Class<?>, List<Consumer<Object>>> handlers = new ConcurrentHashMap<>();
 
+    /** Whose butler an entity is, set by the NPC adapter once it exists. */
+    private volatile Function<org.bukkit.entity.Entity, Optional<UUID>> butlerResolver = e -> Optional.empty();
+
     public PaperEvents(Log log) {
         this.log = log;
+    }
+
+    /** Tell the bridge how to recognise a butler, so his injuries reach core. */
+    public void butlerResolver(Function<org.bukkit.entity.Entity, Optional<UUID>> resolver) {
+        this.butlerResolver = resolver == null ? e -> Optional.empty() : resolver;
     }
 
     @Override
@@ -99,5 +114,20 @@ public final class PaperEvents implements Events, Listener {
         if (event.getFrom() == null || event.getFrom().getWorld() == null) return;
         Site to = event.getTo() != null && event.getTo().getWorld() != null ? PaperWorlds.site(event.getTo()) : null;
         publish(new PortalEvent(new PaperOwner(event.getPlayer().getUniqueId()), PaperWorlds.site(event.getFrom()), to));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onDamage(EntityDamageByEntityEvent event) {
+        org.bukkit.entity.Entity victim = event.getEntity();
+        if (victim instanceof Player p) {
+            if (!handlers.containsKey(OwnerDamagedEvent.class)) return;
+            publish(new OwnerDamagedEvent(new PaperOwner(p.getUniqueId()),
+                    Optional.of(new PaperEntity(event.getDamager())), event.getFinalDamage()));
+            return;
+        }
+        if (!handlers.containsKey(ButlerDamagedEvent.class)) return;
+        butlerResolver.apply(victim).ifPresent(ownerId ->
+                publish(new ButlerDamagedEvent(ownerId,
+                        Optional.of(new PaperEntity(event.getDamager())), event.getFinalDamage())));
     }
 }

@@ -241,7 +241,7 @@ public class BuildingAssistant {
         }
 
         // Check if NPC is summoned
-        if (!plugin.getJarvisNPC().getProvider().isSpawned(player)) {
+        if (!plugin.getJarvisNPC().isSpawned(player)) {
             player.sendMessage(ChatColor.RED + "Summon Jarvis first with /jarvis summon");
             return;
         }
@@ -612,7 +612,7 @@ public class BuildingAssistant {
         state.task = new BukkitRunnable() {
             @Override
             public void run() {
-                if (!plugin.getJarvisNPC().getProvider().isSpawned(player) || !player.isOnline()) {
+                if (!plugin.getJarvisNPC().isSpawned(player) || !player.isOnline()) {
                     cancelBuildInternal(player, "NPC or player unavailable", false);
                     cancel();
                     return;
@@ -886,7 +886,7 @@ public class BuildingAssistant {
         // record shows a permanent zero for blocks laid while the score that
         // uses it silently never moves.
         if (plugin.getProgressionManager() != null && state.placedBlocks > 0) {
-            plugin.getProgressionManager().record(player,
+            plugin.getProgressionManager().record(plugin.owner(player),
                     com.gadgetman.jarvis.progression.ServiceRecord.Discipline.CONSTRUCTION,
                     state.placedBlocks);
         }
@@ -1022,7 +1022,7 @@ public class BuildingAssistant {
      * Build a simple shape without AI
      */
     public void buildSimpleStructure(Player player, String type, int size) {
-        if (!plugin.getJarvisNPC().getProvider().isSpawned(player)) {
+        if (!plugin.getJarvisNPC().isSpawned(player)) {
             player.sendMessage(ChatColor.RED + "Summon Jarvis first!");
             return;
         }

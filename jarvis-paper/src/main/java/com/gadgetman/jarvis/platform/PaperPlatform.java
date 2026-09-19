@@ -2,6 +2,7 @@ package com.gadgetman.jarvis.platform;
 
 import com.gadgetman.jarvis.core.platform.Config;
 import com.gadgetman.jarvis.core.platform.Events;
+import com.gadgetman.jarvis.core.platform.Items;
 import com.gadgetman.jarvis.core.platform.Log;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
@@ -28,6 +29,19 @@ public final class PaperPlatform implements Platform {
     private final PaperScheduler scheduler;
     private final PaperPlayers players;
     private final PaperEvents events;
+    private final Items items = new Items() {
+        @Override
+        public boolean isEdible(String id) {
+            org.bukkit.Material m = org.bukkit.Material.matchMaterial(id);
+            return m != null && m.isEdible();
+        }
+
+        @Override
+        public int maxStackSize(String id) {
+            org.bukkit.Material m = org.bukkit.Material.matchMaterial(id);
+            return m == null ? 64 : m.getMaxStackSize();
+        }
+    };
 
     public PaperPlatform(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -50,6 +64,10 @@ public final class PaperPlatform implements Platform {
     @Override public Path dataDir() { return plugin.getDataFolder().toPath(); }
     @Override public Players players() { return players; }
     @Override public Events events() { return events; }
+    @Override public Items items() { return items; }
+
+    /** The event bridge, for the adapter to tell it whose butler an entity is. */
+    public PaperEvents paperEvents() { return events; }
 
     @Override
     public Optional<World> world(WorldId id) {

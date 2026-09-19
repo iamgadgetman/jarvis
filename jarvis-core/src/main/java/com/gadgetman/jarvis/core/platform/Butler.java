@@ -24,6 +24,15 @@ public interface Butler {
 
     Owner owner();
 
+    /** Put him in the world at a point, with a name. No-op if already spawned. */
+    void spawn(World world, Vec3 at, String name);
+
+    /** Take him out of the world and forget him. Drops nothing; the caller decides that. */
+    void despawn();
+
+    /** True while the adapter has a record of him, spawned or not. */
+    boolean exists();
+
     boolean isSpawned();
 
     Optional<Entity> entity();
@@ -129,8 +138,8 @@ public interface Butler {
 
     void setInventory(List<Item> items);
 
-    /** Stack onto what he has, then fill an empty slot. False when nothing fits. */
-    boolean addToInventory(Item item);
+    /** Stack onto what he has, then fill an empty slot. Returns what did not fit, empty when all did. */
+    Item addToInventory(Item item);
 
     void openInventory(Owner viewer);
 

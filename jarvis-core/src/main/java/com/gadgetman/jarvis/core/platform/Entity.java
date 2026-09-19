@@ -47,5 +47,8 @@ public interface Entity {
     /** The stack, when this is an item lying on the ground. */
     Optional<Item> asItem();
 
+    /** Replace the stack of an item lying on the ground. No-op for anything else. */
+    void setItem(Item item);
+
     void remove();
 }

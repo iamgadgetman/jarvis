@@ -1,7 +1,6 @@
 package com.gadgetman.jarvis.ui;
 
 import com.gadgetman.jarvis.Jarvis;
-import net.citizensnpcs.api.npc.NPC;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.boss.BarColor;
@@ -124,9 +123,8 @@ public class TaskMonitor {
     /** @return 0..1 how full Jarvis's inventory is, or -1 if unknown */
     private double lootFullness(Player player) {
         try {
-            NPC npc = plugin.getJarvisNPC().getNPCForPlayer(player.getUniqueId());
-            if (npc == null) return -1;
-            int used = plugin.getJarvisNPC().lootSlotsUsedPublic(npc);
+            if (!plugin.getJarvisNPC().exists(player)) return -1;
+            int used = plugin.getJarvisNPC().lootSlotsUsed(player);
             return used / 27.0;
         } catch (Exception e) {
             return -1;

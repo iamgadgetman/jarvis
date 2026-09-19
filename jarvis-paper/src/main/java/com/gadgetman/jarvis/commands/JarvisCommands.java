@@ -506,8 +506,8 @@ public class JarvisCommands implements CommandExecutor {
             player.sendMessage(ChatColor.GRAY + "Jarvis: Progression is switched off, sir.");
             return;
         }
-        var record = progression.recordOf(player);
-        var rank   = progression.rankOf(player);
+        var record = progression.recordOf(plugin.owner(player));
+        var rank   = progression.rankOf(plugin.owner(player));
 
         if (args.length >= 2 && (args[1].equalsIgnoreCase("set") || args[1].equalsIgnoreCase("reset"))) {
             if (!player.hasPermission("jarvis.admin")) {
@@ -540,7 +540,7 @@ public class JarvisCommands implements CommandExecutor {
             }
             record.setServiceFloor(target);
             progression.save(player.getUniqueId(), record);
-            progression.reissueKit(player);
+            progression.reissueKit(plugin.owner(player));
             player.sendMessage(ChatColor.GREEN + "Jarvis is now " + target.title() + ".");
             return;
         }
@@ -548,7 +548,7 @@ public class JarvisCommands implements CommandExecutor {
         player.sendMessage(ChatColor.GOLD + "=== Jarvis - Service Record ===");
         player.sendMessage(ChatColor.WHITE + "  Rank " + rank.number() + "/" + RANKS.length
                 + ChatColor.GRAY + " - " + ChatColor.YELLOW + rank.title());
-        if (progression.isExempt(player)) {
+        if (progression.isExempt(plugin.owner(player))) {
             player.sendMessage(ChatColor.LIGHT_PURPLE
                     + "  Operator: issued the top kit without the climb.");
         } else {
@@ -945,7 +945,7 @@ public class JarvisCommands implements CommandExecutor {
                 + ChatColor.GRAY + (graal ? " (GraalJS present)" : " (GraalJS MISSING)"));
 
         player.sendMessage(ChatColor.GRAY + "  NPC backend: " + ChatColor.WHITE
-                + plugin.getJarvisNPC().getProvider().getProviderName());
+                + plugin.getJarvisNPC().backendName());
         player.sendMessage(ChatColor.GRAY + "  AI: " + ChatColor.WHITE
                 + plugin.getAIConnector().getProvider() + "/" + plugin.getAIConnector().getModel());
     }

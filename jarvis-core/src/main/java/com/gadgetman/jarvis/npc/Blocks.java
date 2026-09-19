@@ -34,6 +34,36 @@ public final class Blocks {
             Ids.DEEPSLATE, Ids.TUFF, Ids.CALCITE,
             Ids.NETHERRACK, Ids.BASALT, Ids.BLACKSTONE);
 
+    /** Ore priority for the seeker: highest value first. */
+    public static final java.util.List<String> ORE_PRIORITY = java.util.List.of(
+            Ids.ANCIENT_DEBRIS,
+            Ids.DEEPSLATE_EMERALD_ORE, Ids.EMERALD_ORE,
+            Ids.DEEPSLATE_DIAMOND_ORE, Ids.DIAMOND_ORE,
+            Ids.DEEPSLATE_GOLD_ORE, Ids.GOLD_ORE,
+            Ids.DEEPSLATE_LAPIS_ORE, Ids.LAPIS_ORE,
+            Ids.DEEPSLATE_REDSTONE_ORE, Ids.REDSTONE_ORE,
+            Ids.DEEPSLATE_IRON_ORE, Ids.IRON_ORE,
+            Ids.DEEPSLATE_COPPER_ORE, Ids.COPPER_ORE,
+            Ids.DEEPSLATE_COAL_ORE, Ids.COAL_ORE,
+            Ids.NETHER_QUARTZ_ORE, Ids.NETHER_GOLD_ORE);
+
+    /** Keyword to the ores it names, for "mine diamonds". Longer keys first. */
+    public static final java.util.Map<String, Set<String>> ORE_KEYWORDS = new java.util.LinkedHashMap<>();
+    static {
+        ORE_KEYWORDS.put("ancient debris", Set.of(Ids.ANCIENT_DEBRIS));
+        ORE_KEYWORDS.put("debris",         Set.of(Ids.ANCIENT_DEBRIS));
+        ORE_KEYWORDS.put("netherite",      Set.of(Ids.ANCIENT_DEBRIS));
+        ORE_KEYWORDS.put("emerald",        Set.of(Ids.EMERALD_ORE, Ids.DEEPSLATE_EMERALD_ORE));
+        ORE_KEYWORDS.put("diamond",        Set.of(Ids.DIAMOND_ORE, Ids.DEEPSLATE_DIAMOND_ORE));
+        ORE_KEYWORDS.put("gold",           Set.of(Ids.GOLD_ORE, Ids.DEEPSLATE_GOLD_ORE, Ids.NETHER_GOLD_ORE));
+        ORE_KEYWORDS.put("lapis",          Set.of(Ids.LAPIS_ORE, Ids.DEEPSLATE_LAPIS_ORE));
+        ORE_KEYWORDS.put("redstone",       Set.of(Ids.REDSTONE_ORE, Ids.DEEPSLATE_REDSTONE_ORE));
+        ORE_KEYWORDS.put("iron",           Set.of(Ids.IRON_ORE, Ids.DEEPSLATE_IRON_ORE));
+        ORE_KEYWORDS.put("copper",         Set.of(Ids.COPPER_ORE, Ids.DEEPSLATE_COPPER_ORE));
+        ORE_KEYWORDS.put("quartz",         Set.of(Ids.NETHER_QUARTZ_ORE));
+        ORE_KEYWORDS.put("coal",           Set.of(Ids.COAL_ORE, Ids.DEEPSLATE_COAL_ORE));
+    }
+
     /** Ground he will not stand on. */
     public static final Set<String> HAZARDOUS_FOOTING = Set.of(
             Ids.LAVA, Ids.FIRE, Ids.MAGMA_BLOCK, Ids.CACTUS);

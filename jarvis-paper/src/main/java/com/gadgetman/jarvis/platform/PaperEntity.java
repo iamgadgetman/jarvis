@@ -67,6 +67,14 @@ public final class PaperEntity implements Entity {
                 : Optional.empty();
     }
 
+    @Override
+    public void setItem(Item item) {
+        if (e instanceof org.bukkit.entity.Item drop) {
+            if (item.isEmpty()) drop.remove();
+            else drop.setItemStack(PaperItems.toStack(item));
+        }
+    }
+
     @Override public void remove() { e.remove(); }
 
     @Override

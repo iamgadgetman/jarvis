@@ -114,7 +114,9 @@ public class Jarvis extends JavaPlugin {
         uiManager = new UIManager(this);
 
         // Service record — created before anything can issue him a tool.
-        progressionManager = new ProgressionManager(this);
+        progressionManager = new ProgressionManager(platform, databaseManager);
+        progressionManager.attach(jarvisNPC.core());
+        jarvisNPC.core().setProgression(progressionManager);
 
         // Initialize systems
         buildingAssistant = new BuildingAssistant(this);
@@ -125,16 +127,16 @@ public class Jarvis extends JavaPlugin {
                 getConfig().getLong("confirmation-timeout-seconds", 30));
         playerRequestManager = new PlayerRequestManager();
         dutyScheduler = new DutyScheduler(platform);
-        morningReport = new MorningReport(platform, jarvisNPC, playerRequestManager, dutyScheduler);
+        morningReport = new MorningReport(platform, jarvisNPC.core(), playerRequestManager, dutyScheduler);
 
         // Idle commentary. Off unless steward.remarks.enabled; start() is a
         // no-op otherwise, so nothing ticks for a server that has not asked.
-        remarks = new Remarks(platform, jarvisNPC);
+        remarks = new Remarks(platform, jarvisNPC.core());
         remarks.start();
 
         // Portals: he notes the ones we pass, and can do the 1:8 arithmetic
         // whether or not he has ever seen one.
-        portalScout = new PortalScout(platform, jarvisNPC);
+        portalScout = new PortalScout(platform, jarvisNPC.core());
         portalScout.start();
 
         // The one road from an utterance to an action; chat and voice both use it.
@@ -195,6 +197,7 @@ public class Jarvis extends JavaPlugin {
             voiceBridge.shutdown();
         }
         if (jarvisNPC != null) {
+            jarvisNPC.core().shutdown();
             jarvisNPC.dismissAll();
         }
         if (buildingAssistant != null) {

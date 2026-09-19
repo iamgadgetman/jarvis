@@ -1,16 +1,14 @@
 package com.gadgetman.jarvis.progression;
 
-import com.gadgetman.jarvis.Jarvis;
+import com.gadgetman.jarvis.DatabaseManager;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.core.platform.Platform;
+import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.core.world.Ids;
-import com.gadgetman.jarvis.platform.PaperItems;
+import com.gadgetman.jarvis.core.world.Item;
+import com.gadgetman.jarvis.npc.ButlerService;
 import com.gadgetman.jarvis.progression.ServiceRecord.Discipline;
-import org.bukkit.ChatColor;
-import org.bukkit.Material;
-import org.bukkit.Sound;
-import org.bukkit.entity.Player;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -34,7 +32,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class ProgressionManager {
 
-    private final Jarvis plugin;
+    private final Platform platform;
+    private final DatabaseManager database;
     private final Map<UUID, ServiceRecord> records = new ConcurrentHashMap<>();
 
     private final boolean enabled;
@@ -42,9 +41,13 @@ public class ProgressionManager {
     private final double rate;
     private final Rank opRank;
 
-    public ProgressionManager(Jarvis plugin) {
-        this.plugin   = plugin;
-        var cfg       = plugin.getConfig();
+    /** Set once the butler service exists; it is what re-issues the kit and speaks. */
+    private ButlerService butler;
+
+    public ProgressionManager(Platform platform, DatabaseManager database) {
+        this.platform = platform;
+        this.database = database;
+        Config cfg   = platform.config();
         this.enabled  = cfg.getBoolean("progression.enabled", true);
         this.opBypass = cfg.getBoolean("progression.op-bypass", true);
         this.rate     = cfg.getDouble("progression.rate", 1.0);
@@ -58,30 +61,35 @@ public class ProgressionManager {
         createTable();
     }
 
+    /** The butler service, once it exists, so a promotion can re-issue his tools. */
+    public void attach(ButlerService butler) {
+        this.butler = butler;
+    }
+
     public boolean isEnabled() { return enabled; }
 
     /** Operators are handed the top kit; they were never meant to grind for it. */
-    public boolean isExempt(Player player) {
+    public boolean isExempt(Owner player) {
         return !enabled || (opBypass && player.isOp());
     }
 
     // ==================== RECORDS ====================
 
-    public ServiceRecord recordOf(Player player) {
-        return records.computeIfAbsent(player.getUniqueId(), this::load);
+    public ServiceRecord recordOf(Owner player) {
+        return records.computeIfAbsent(player.id(), this::load);
     }
 
-    public Rank rankOf(Player player) {
+    public Rank rankOf(Owner player) {
         return isExempt(player) ? opRank : recordOf(player).rank();
     }
 
     /**
      * Credit work to a player's record, and promote him if it crosses a rank.
      *
-     * <p>Safe to call from any task on the main thread; the write to disk is
+     * <p>Safe to call from any task on the server thread; the write to disk is
      * pushed off it.
      */
-    public void record(Player player, Discipline discipline, int amount) {
+    public void record(Owner player, Discipline discipline, int amount) {
         if (!enabled || player == null || amount <= 0) return;
 
         ServiceRecord record = recordOf(player);
@@ -94,31 +102,27 @@ public class ProgressionManager {
             announce(player, earned);
             reissueKit(player);
         }
-        saveLater(player.getUniqueId(), record);
+        saveLater(player.id(), record);
     }
 
-    private void announce(Player player, Rank rank) {
-        player.sendMessage("");
-        player.sendMessage(ChatColor.GOLD + "  ⏵ Jarvis is now " + ChatColor.YELLOW
-                + rank.title() + ChatColor.GOLD + "  (rank " + rank.number() + "/" + Rank.values().length + ")");
-        player.sendMessage(ChatColor.GRAY + "     Newly at his disposal: " + ChatColor.WHITE + rank.whatIsNew());
-        player.sendMessage("");
-        player.playSound(player.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
+    private void announce(Owner player, Rank rank) {
+        player.message("");
+        player.message(Colors.GOLD + "  ⏵ Jarvis is now " + Colors.YELLOW
+                + rank.title() + Colors.GOLD + "  (rank " + rank.number() + "/" + Rank.values().length + ")");
+        player.message(Colors.GRAY + "     Newly at his disposal: " + Colors.WHITE + rank.whatIsNew());
+        player.message("");
+        player.sound(Ids.SOUND_UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
 
         // Let him say it himself if he has a voice.
-        var npc = plugin.getJarvisNPC();
-        if (npc != null) {
-            npc.speakTo(player, "You'll notice the upgrade, sir. " + rank.whatIsNew() + ".");
+        if (butler != null) {
+            butler.speakTo(player, "You'll notice the upgrade, sir. " + rank.whatIsNew() + ".");
         }
     }
 
     /** Swap his current tools for the ones his new rank entitles him to. */
-    public void reissueKit(Player player) {
-        var npc = plugin.getJarvisNPC();
-        if (npc == null || npc.getNPCForPlayer(player.getUniqueId()) == null) return;
-        new BukkitRunnable() {
-            @Override public void run() { npc.refreshKit(player); }
-        }.runTask(plugin);
+    public void reissueKit(Owner player) {
+        if (butler == null || !butler.exists(player)) return;
+        platform.scheduler().sync(() -> butler.refreshKit(player));
     }
 
     // ==================== KIT ====================
@@ -130,29 +134,23 @@ public class ProgressionManager {
      * the rank table rather than from an anvil — and every tool is marked
      * unbreakable, so his kit is never a maintenance task.
      */
-    public ItemStack kitItem(Player player, Rank.ToolKind kind) {
+    public Item kitItem(Owner player, Rank.ToolKind kind) {
         Rank rank = rankOf(player);
-        ItemStack item = new ItemStack(PaperItems.material(rank.toolFor(kind)));
-        ItemMeta meta = item.getItemMeta();
-        if (meta == null) return item;
+        String id = rank.toolFor(kind);
+        Item item = Item.of(id).unbreakable(true);
 
-        meta.setUnbreakable(true);
-        Material material = item.getType();
         for (var e : rank.enchants().entrySet()) {
-            org.bukkit.enchantments.Enchantment ench = PaperItems.enchantment(e.getKey());
-            if (ench != null && appliesTo(kind, material, e.getKey())) {
-                meta.addEnchant(ench, e.getValue(), true);
+            if (appliesTo(kind, id, e.getKey())) {
+                item = item.enchant(e.getKey(), e.getValue());
             }
         }
-        if (material == Material.TRIDENT) {
-            meta.addEnchant(org.bukkit.enchantments.Enchantment.LOYALTY, 3, true);
-            meta.addEnchant(org.bukkit.enchantments.Enchantment.CHANNELING, 1, true);
-            meta.addEnchant(org.bukkit.enchantments.Enchantment.IMPALING, 5, true);
+        if (Ids.TRIDENT.equals(id)) {
+            item = item.enchant(Ids.ENCHANT_LOYALTY, 3)
+                    .enchant(Ids.ENCHANT_CHANNELING, 1)
+                    .enchant(Ids.ENCHANT_IMPALING, 5);
         }
-        meta.setDisplayName(ChatColor.AQUA + "Jarvis's " + name(kind)
-                + ChatColor.DARK_GRAY + " (" + rank.title() + ")");
-        item.setItemMeta(meta);
-        return item;
+        return item.named(Colors.AQUA + "Jarvis's " + name(kind)
+                + Colors.DARK_GRAY + " (" + rank.title() + ")");
     }
 
     private static String name(Rank.ToolKind kind) {
@@ -168,16 +166,16 @@ public class ProgressionManager {
     }
 
     /** Does this player's standing grant a capability? */
-    public boolean has(Player player, Rank.Capability capability) {
+    public boolean has(Owner player, Rank.Capability capability) {
         return rankOf(player).grants(capability);
     }
 
     /** Only put an enchantment where it does something. */
-    private static boolean appliesTo(Rank.ToolKind kind, Material material, String enchantId) {
+    private static boolean appliesTo(Rank.ToolKind kind, String itemId, String enchantId) {
         String id = Ids.key(enchantId);
         // A trident takes none of the sword enchantments -- Sharpness on one is
         // simply ignored -- so it gets its own set below rather than inheriting.
-        if (material == Material.TRIDENT) return id.equals("fire_aspect");
+        if (Ids.TRIDENT.equals(itemId)) return id.equals("fire_aspect");
         return switch (kind) {
             case PICKAXE, AXE -> id.equals("efficiency") || id.equals("fortune");
             case SWORD        -> id.equals("sharpness")  || id.equals("looting")
@@ -196,8 +194,8 @@ public class ProgressionManager {
     // ==================== PERSISTENCE ====================
 
     private void createTable() {
-        if (plugin.getDatabaseManager() == null) return;
-        try (Connection c = plugin.getDatabaseManager().getConnection();
+        if (database == null) return;
+        try (Connection c = database.getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "CREATE TABLE IF NOT EXISTS service_record (" +
                      "player_id VARCHAR(36) PRIMARY KEY, " +
@@ -210,13 +208,13 @@ public class ProgressionManager {
                      "acknowledged VARCHAR(32) NOT NULL DEFAULT 'HIRED')")) {
             ps.executeUpdate();
         } catch (Exception e) {
-            plugin.getLogger().warning("Could not create service_record table: " + e.getMessage());
+            platform.log().warn("Could not create service_record table: " + e.getMessage());
         }
     }
 
     private ServiceRecord load(UUID id) {
-        if (plugin.getDatabaseManager() == null) return new ServiceRecord();
-        try (Connection c = plugin.getDatabaseManager().getConnection();
+        if (database == null) return new ServiceRecord();
+        try (Connection c = database.getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "SELECT ores, trees, crops, fish, threats, blocks, acknowledged "
                      + "FROM service_record WHERE player_id = ?")) {
@@ -232,20 +230,18 @@ public class ProgressionManager {
                 }
             }
         } catch (Exception e) {
-            plugin.getLogger().warning("Could not load service record: " + e.getMessage());
+            platform.log().warn("Could not load service record: " + e.getMessage());
         }
         return new ServiceRecord();
     }
 
     private void saveLater(UUID id, ServiceRecord record) {
-        new BukkitRunnable() {
-            @Override public void run() { save(id, record); }
-        }.runTaskAsynchronously(plugin);
+        platform.scheduler().async(() -> save(id, record));
     }
 
     public void save(UUID id, ServiceRecord r) {
-        if (plugin.getDatabaseManager() == null) return;
-        try (Connection c = plugin.getDatabaseManager().getConnection();
+        if (database == null) return;
+        try (Connection c = database.getConnection();
              PreparedStatement ps = c.prepareStatement(
                      "INSERT INTO service_record "
                      + "(player_id, ores, trees, crops, fish, threats, blocks, acknowledged) "
@@ -264,7 +260,7 @@ public class ProgressionManager {
             ps.setString(8, r.acknowledged().name());
             ps.executeUpdate();
         } catch (Exception e) {
-            plugin.getLogger().warning("Could not save service record: " + e.getMessage());
+            platform.log().warn("Could not save service record: " + e.getMessage());
         }
     }
 
