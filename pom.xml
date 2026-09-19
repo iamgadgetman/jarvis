@@ -24,6 +24,7 @@
     -->
     <modules>
         <module>jarvis-core</module>
+        <module>jarvis-nav</module>
         <module>jarvis-paper</module>
     </modules>
 
