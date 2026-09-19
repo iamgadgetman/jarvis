@@ -71,7 +71,7 @@ public class MorningReport implements Listener {
             int loot = plugin.getJarvisNPC().lootSlotsUsedPublic(npc);
             jarvisLine = loot == 0 ? "My bags are empty and I am at your disposal."
                     : "I'm carrying " + loot + " stacks of your goods"
-                      + (plugin.getJarvisNPC().getDepositManager().hasChest(player)
+                      + (plugin.getJarvisNPC().getDepositManager().hasChest(plugin.owner(player))
                          ? " — say the word and I'll deposit them." : ".");
         }
 

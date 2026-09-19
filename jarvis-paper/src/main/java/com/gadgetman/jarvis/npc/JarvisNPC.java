@@ -11,6 +11,17 @@ import net.citizensnpcs.api.ai.tree.BehaviorStatus;
 import net.citizensnpcs.api.astar.pathfinder.SwimmingExaminer;
 import net.citizensnpcs.api.npc.BlockBreaker;
 import com.gadgetman.jarvis.npc.provider.CitizensNPCProvider;
+import com.gadgetman.jarvis.npc.provider.CitizensButlers;
+import com.gadgetman.jarvis.core.platform.Butler;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.core.platform.Platform;
+import com.gadgetman.jarvis.core.platform.Task;
+import com.gadgetman.jarvis.core.world.BlockPos;
+import com.gadgetman.jarvis.core.world.Vec3;
+import com.gadgetman.jarvis.platform.BukkitTaskHandle;
+import com.gadgetman.jarvis.platform.PaperItems;
+import com.gadgetman.jarvis.platform.PaperWorlds;
 import com.gadgetman.jarvis.npc.provider.INPCProvider;
 import net.citizensnpcs.api.npc.NPC;
 import net.citizensnpcs.api.trait.trait.Equipment;
@@ -66,7 +77,7 @@ import java.util.function.Consumer;
  * v0.1.0: Butler mining rework — Citizens A* pathfinding (no teleporting),
  * real block breaking via Citizens BlockBreaker, async ore scanning.
  */
-public class JarvisNPC implements Listener {
+public class JarvisNPC implements Listener, ButlerHost {
 
     private final Jarvis plugin;
     /**
@@ -88,7 +99,9 @@ public class JarvisNPC implements Listener {
     private RecoveryService recoveryService;
     private EscortService escortService;
     private final Map<UUID, Defender> activeDefenders = new ConcurrentHashMap<>();
-    private final Map<UUID, BukkitRunnable> activeTasks = new ConcurrentHashMap<>();
+    private final Map<UUID, Task> activeTasks = new ConcurrentHashMap<>();
+    /** Core's view of the NPCs: one {@link Butler} handle per owner over the same registry. */
+    private final CitizensButlers butlers;
     private final Map<UUID, MiningState> miningStates = new ConcurrentHashMap<>();
 
     // Configuration (loaded from config.yml, sensible defaults)
@@ -236,6 +249,7 @@ public class JarvisNPC implements Listener {
         this.plugin = plugin;
         this.provider = new CitizensNPCProvider(plugin);
         this.playerNPCs = provider.registry();
+        this.butlers = new CitizensButlers(plugin, provider);
         this.debugMode = plugin.getConfig().getBoolean("mining.debug", false);
         this.searchRadius = plugin.getConfig().getInt("mining.search-radius", 24);
         this.navRange = plugin.getConfig().getDouble("mining.navigator-range", 64.0);
@@ -243,7 +257,7 @@ public class JarvisNPC implements Listener {
         this.timedBreaking = plugin.getConfig().getBoolean("mining.timed-breaking", true);
         this.breakSpeedModifier = Math.max(0.1, plugin.getConfig().getDouble("mining.break-speed-modifier", 1.0));
 
-        this.depositManager = new DepositManager(plugin, this);
+        this.depositManager = new DepositManager(plugin.getPlatform(), this);
         this.recoveryService = new RecoveryService(plugin, this);
         this.escortService = new EscortService(plugin, this, depositManager);
 
@@ -531,9 +545,9 @@ public class JarvisNPC implements Listener {
                     taskDone(player, this);
                     miningStates.remove(player.getUniqueId());
                     say(player, "My bags are full, sir. " + state.oresMined + " ores this trip.");
-                    if (depositManager != null && depositManager.hasChest(player)) {
-                        depositManager.startDepositRun(player,
-                                depositManager.getChest(player), () -> {});
+                    if (depositManager != null && depositManager.hasChest(plugin.owner(player))) {
+                        depositManager.startDepositRun(plugin.owner(player),
+                                depositManager.getChest(plugin.owner(player)).orElseThrow(), () -> {});
                     }
                     return;
                 }
@@ -1364,7 +1378,7 @@ public class JarvisNPC implements Listener {
         stopTask(player);
         miningStates.remove(player.getUniqueId());
         beginTask(player, "chop");
-        new Lumberjack(this, player, depositManager, trees).start();
+        new Lumberjack(this, plugin.owner(player), depositManager, trees).start();
     }
 
     /** Fishing at the nearest water's edge. */
@@ -1377,7 +1391,7 @@ public class JarvisNPC implements Listener {
         stopTask(player);
         miningStates.remove(player.getUniqueId());
         beginTask(player, "fish");
-        new Fisherman(this, player, depositManager).start();
+        new Fisherman(this, plugin.owner(player), depositManager).start();
     }
 
     /** The dance. */
@@ -1387,7 +1401,7 @@ public class JarvisNPC implements Listener {
             say(player, "Summon me first, sir — /jarvis summon.");
             return;
         }
-        Entertainer.dance(this, player);
+        Entertainer.dance(this, plugin.owner(player));
     }
 
     /**
@@ -1402,7 +1416,7 @@ public class JarvisNPC implements Listener {
         }
         stopTask(player);
         miningStates.remove(player.getUniqueId());
-        new Lamplighter(this, player, radius, type, spacing).start();
+        new Lamplighter(this, plugin.owner(player), PaperWorlds.world(player.getWorld()), radius, type, spacing).start();
     }
 
     /** Patrol: walk a persisted waypoint circuit as a sentry. */
@@ -1414,15 +1428,18 @@ public class JarvisNPC implements Listener {
         }
         switch (sub == null ? "start" : sub.toLowerCase()) {
             case "add" -> {
-                int n = depositManager.addPatrolPoint(player, player.getLocation());
+                int n = depositManager.addPatrolPoint(plugin.owner(player), PaperWorlds.site(player.getLocation()));
                 say(player, "Waypoint " + n + " noted, sir.");
             }
             case "clear" -> {
-                depositManager.clearPatrol(player);
+                depositManager.clearPatrol(plugin.owner(player));
                 say(player, "Patrol route cleared, sir.");
             }
             default -> {
-                java.util.List<Location> route = depositManager.getPatrol(player);
+                java.util.List<Location> route = new java.util.ArrayList<>();
+                for (var site : depositManager.getPatrol(plugin.owner(player))) {
+                    route.add(PaperWorlds.location(site.world(), site.pos()));
+                }
                 if (route.size() < 2) {
                     say(player, "I need at least two waypoints, sir — stand at each and say '/jarvis patrol add'.");
                     return;
@@ -1768,7 +1785,7 @@ public class JarvisNPC implements Listener {
 
     /** Register a task as THE active task for this player (cancels via stopTask). */
     void registerTask(Player player, BukkitRunnable task) {
-        activeTasks.put(player.getUniqueId(), task);
+        activeTasks.put(player.getUniqueId(), new BukkitTaskHandle(task));
     }
 
     /**
@@ -1854,7 +1871,7 @@ public class JarvisNPC implements Listener {
         TaskRecoveryHandler recovery = plugin.getTaskRecoveryHandler();
         if (recovery != null) recovery.taskSuperseded(plugin.owner(player));
         activeDefenders.remove(player.getUniqueId());
-        BukkitRunnable task = activeTasks.remove(player.getUniqueId());
+        Task task = activeTasks.remove(player.getUniqueId());
         if (task != null) {
             task.cancel();
         }
@@ -1875,7 +1892,7 @@ public class JarvisNPC implements Listener {
      * accurate (otherwise idle detection and task counts go stale).
      */
     void taskDone(Player player, BukkitRunnable task) {
-        activeTasks.remove(player.getUniqueId(), task);
+        activeTasks.remove(player.getUniqueId(), new BukkitTaskHandle(task));
     }
 
     // ==================== UTILITY METHODS ====================
@@ -2145,7 +2162,7 @@ public class JarvisNPC implements Listener {
             npc.destroy();
         }
         playerNPCs.clear();
-        activeTasks.values().forEach(BukkitRunnable::cancel);
+        activeTasks.values().forEach(Task::cancel);
         activeTasks.clear();
         miningStates.clear();
         activeDefenders.clear();
@@ -2383,7 +2400,7 @@ public class JarvisNPC implements Listener {
                         }
                         npc.destroy();
                         it.remove();
-                        BukkitRunnable task = activeTasks.remove(entry.getKey());
+                        Task task = activeTasks.remove(entry.getKey());
                         if (task != null) task.cancel();
                         miningStates.remove(entry.getKey());
                         activeDefenders.remove(entry.getKey());
@@ -2391,5 +2408,155 @@ public class JarvisNPC implements Listener {
                 }
             }
         }.runTaskTimer(plugin, 6000L, 6000L); // Every 5 minutes
+    }
+
+    // ==================== ButlerHost: core's view of this class ====================
+    // The task classes in jarvis-core talk to the butler through these. Each
+    // one is a thin turn from an Owner handle to the Player-based method the
+    // rest of this class already has; step 6 of the platform plan moves the
+    // logic itself into core and leaves only the Citizens parts here.
+
+    private Player playerOf(Owner owner) {
+        return Bukkit.getPlayer(owner.id());
+    }
+
+    @Override public Platform platform() { return plugin.getPlatform(); }
+    @Override public Config config() { return plugin.getCoreConfig(); }
+    @Override public Butler butler(Owner owner) { return butlers.of(owner); }
+
+    @Override
+    public void say(Owner owner, String text) {
+        Player p = playerOf(owner);
+        if (p != null) say(p, text);
+    }
+
+    @Override
+    public void sayQuiet(Owner owner, String text) {
+        Player p = playerOf(owner);
+        if (p != null) sayQuiet(p, text);
+    }
+
+    @Override
+    public void registerTask(Owner owner, Task task) {
+        activeTasks.put(owner.id(), task);
+    }
+
+    @Override
+    public void taskDone(Owner owner, Task task) {
+        activeTasks.remove(owner.id(), task);
+    }
+
+    @Override
+    public void stopTask(Owner owner) {
+        Player p = playerOf(owner);
+        if (p != null) {
+            stopTask(p);
+            return;
+        }
+        Task task = activeTasks.remove(owner.id());
+        if (task != null) task.cancel();
+    }
+
+    @Override
+    public void beginTask(Owner owner, String taskType) {
+        TaskRecoveryHandler recovery = plugin.getTaskRecoveryHandler();
+        if (recovery != null) recovery.taskStarted(owner, taskType);
+    }
+
+    @Override
+    public void credit(Owner owner, com.gadgetman.jarvis.progression.ServiceRecord.Discipline d, int amount) {
+        Player p = playerOf(owner);
+        if (p != null) credit(p, d, amount);
+    }
+
+    @Override
+    public boolean hasCapability(Owner owner, com.gadgetman.jarvis.progression.Rank.Capability capability) {
+        var progression = plugin.getProgressionManager();
+        Player p = playerOf(owner);
+        return progression != null && p != null && progression.has(p, capability);
+    }
+
+    @Override
+    public boolean celebrationsEnabled() {
+        return plugin.getConfig().getBoolean("steward.celebrations", true);
+    }
+
+    @Override
+    public void equipTool(Owner owner, String itemId) {
+        Player p = playerOf(owner);
+        if (p != null) equipTool(p, PaperItems.material(itemId));
+    }
+
+    @Override
+    public com.gadgetman.jarvis.core.world.Item toolInHand(Owner owner) {
+        Player p = playerOf(owner);
+        return p == null ? com.gadgetman.jarvis.core.world.Item.EMPTY : PaperItems.toItem(getToolInHand(p));
+    }
+
+    @Override
+    public void giveStartingEquipment(Owner owner) {
+        Player p = playerOf(owner);
+        if (p != null) giveStartingEquipment(p);
+    }
+
+    @Override
+    public void giveGuardEquipment(Owner owner) {
+        Player p = playerOf(owner);
+        if (p != null) giveGuardEquipment(p);
+    }
+
+    @Override
+    public void drawWeapon(Owner owner, com.gadgetman.jarvis.progression.Rank.ToolKind kind) {
+        Player p = playerOf(owner);
+        if (p != null) drawWeapon(p, kind);
+    }
+
+    @Override
+    public void syncWeaponToSurroundings(Owner owner) {
+        Player p = playerOf(owner);
+        if (p != null) syncWeaponToSurroundings(p);
+    }
+
+    @Override
+    public boolean isSubmerged(Owner owner) {
+        Player p = playerOf(owner);
+        return p != null && isSubmerged(p);
+    }
+
+    @Override
+    public String describeHeldTool(Owner owner) {
+        Player p = playerOf(owner);
+        return p == null ? "no NPC" : describeHeldTool(p);
+    }
+
+    @Override public int lootCapacity() { return LOOT_CAPACITY; }
+
+    @Override
+    public int lootSlotsUsed(Owner owner) {
+        Player p = playerOf(owner);
+        return p == null ? 0 : lootSlotsUsed(p);
+    }
+
+    @Override
+    public void pickupNearbyItems(Owner owner, Vec3 npcPos, boolean includeJunk) {
+        NPC npc = playerNPCs.get(owner.id());
+        if (npc == null || npc.getEntity() == null) return;
+        pickupNearbyItems(npc, PaperWorlds.location(npc.getEntity().getWorld(), npcPos), includeJunk);
+    }
+
+    @Override
+    public void breakBlockProperly(Owner owner, com.gadgetman.jarvis.core.platform.World world, BlockPos pos,
+                                   Consumer<Boolean> onDone) {
+        NPC npc = playerNPCs.get(owner.id());
+        if (npc == null) {
+            onDone.accept(false);
+            return;
+        }
+        breakBlockProperly(npc, PaperWorlds.handle(world).getBlockAt(pos.x(), pos.y(), pos.z()), onDone);
+    }
+
+    @Override
+    public Vec3 findSafeNear(com.gadgetman.jarvis.core.platform.World world, Vec3 near) {
+        return PaperWorlds.vec(findSafeNear(PaperWorlds.location(world, near)));
     }
 }

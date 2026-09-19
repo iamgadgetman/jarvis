@@ -279,8 +279,8 @@ public class IntentPipeline {
                     parameters == null ? null : parameters.optString("direction", null));
             case "dig_down" -> plugin.getJarvisNPC().digDown(player,
                     parameters == null ? 0 : parameters.optInt("depth", 0));
-            case "deposit"                 -> plugin.getJarvisNPC().getDepositManager().deposit(player);
-            case "set_chest"               -> plugin.getJarvisNPC().getDepositManager().setChest(player);
+            case "deposit"                 -> plugin.getJarvisNPC().getDepositManager().deposit(plugin.owner(player));
+            case "set_chest"               -> plugin.getJarvisNPC().getDepositManager().setChest(plugin.owner(player));
             case "attack", "fight"         -> plugin.getJarvisNPC().guard(player, "aggressive");
             case "guard", "defend", "protect"-> plugin.getJarvisNPC().guard(player, "defensive");
             case "watch", "sentry"         -> plugin.getJarvisNPC().watch(player, null);
@@ -457,7 +457,7 @@ public class IntentPipeline {
         else if (message.contains("watch")) plugin.getJarvisNPC().watch(player, null);
         else if (message.contains("follow")) plugin.getJarvisNPC().follow(player);
         else if (message.contains("return") || message.contains("back")) plugin.getJarvisNPC().returnToPlayer(player);
-        else if (message.contains("deposit")) plugin.getJarvisNPC().getDepositManager().deposit(player);
+        else if (message.contains("deposit")) plugin.getJarvisNPC().getDepositManager().deposit(plugin.owner(player));
         else if (message.contains("farm")) plugin.getJarvisNPC().farm(player, message, false);
         else if (message.contains("chop") || message.contains("trees")) plugin.getJarvisNPC().chop(player, 5);
         else if (message.contains("fish")) plugin.getJarvisNPC().fish(player);

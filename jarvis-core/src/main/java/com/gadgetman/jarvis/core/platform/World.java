@@ -53,6 +53,9 @@ public interface World {
 
     boolean isLiquid(BlockPos pos);
 
+    /** A full, light-blocking cube: something a torch can sit on or against. */
+    boolean isOccluding(BlockPos pos);
+
     boolean is(BlockPos pos, Tag tag);
 
     /** The highest non-air block's y at this column. */

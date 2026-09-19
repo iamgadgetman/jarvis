@@ -253,7 +253,7 @@ public class RecoveryService implements Listener {
         if (returned > 0) {
             host.say(player, "Your effects, sir — " + returned
                     + " items recovered, along with everything else I was carrying.");
-            Entertainer.celebrate(host, player);
+            Entertainer.celebrate(host, plugin.owner(player));
         } else {
             host.say(player, "I'm afraid there was nothing left to recover, sir. The clock won.");
         }

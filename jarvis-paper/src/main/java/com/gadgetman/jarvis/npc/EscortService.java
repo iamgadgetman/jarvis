@@ -41,12 +41,14 @@ public class EscortService {
     }
 
     public void setHome(Player player) {
-        data.setHome(player, player.getLocation());
+        data.setHome(plugin.owner(player), com.gadgetman.jarvis.platform.PaperWorlds.site(player.getLocation()));
         host.say(player, "Home noted, sir. Say the word and I shall lead you back.");
     }
 
     public void takeHome(Player player) {
-        Location home = data.getHome(player);
+        Location home = data.getHome(plugin.owner(player))
+                .map(site -> com.gadgetman.jarvis.platform.PaperWorlds.location(site.world(), site.pos()))
+                .orElse(null);
         if (home == null) {
             host.say(player, "No home on record, sir. Stand where you'd like it and say '/jarvis home set'.");
             return;

@@ -280,11 +280,11 @@ class BranchMiner {
         // Bags full? Deliver to the chest and come back.
         if (autoDeposit && !depositsPaused
                 && host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
-            if (deposits.hasChest(player)) {
+            if (deposits.hasChest(plugin.owner(player))) {
                 host.say(player, "Bags are full, sir — running a delivery. Back shortly.");
                 resumeCell = npcLoc.getBlock().getLocation();
                 self.cancel();
-                deposits.startDepositRun(player, deposits.getChest(player), () -> {
+                deposits.startDepositRun(plugin.owner(player), deposits.getChest(plugin.owner(player)).orElseThrow(), () -> {
                     // v0.8.0: if the chest couldn't take it, don't loop forever
                     if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
                         mode = Mode.DONE;
@@ -594,9 +594,9 @@ class BranchMiner {
         String seals = sealedPockets > 0 ? " Sealed " + sealedPockets + " liquid pockets along the way." : "";
         host.say(player, "The mine is complete, sir. " + blocksDug + " blocks excavated, "
                 + oresMined + " ores recovered." + seals + " It's lit and walkable whenever you care to visit.");
-        Entertainer.celebrate(host, player);
-        if (autoDeposit && deposits.hasChest(player) && host.lootSlotsUsed(player) > 0) {
-            deposits.startDepositRun(player, deposits.getChest(player), () -> {});
+        Entertainer.celebrate(host, plugin.owner(player));
+        if (autoDeposit && deposits.hasChest(plugin.owner(player)) && host.lootSlotsUsed(player) > 0) {
+            deposits.startDepositRun(plugin.owner(player), deposits.getChest(plugin.owner(player)).orElseThrow(), () -> {});
         }
     }
 

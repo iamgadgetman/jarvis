@@ -70,6 +70,7 @@ public final class PaperWorld implements World {
     @Override public boolean isSolid(BlockPos pos) { return at(pos).getType().isSolid(); }
     @Override public boolean isPassable(BlockPos pos) { return at(pos).isPassable(); }
     @Override public boolean isLiquid(BlockPos pos) { return at(pos).isLiquid(); }
+    @Override public boolean isOccluding(BlockPos pos) { return at(pos).getType().isOccluding(); }
 
     @Override
     public boolean is(BlockPos pos, Tag tag) {

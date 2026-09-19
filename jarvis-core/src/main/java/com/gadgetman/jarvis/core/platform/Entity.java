@@ -26,6 +26,8 @@ public interface Entity {
 
     Vec3 pos();
 
+    Vec3 eyePos();
+
     Vec3 velocity();
 
     void setVelocity(Vec3 v);
@@ -34,6 +36,13 @@ public interface Entity {
 
     /** Hurt the entity by this much, with no attacker on record. */
     void damage(double amount);
+
+    int fireTicks();
+
+    void setFireTicks(int ticks);
+
+    /** True when this is a mob whose current target is the owner. */
+    boolean isTargeting(Owner owner);
 
     /** The stack, when this is an item lying on the ground. */
     Optional<Item> asItem();

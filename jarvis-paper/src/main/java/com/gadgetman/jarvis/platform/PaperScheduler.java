@@ -18,13 +18,19 @@ public final class PaperScheduler implements Scheduler {
         this.plugin = plugin;
     }
 
+    /**
+     * One handle per runnable, handed both to the body and to the caller, so
+     * a task register can match "this task is done" against what it stored.
+     */
     @Override
     public Task every(long delayTicks, long periodTicks, Consumer<Task> body) {
+        final Task[] handle = new Task[1];
         BukkitRunnable runnable = new BukkitRunnable() {
-            @Override public void run() { body.accept(wrap(this)); }
+            @Override public void run() { body.accept(handle[0]); }
         };
+        handle[0] = new BukkitTaskHandle(runnable);
         runnable.runTaskTimer(plugin, delayTicks, periodTicks);
-        return wrap(runnable);
+        return handle[0];
     }
 
     @Override
@@ -50,13 +56,6 @@ public final class PaperScheduler implements Scheduler {
     @Override
     public boolean isServerThread() {
         return Bukkit.isPrimaryThread();
-    }
-
-    private static Task wrap(BukkitRunnable r) {
-        return new Task() {
-            @Override public void cancel() { if (!r.isCancelled()) r.cancel(); }
-            @Override public boolean isCancelled() { return r.isCancelled(); }
-        };
     }
 
     private static Task wrap(BukkitTask t) {

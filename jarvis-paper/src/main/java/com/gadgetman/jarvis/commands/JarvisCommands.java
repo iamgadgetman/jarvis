@@ -155,8 +155,8 @@ public class JarvisCommands implements CommandExecutor {
                 plugin.getJarvisNPC().light(player, radius, type, spacing);
             }
             case "patrol" -> plugin.getJarvisNPC().patrol(player, args.length > 1 ? args[1] : null);
-            case "chest" -> plugin.getJarvisNPC().getDepositManager().setChest(player);
-            case "deposit" -> plugin.getJarvisNPC().getDepositManager().deposit(player);
+            case "chest" -> plugin.getJarvisNPC().getDepositManager().setChest(plugin.owner(player));
+            case "deposit" -> plugin.getJarvisNPC().getDepositManager().deposit(plugin.owner(player));
             case "loot" -> plugin.getJarvisNPC().openInventory(player);
             case "clearloot" -> {
                 if (args.length >= 2 && args[1].equalsIgnoreCase("confirm")) {

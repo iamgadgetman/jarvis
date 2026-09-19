@@ -138,10 +138,10 @@ class Farmer {
 
         // Bags full? Deliver and continue (tend) or wrap up (sweep)
         if (!depositsPaused && host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2
-                && deposits.hasChest(player)) {
+                && deposits.hasChest(plugin.owner(player))) {
             host.say(player, "Bags full, sir — delivering the produce. Back shortly.");
             self.cancel();
-            deposits.startDepositRun(player, deposits.getChest(player), () -> {
+            deposits.startDepositRun(plugin.owner(player), deposits.getChest(plugin.owner(player)).orElseThrow(), () -> {
                 // v0.8.0: if the chest couldn't take it, don't loop forever
                 if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
                     host.reportFailure(TaskFailure.of(plugin.owner(player), tendMode ? "tend" : "farm")
@@ -329,11 +329,11 @@ class Farmer {
                 ? " (" + unplanted + " plots await seed, I'm afraid.)" : " All replanted.";
         host.say(player, "Harvest complete, sir — " + harvested + " crops gathered." + seedNote);
         if (harvested >= 10) {
-            Entertainer.celebrate(host, player);
+            Entertainer.celebrate(host, plugin.owner(player));
         }
         if (plugin.getConfig().getBoolean("mining.auto-deposit", true)
-                && deposits.hasChest(player) && host.lootSlotsUsed(player) > 0) {
-            deposits.startDepositRun(player, deposits.getChest(player), () -> {});
+                && deposits.hasChest(plugin.owner(player)) && host.lootSlotsUsed(player) > 0) {
+            deposits.startDepositRun(plugin.owner(player), deposits.getChest(plugin.owner(player)).orElseThrow(), () -> {});
         }
     }
 }

@@ -120,7 +120,7 @@ public class UIManager implements Listener {
 
         m.setItem(5, item(Material.CHEST, ChatColor.GOLD + "Loot",
                 ChatColor.GRAY + "Open what he's collected"));
-        if (deposit.hasChest(p)) {
+        if (deposit.hasChest(plugin.owner(p))) {
             m.setItem(6, item(Material.HOPPER, ChatColor.YELLOW + "Deposit",
                     ChatColor.GRAY + "Deliver loot to your chest"));
         } else {
@@ -237,7 +237,7 @@ public class UIManager implements Listener {
         m.setItem(14, item(Material.CAMPFIRE, ChatColor.GOLD + "Night watch",
                 ChatColor.GRAY + "Hold this spot and keep guard"));
 
-        int points = deposit.getPatrol(p).size();
+        int points = deposit.getPatrol(plugin.owner(p)).size();
         m.setItem(15, item(Material.OAK_SIGN, ChatColor.AQUA + "Patrol: add waypoint",
                 ChatColor.GRAY + "Marks where you're standing",
                 ChatColor.DARK_GRAY + "Waypoints so far: " + points));
@@ -354,7 +354,7 @@ public class UIManager implements Listener {
 
         m.setItem(10, item(Material.RED_BED, ChatColor.LIGHT_PURPLE + "Set home",
                 ChatColor.GRAY + "Remember this spot as home"));
-        if (deposit.getHome(p) != null) {
+        if (deposit.getHome(plugin.owner(p)).isPresent()) {
             m.setItem(11, item(Material.COMPASS, ChatColor.AQUA + "Escort me home",
                     ChatColor.GRAY + "Jarvis walks you back"));
         } else {
@@ -370,7 +370,7 @@ public class UIManager implements Listener {
 
         m.setItem(14, item(Material.ENDER_CHEST, ChatColor.YELLOW + "Set deposit chest",
                 ChatColor.GRAY + "Registers the chest you're looking at"));
-        if (deposit.hasChest(p)) {
+        if (deposit.hasChest(plugin.owner(p))) {
             m.setItem(15, item(Material.HOPPER, ChatColor.YELLOW + "Deposit now",
                     ChatColor.GRAY + "Deliver loot to your chest"));
         } else {
@@ -673,8 +673,8 @@ public class UIManager implements Listener {
             case 2 -> { npc.follow(p); p.closeInventory(); }
             case 3 -> { npc.stop(p); p.closeInventory(); }
             case 5 -> npc.openInventory(p);
-            case 6 -> { if (npc.getDepositManager().hasChest(p)) { npc.getDepositManager().deposit(p); p.closeInventory(); } }
-            case 7 -> { npc.getDepositManager().setChest(p); p.closeInventory(); }
+            case 6 -> { if (npc.getDepositManager().hasChest(plugin.owner(p))) { npc.getDepositManager().deposit(plugin.owner(p)); p.closeInventory(); } }
+            case 7 -> { npc.getDepositManager().setChest(plugin.owner(p)); p.closeInventory(); }
             case 8 -> open(p, createConfirmClearMenu());
             case 19 -> open(p, createMiningMenu(p));
             case 20 -> open(p, createCombatMenu(p));
@@ -729,7 +729,7 @@ public class UIManager implements Listener {
             case 14 -> { npc.watch(p, null);         p.closeInventory(); }
             case 15 -> { npc.patrol(p, "add");   open(p, createCombatMenu(p)); }
             case 16 -> {
-                if (npc.getDepositManager().getPatrol(p).size() >= 2) {
+                if (npc.getDepositManager().getPatrol(plugin.owner(p)).size() >= 2) {
                     npc.patrol(p, "start");
                     p.closeInventory();
                 }
@@ -818,10 +818,10 @@ public class UIManager implements Listener {
         var deposit = npc.getDepositManager();
         switch (slot) {
             case 10 -> { npc.getEscortService().setHome(p); open(p, createHouseholdMenu(p)); }
-            case 11 -> { if (deposit.getHome(p) != null) { npc.getEscortService().takeHome(p); p.closeInventory(); } }
+            case 11 -> { if (deposit.getHome(plugin.owner(p)).isPresent()) { npc.getEscortService().takeHome(p); p.closeInventory(); } }
             case 12 -> { if (npc.getRecoveryService().hasDeathPoint(p)) { npc.getRecoveryService().recover(p); p.closeInventory(); } }
-            case 14 -> { deposit.setChest(p); open(p, createHouseholdMenu(p)); }
-            case 15 -> { if (deposit.hasChest(p)) { deposit.deposit(p); p.closeInventory(); } }
+            case 14 -> { deposit.setChest(plugin.owner(p)); open(p, createHouseholdMenu(p)); }
+            case 15 -> { if (deposit.hasChest(plugin.owner(p))) { deposit.deposit(plugin.owner(p)); p.closeInventory(); } }
             case 31 -> open(p, createMainMenu(p));
             default -> { }
         }

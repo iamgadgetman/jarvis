@@ -1,20 +1,19 @@
 package com.gadgetman.jarvis.npc;
 
-import com.gadgetman.jarvis.Jarvis;
-import com.gadgetman.jarvis.npc.provider.INPCProvider;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.Sound;
-import org.bukkit.World;
-import org.bukkit.block.Block;
-import org.bukkit.block.BlockFace;
-import org.bukkit.block.data.Directional;
-import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
+import com.gadgetman.jarvis.core.platform.Butler;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.core.platform.Task;
+import com.gadgetman.jarvis.core.platform.World;
+import com.gadgetman.jarvis.core.world.BlockPos;
+import com.gadgetman.jarvis.core.world.BlockState;
+import com.gadgetman.jarvis.core.world.Facing;
+import com.gadgetman.jarvis.core.world.Ids;
+import com.gadgetman.jarvis.core.world.Vec3;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -40,22 +39,22 @@ class Lamplighter {
     /** Above this spacing, gaps of block-light 0 appear between lights. */
     static final int MAX_SPAWNPROOF_SPACING = 13;
 
-    private final Jarvis plugin;
-    private final JarvisNPC host;
-    private final Player player;
-    private final INPCProvider provider;
+    private final ButlerHost host;
+    private final Owner player;
+    private final Butler butler;
+    private final World world;
 
     private final int radius;
     private final int spacing;
-    private final Material lightType;
+    private final String lightType;
     private final boolean wallPlacement;
     private final int skipLightLevel;
     private final boolean underwaterLanterns;   // v0.8.1: sea lanterns in shallow water
 
     private static final int MAX_WATER_DEPTH = 4;   // deeper than this: skip, no diving expeditions
 
-    private final Location center;
-    private final ArrayDeque<Location> targets = new ArrayDeque<>();
+    private final BlockPos center;
+    private final ArrayDeque<BlockPos> targets = new ArrayDeque<>();
     private int placed = 0;
     private int skippedLit = 0;
     private int waterSpots = 0;
@@ -65,16 +64,16 @@ class Lamplighter {
     private static final int STALL_HOP_TICKS = 6;
     private static final int MAX_TARGETS = 400;
     private int stalled = 0;
-    private Location lastPos = null;
+    private Vec3 lastPos = null;
 
     /** radius/spacing <= 0 and typeArg == null mean "use config defaults". */
-    Lamplighter(JarvisNPC host, Player player, int radius, String typeArg, int spacing) {
+    Lamplighter(ButlerHost host, Owner player, World world, int radius, String typeArg, int spacing) {
         this.host = host;
-        this.plugin = host.getPlugin();
         this.player = player;
-        this.provider = host.getProvider();
+        this.butler = host.butler(player);
+        this.world = world;
 
-        var cfg = plugin.getConfig();
+        Config cfg = host.config();
         int r = radius > 0 ? radius : cfg.getInt("lighting.default-radius", 16);
         int s = spacing > 0 ? spacing : cfg.getInt("lighting.default-spacing", 12);
         this.radius = Math.max(4, Math.min(r, 48));
@@ -87,15 +86,15 @@ class Lamplighter {
                 cfg.getString("lighting.underwater", "sea_lantern"));
 
         // Centered on the player — "light this place up" means where THEY are
-        this.center = player.getLocation().getBlock().getLocation();
+        this.center = player.pos().block();
     }
 
-    static Material parseType(String s) {
-        if (s == null) return Material.TORCH;
+    static String parseType(String s) {
+        if (s == null) return Ids.TORCH;
         return switch (s.toLowerCase().replace("_", "").replace("-", "")) {
-            case "endrod", "rod" -> Material.END_ROD;
-            case "lantern" -> Material.LANTERN;
-            default -> Material.TORCH;
+            case "endrod", "rod" -> Ids.END_ROD;
+            case "lantern" -> Ids.LANTERN;
+            default -> Ids.TORCH;
         };
     }
 
@@ -109,11 +108,10 @@ class Lamplighter {
             return;
         }
 
-        host.applyNavigatorDefaults(player, null);
-        host.equipTool(player, lightType == Material.END_ROD ? Material.END_ROD
-                : lightType == Material.LANTERN ? Material.LANTERN : Material.TORCH);
+        butler.applyNavigationDefaults(null);
+        host.equipTool(player, lightType);
 
-        String typeName = lightType.name().toLowerCase().replace('_', ' ');
+        String typeName = Blocks.pretty(lightType);
         StringBuilder opening = new StringBuilder("Lighting the grounds, sir — ")
                 .append(targets.size()).append(" lights (").append(typeName)
                 .append(") across ").append(radius).append(" blocks, every ")
@@ -132,35 +130,30 @@ class Lamplighter {
         }
         host.say(player, opening.toString());
 
-        BukkitRunnable task = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (!provider.isSpawned(player) || !player.isOnline()) {
-                    cancel();
-                    host.taskDone(player, this);
-                    return;
-                }
-                tick(host.getCurrentLocation(player), this);
+        Task task = host.platform().scheduler().every(10L, 10L, self -> {
+            if (!butler.isSpawned() || !player.isOnline()) {
+                self.cancel();
+                host.taskDone(player, self);
+                return;
             }
-        };
-        task.runTaskTimer(plugin, 10L, 10L);
+            tick(butler.pos(), self);
+        });
         host.registerTask(player, task);
     }
 
-    private void tick(Location loc, BukkitRunnable self) {
+    private void tick(Vec3 loc, Task self) {
         if (targets.isEmpty()) {
             finish(self);
             return;
         }
 
-        Location target = targets.peek();
-        Block cell = target.getBlock();
+        BlockPos cell = targets.peek();
 
         // Spot no longer usable (built over, flooded when we can't handle it)
-        Material cur = cell.getType();
-        boolean usable = (cur == Material.AIR
-                        || (cur == Material.WATER && underwaterLanterns))
-                && cell.getRelative(BlockFace.DOWN).getType().isOccluding();
+        String cur = world.block(cell).id();
+        boolean usable = (Ids.AIR.equals(cur)
+                        || (Ids.WATER.equals(cur) && underwaterLanterns))
+                && world.isOccluding(cell.below());
         if (!usable) {
             targets.poll();
             return;
@@ -168,18 +161,18 @@ class Lamplighter {
 
         // v0.8.2: water targets get longer reach — he floats at the surface
         // (the lifeguard keeps him there) and places the lantern below him.
-        double reach = cur == Material.WATER ? 5.0 : REACH;
-        double dist = loc.distance(target.clone().add(0.5, 0.5, 0.5));
+        double reach = Ids.WATER.equals(cur) ? 5.0 : REACH;
+        double dist = loc.distance(cell.center());
         if (dist > reach) {
-            if (!provider.isNavigating(player)) {
-                provider.navigateTo(player, target.clone().add(0.5, 1, 0.5));
+            if (!butler.isNavigating()) {
+                butler.navigateTo(cell.above().standing());
             }
             if (lastPos != null && loc.distance(lastPos) < 0.15) stalled++;
             else stalled = 0;
-            lastPos = loc.clone();
+            lastPos = loc;
             if (stalled > STALL_HOP_TICKS) {
-                provider.cancelNavigation(player);
-                provider.teleport(player, host.findSafeNear(target.clone().add(0.5, 1, 0.5)));
+                butler.cancelNavigation();
+                butler.teleport(host.findSafeNear(world, cell.above().standing()));
                 stalled = 0;
             }
             return;
@@ -187,13 +180,13 @@ class Lamplighter {
 
         // Place the light: face, swing, done
         targets.poll();
-        provider.lookAt(player, target.clone().add(0.5, 0.5, 0.5));
-        if (provider.getEntity(player) instanceof LivingEntity le) le.swingMainHand();
-        boolean wasWater = cell.getType() == Material.WATER;
+        butler.lookAt(cell.center());
+        butler.swing();
+        boolean wasWater = Ids.WATER.equals(world.block(cell).id());
         if (placeLight(cell)) {
             placed++;
-            loc.getWorld().playSound(target,
-                    wasWater ? Sound.BLOCK_GLASS_PLACE : Sound.BLOCK_WOOD_PLACE, 0.8f, 1.1f);
+            world.sound(cell.center(),
+                    wasWater ? Ids.SOUND_BLOCK_GLASS_PLACE : Ids.SOUND_BLOCK_WOOD_PLACE, 0.8f, 1.1f);
             if (placed % 20 == 0) {
                 host.sayQuiet(player, placed + " lights placed.");
             }
@@ -206,32 +199,26 @@ class Lamplighter {
      * don't survive underwater); anything else that isn't air gets nothing —
      * the hard guard against lighting a block that's occupied or fluid.
      */
-    private boolean placeLight(Block cell) {
-        Material cur = cell.getType();
-        if (cur == Material.WATER) {
+    private boolean placeLight(BlockPos cell) {
+        String cur = world.block(cell).id();
+        if (Ids.WATER.equals(cur)) {
             if (!underwaterLanterns) return false;
-            cell.setType(Material.SEA_LANTERN);
+            world.setBlock(cell, BlockState.of(Ids.SEA_LANTERN));
             return true;
         }
-        if (cur != Material.AIR) return false;
+        if (!Ids.AIR.equals(cur)) return false;
 
-        if (wallPlacement && lightType == Material.TORCH) {
-            for (BlockFace face : new BlockFace[]{
-                    BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
-                Block support = cell.getRelative(face);
-                if (support.getType().isOccluding()) {
-                    cell.setType(Material.WALL_TORCH);
-                    if (cell.getBlockData() instanceof Directional dir
-                            && dir.getFaces().contains(face.getOppositeFace())) {
-                        dir.setFacing(face.getOppositeFace());
-                        cell.setBlockData(dir);
-                    }
+        if (wallPlacement && Ids.TORCH.equals(lightType)) {
+            for (Facing face : new Facing[]{Facing.NORTH, Facing.SOUTH, Facing.EAST, Facing.WEST}) {
+                if (world.isOccluding(cell.side(face))) {
+                    // A wall torch faces away from the block it hangs on.
+                    world.setBlock(cell, BlockState.of(Ids.WALL_TORCH).with("facing", face.opposite().key()));
                     return true;
                 }
             }
             // No wall nearby — ground it is
         }
-        cell.setType(lightType);
+        world.setBlock(cell, BlockState.of(lightType));
         return true;
     }
 
@@ -243,23 +230,19 @@ class Lamplighter {
      * dropped onto the local surface; spots already bright enough are skipped.
      */
     private void planTargets() {
-        World world = center.getWorld();
-        if (world == null) return;
-
         List<int[]> offsets = new ArrayList<>();
         for (int gx = -radius; gx <= radius; gx += spacing) offsetsRow(offsets, gx);
 
         boolean flip = false;
-        List<Location> ordered = new ArrayList<>();
+        List<BlockPos> ordered = new ArrayList<>();
         Integer currentRow = null;
-        List<Location> row = new ArrayList<>();
+        List<BlockPos> row = new ArrayList<>();
         for (int[] off : offsets) {
-            Location spot = surfaceSpot(world, center.getBlockX() + off[0],
-                    center.getBlockZ() + off[1]);
+            BlockPos spot = surfaceSpot(center.x() + off[0], center.z() + off[1]);
             if (spot == null) continue;
             if (currentRow == null || off[0] != currentRow) {
                 if (!row.isEmpty()) {
-                    if (flip) java.util.Collections.reverse(row);
+                    if (flip) Collections.reverse(row);
                     ordered.addAll(row);
                     flip = !flip;
                     row = new ArrayList<>();
@@ -269,11 +252,11 @@ class Lamplighter {
             row.add(spot);
         }
         if (!row.isEmpty()) {
-            if (flip) java.util.Collections.reverse(row);
+            if (flip) Collections.reverse(row);
             ordered.addAll(row);
         }
 
-        for (Location l : ordered) {
+        for (BlockPos l : ordered) {
             if (targets.size() >= MAX_TARGETS) { truncated = true; break; }
             targets.add(l);
         }
@@ -293,53 +276,52 @@ class Lamplighter {
      * Returns the AIR cell the light occupies, or null (no footing, water,
      * or already bright enough there).
      */
-    private Location surfaceSpot(World world, int x, int z) {
-        int top = Math.min(world.getMaxHeight() - 2, center.getBlockY() + 16);
-        int bottom = Math.max(world.getMinHeight() + 1, center.getBlockY() - 16);
+    private BlockPos surfaceSpot(int x, int z) {
+        int top = Math.min(world.maxY() - 1, center.y() + 16);
+        int bottom = Math.max(world.minY() + 1, center.y() - 16);
 
         for (int y = top; y >= bottom; y--) {
-            Block ground = world.getBlockAt(x, y, z);
-            Material g = ground.getType();
-            if (!g.isOccluding()) continue;          // air, leaves, glass, fluids: keep scanning down
-            if (g == Material.MAGMA_BLOCK) return null;
+            BlockPos ground = new BlockPos(x, y, z);
+            String g = world.block(ground).id();
+            if (!world.isOccluding(ground)) continue;   // air, leaves, glass, fluids: keep scanning down
+            if (Ids.MAGMA_BLOCK.equals(g)) return null;
 
-            Block cell = ground.getRelative(BlockFace.UP);
-            Material cur = cell.getType();
+            BlockPos cell = ground.above();
+            String cur = world.block(cell).id();
 
             // v0.8.1: pond/shore floor — sea lantern territory (shallow only)
-            if (cur == Material.WATER) {
+            if (Ids.WATER.equals(cur)) {
                 if (!underwaterLanterns) return null;
                 int depth = 0;
-                Block probe = cell;
-                while (probe.getType() == Material.WATER && depth <= MAX_WATER_DEPTH) {
-                    probe = probe.getRelative(BlockFace.UP);
+                BlockPos probe = cell;
+                while (Ids.WATER.equals(world.block(probe).id()) && depth <= MAX_WATER_DEPTH) {
+                    probe = probe.above();
                     depth++;
                 }
                 if (depth > MAX_WATER_DEPTH) return null;   // deep water: leave it be
-                if (cell.getLightFromBlocks() >= skipLightLevel) {
+                if (world.blockLight(cell) >= skipLightLevel) {
                     skippedLit++;
                     return null;
                 }
                 waterSpots++;
-                return cell.getLocation();
+                return cell;
             }
 
-            Block above = cell.getRelative(BlockFace.UP);
-            if (cur != Material.AIR || above.getType().isSolid()) return null;
+            if (!Ids.AIR.equals(cur) || world.isSolid(cell.above())) return null;
 
-            if (cell.getLightFromBlocks() >= skipLightLevel) {
+            if (world.blockLight(cell) >= skipLightLevel) {
                 skippedLit++;
                 return null;                          // someone already lit this spot
             }
-            return cell.getLocation();
+            return cell;
         }
         return null;
     }
 
-    private void finish(BukkitRunnable self) {
+    private void finish(Task self) {
         self.cancel();
         host.taskDone(player, self);
-        provider.cancelNavigation(player);
+        butler.cancelNavigation();
         String note = skippedLit > 0
                 ? " (" + skippedLit + " spots were already bright enough.)" : "";
         host.say(player, "The grounds are lit, sir — " + placed + " lights placed." + note);

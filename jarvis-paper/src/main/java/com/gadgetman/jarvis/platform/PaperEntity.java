@@ -5,8 +5,10 @@ import com.gadgetman.jarvis.core.platform.EntityKind;
 import com.gadgetman.jarvis.core.world.Item;
 import com.gadgetman.jarvis.core.world.Vec3;
 import com.gadgetman.jarvis.core.world.WorldId;
+import com.gadgetman.jarvis.core.platform.Owner;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Mob;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -31,6 +33,11 @@ public final class PaperEntity implements Entity {
     @Override public boolean isCreeper() { return e instanceof Creeper; }
     @Override public WorldId world() { return PaperWorlds.id(e.getWorld()); }
     @Override public Vec3 pos() { return PaperWorlds.vec(e.getLocation()); }
+
+    @Override
+    public Vec3 eyePos() {
+        return e instanceof LivingEntity le ? PaperWorlds.vec(le.getEyeLocation()) : pos();
+    }
     @Override public Vec3 velocity() { return PaperWorlds.vec(e.getVelocity()); }
     @Override public void setVelocity(Vec3 v) { e.setVelocity(PaperWorlds.vector(v)); }
 
@@ -42,6 +49,15 @@ public final class PaperEntity implements Entity {
     @Override
     public void damage(double amount) {
         if (e instanceof LivingEntity le) le.damage(amount);
+    }
+
+    @Override public int fireTicks() { return e.getFireTicks(); }
+    @Override public void setFireTicks(int ticks) { e.setFireTicks(ticks); }
+
+    @Override
+    public boolean isTargeting(Owner owner) {
+        return e instanceof Mob mob && mob.getTarget() != null
+                && mob.getTarget().getUniqueId().equals(owner.id());
     }
 
     @Override
