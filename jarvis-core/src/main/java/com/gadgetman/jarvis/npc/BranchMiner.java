@@ -1,15 +1,18 @@
 package com.gadgetman.jarvis.npc;
 
-import com.gadgetman.jarvis.Jarvis;
-import com.gadgetman.jarvis.npc.provider.INPCProvider;
+import com.gadgetman.jarvis.core.platform.Butler;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.core.platform.Site;
+import com.gadgetman.jarvis.core.platform.Task;
+import com.gadgetman.jarvis.core.platform.World;
+import com.gadgetman.jarvis.core.world.BlockPos;
+import com.gadgetman.jarvis.core.world.BlockState;
+import com.gadgetman.jarvis.core.world.Facing;
+import com.gadgetman.jarvis.core.world.Ids;
+import com.gadgetman.jarvis.core.world.Look;
+import com.gadgetman.jarvis.core.world.Vec3;
 import com.gadgetman.jarvis.recovery.TaskFailure;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.World;
-import org.bukkit.block.Block;
-import org.bukkit.block.BlockFace;
-import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -25,9 +28,8 @@ import java.util.List;
  * tunnel walls are harvested along the way (that's the whole point of branch
  * mining: the grid statistically intersects the veins).
  *
- * Movement/digging reuses the v0.1.1 tunnel-executor primitives in JarvisNPC:
- * dig with vanilla timing, walk into the cell, nudge only if the 1-block walk
- * stalls.
+ * Movement/digging reuses the v0.1.1 tunnel-executor primitives: dig with
+ * vanilla timing, walk into the cell, nudge only if the 1-block walk stalls.
  */
 class BranchMiner {
 
@@ -35,12 +37,12 @@ class BranchMiner {
 
     /** One planned cell of the mine. */
     private static class Step {
-        final Location cell;            // Where Jarvis stands after this step
-        final List<Location> digs;      // Blocks to clear for this step
+        final BlockPos cell;            // Where Jarvis stands after this step
+        final List<BlockPos> digs;      // Blocks to clear for this step
         final boolean torch;            // Place a torch at the previous cell
         final int segment;              // Contiguous tunnel section id
 
-        Step(Location cell, List<Location> digs, boolean torch, int segment) {
+        Step(BlockPos cell, List<BlockPos> digs, boolean torch, int segment) {
             this.cell = cell;
             this.digs = digs;
             this.torch = torch;
@@ -48,10 +50,9 @@ class BranchMiner {
         }
     }
 
-    private final Jarvis plugin;
-    private final JarvisNPC host;
-    private final Player player;
-    private final INPCProvider provider;
+    private final ButlerHost host;
+    private final Owner player;
+    private final Butler butler;
     private final DepositManager deposits;
 
     /** What shape of excavation this run is. */
@@ -70,8 +71,9 @@ class BranchMiner {
     private final List<Step> plan = new ArrayList<>();
     private int index = 0;
     private Mode mode = Mode.EXECUTING;
+    private World world;
 
-    private final ArrayDeque<Location> digQueue = new ArrayDeque<>();
+    private final ArrayDeque<BlockPos> digQueue = new ArrayDeque<>();
 
     /**
      * 3x3 rather than 1x2. Always on for a tunnel — a passage you cannot see
@@ -79,14 +81,14 @@ class BranchMiner {
      * mine, where narrow corridors are the whole point of the pattern.
      */
     private boolean wideBore;
-    private Location stepCell = null;
-    private Location resumeCell = null;
+    private BlockPos stepCell = null;
+    private BlockPos resumeCell = null;
     private int advanceTicks = 0;
     private boolean breaking = false;
     private boolean navStuck = false;
     /** Set when self-explain decides to keep digging with nowhere to put the loot. */
     private boolean depositsPaused = false;
-    private final ArrayDeque<Location> harvestQueue = new ArrayDeque<>();
+    private final ArrayDeque<BlockPos> harvestQueue = new ArrayDeque<>();
 
     private int oresMined = 0;
     private int blocksDug = 0;
@@ -107,22 +109,21 @@ class BranchMiner {
     private static final int FAR_NUDGE_TICKS = 16;     // 8s stall on longer transitions
     private static final double MAX_TRANSITION_DISTANCE = 32.0;
 
-    BranchMiner(JarvisNPC host, Player player, DepositManager deposits) {
+    BranchMiner(ButlerHost host, Owner player, DepositManager deposits) {
         this(host, player, deposits, Layout.BRANCH_MINE, 0, null);
     }
 
-    BranchMiner(JarvisNPC host, Player player, DepositManager deposits,
+    BranchMiner(ButlerHost host, Owner player, DepositManager deposits,
                 Layout layout, int tunnelLength, int[] heading) {
         this.layout = layout;
         this.tunnelLength = tunnelLength;
         this.heading = heading;
         this.host = host;
-        this.plugin = host.getPlugin();
         this.player = player;
-        this.provider = host.getProvider();
+        this.butler = host.butler(player);
         this.deposits = deposits;
 
-        var cfg = plugin.getConfig();
+        Config cfg = host.config();
         this.targetY = cfg.getInt("mining.branch.target-y", -54);
         this.corridorLength = Math.max(4, cfg.getInt("mining.branch.corridor-length", 32));
         this.branchLength = Math.max(2, cfg.getInt("mining.branch.branch-length", 12));
@@ -144,16 +145,16 @@ class BranchMiner {
      *
      * @param pdx,pdz the perpendicular axis to widen along
      */
-    private List<Location> bore(World world, int x, int y, int z, int pdx, int pdz) {
-        List<Location> cells = new ArrayList<>(wideBore ? 9 : 2);
+    private List<BlockPos> bore(int x, int y, int z, int pdx, int pdz) {
+        List<BlockPos> cells = new ArrayList<>(wideBore ? 9 : 2);
         if (!wideBore) {
-            cells.add(new Location(world, x, y, z));
-            cells.add(new Location(world, x, y + 1, z));
+            cells.add(new BlockPos(x, y, z));
+            cells.add(new BlockPos(x, y + 1, z));
             return cells;
         }
         for (int side = -1; side <= 1; side++) {
             for (int up = 0; up <= 2; up++) {
-                cells.add(new Location(world, x + pdx * side, y + up, z + pdz * side));
+                cells.add(new BlockPos(x + pdx * side, y + up, z + pdz * side));
             }
         }
         return cells;
@@ -161,11 +162,12 @@ class BranchMiner {
 
     /** Build the whole mine as a deterministic list of steps, then start digging. */
     void start() {
-        Location anchor = host.getCurrentLocation(player);
-        World world = anchor.getWorld();
-        if (world == null) return;
+        Vec3 anchorPos = host.currentLocation(player);
+        world = butler.world().orElse(null);
+        if (anchorPos == null || world == null) return;
+        BlockPos anchor = anchorPos.block();
 
-        int minY = world.getMinHeight() + 5;
+        int minY = world.minY() + 5;
         int depth = Math.max(targetY, minY);
 
         int dx, dz;
@@ -174,7 +176,7 @@ class BranchMiner {
             dz = heading[1];
         } else {
             // Facing: snap the NPC's yaw to a cardinal direction
-            float yaw = ((anchor.getYaw() % 360) + 360) % 360;
+            float yaw = ((butler.look().yaw() % 360) + 360) % 360;
             dx = 0; dz = 0;
             if (yaw >= 315 || yaw < 45) dz = 1;        // south
             else if (yaw < 135) dx = -1;               // west
@@ -185,21 +187,21 @@ class BranchMiner {
         // The rank gate lives on the /jarvis tunnel command, not here.
         wideBore = layout == Layout.TUNNEL;
 
-        int fx = anchor.getBlockX(), fy = anchor.getBlockY(), fz = anchor.getBlockZ();
+        int fx = anchor.x(), fy = anchor.y(), fz = anchor.z();
         int segment = 0;
 
         if (layout == Layout.TUNNEL) {
             int tx = fx, ty = fy, tz = fz;
             for (int i = 1; i <= tunnelLength; i++) {
                 tx += dx; tz += dz;
-                plan.add(new Step(new Location(world, tx, ty, tz),
-                        bore(world, tx, ty, tz, dz, dx),
+                plan.add(new Step(new BlockPos(tx, ty, tz),
+                        bore(tx, ty, tz, dz, dx),
                         placeTorches && i % torchInterval == 0, 0));
             }
             host.say(player, "Very good, sir. A three-by-three passage, "
                     + tunnelLength + " blocks, heading " + Compass.name(dx, dz)
                     + ". I shall keep it lit.");
-            host.applyNavigatorDefaults(player, () -> navStuck = true);
+            butler.applyNavigationDefaults(() -> navStuck = true);
             host.giveStartingEquipment(player);
             runLoop();
             return;
@@ -209,11 +211,11 @@ class BranchMiner {
         int px = fx, py = fy, pz = fz;
         while (py > depth) {
             px += dx; py -= 1; pz += dz;
-            List<Location> digs = new ArrayList<>(3);
-            digs.add(new Location(world, px, py, pz));
-            digs.add(new Location(world, px, py + 1, pz));
-            digs.add(new Location(world, px, py + 2, pz));
-            plan.add(new Step(new Location(world, px, py, pz), digs, false, segment));
+            List<BlockPos> digs = new ArrayList<>(3);
+            digs.add(new BlockPos(px, py, pz));
+            digs.add(new BlockPos(px, py + 1, pz));
+            digs.add(new BlockPos(px, py + 2, pz));
+            plan.add(new Step(new BlockPos(px, py, pz), digs, false, segment));
         }
 
         // 2) Main corridor with branch pairs on the grid
@@ -222,8 +224,8 @@ class BranchMiner {
         int branchCount = 0;
         for (int i = 1; i <= corridorLength; i++) {
             px += dx; pz += dz;
-            List<Location> digs = bore(world, px, py, pz, dz, dx);
-            plan.add(new Step(new Location(world, px, py, pz),
+            List<BlockPos> digs = bore(px, py, pz, dz, dx);
+            plan.add(new Step(new BlockPos(px, py, pz),
                     digs, i % torchInterval == 0, corridorSegment));
 
             if (i % branchSpacing == 0 && i < corridorLength) {
@@ -236,12 +238,12 @@ class BranchMiner {
                     for (int j = 1; j <= branchLength; j++) {
                         bx += bdx * side; bz += bdz * side;
                         // Perpendicular to a branch is the corridor's own axis.
-                        List<Location> bdigs = bore(world, bx, py, bz, dx, dz);
-                        plan.add(new Step(new Location(world, bx, py, bz),
+                        List<BlockPos> bdigs = bore(bx, py, bz, dx, dz);
+                        plan.add(new Step(new BlockPos(bx, py, bz),
                                 bdigs, j % torchInterval == 0, segment));
                     }
                     // Then walk back to the corridor (already dug — no digs needed)
-                    plan.add(new Step(new Location(world, px, py, pz),
+                    plan.add(new Step(new BlockPos(px, py, pz),
                             new ArrayList<>(), false, segment));
                 }
             }
@@ -249,7 +251,7 @@ class BranchMiner {
 
         host.say(player, "Very good, sir. Sinking a shaft to Y=" + depth + " — "
                 + corridorLength + "-block gallery, " + branchCount + " branches. I shall keep it lit.");
-        host.applyNavigatorDefaults(player, () -> navStuck = true);
+        butler.applyNavigationDefaults(() -> navStuck = true);
         host.giveStartingEquipment(player);
         runLoop();
     }
@@ -257,46 +259,42 @@ class BranchMiner {
     // ==================== EXECUTION ====================
 
     private void runLoop() {
-        BukkitRunnable task = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (!provider.isSpawned(player) || !player.isOnline() || mode == Mode.DONE) {
-                    cancel();
-                    host.taskDone(player, this);
-                    return;
-                }
-                Location npcLoc = host.getCurrentLocation(player);
-                host.pickupNearbyItems(player, npcLoc);
-                tick(npcLoc, this);
+        Task task = host.platform().scheduler().every(0L, 10L, self -> {
+            if (!butler.isSpawned() || !player.isOnline() || mode == Mode.DONE) {
+                self.cancel();
+                host.taskDone(player, self);
+                return;
             }
-        };
-        task.runTaskTimer(plugin, 0L, 10L);
+            Vec3 npcLoc = butler.pos();
+            host.pickupNearbyItems(player, npcLoc);
+            tick(npcLoc, self);
+        });
         host.registerTask(player, task);
     }
 
-    private void tick(Location npcLoc, BukkitRunnable self) {
+    private void tick(Vec3 npcLoc, Task self) {
         if (breaking) return;
 
         // Bags full? Deliver to the chest and come back.
         if (autoDeposit && !depositsPaused
-                && host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
-            if (deposits.hasChest(plugin.owner(player))) {
+                && host.lootSlotsUsed(player) >= host.lootCapacity() - 2) {
+            if (deposits.hasChest(player)) {
                 host.say(player, "Bags are full, sir — running a delivery. Back shortly.");
-                resumeCell = npcLoc.getBlock().getLocation();
+                resumeCell = npcLoc.block();
                 self.cancel();
-                deposits.startDepositRun(plugin.owner(player), deposits.getChest(plugin.owner(player)).orElseThrow(), () -> {
+                deposits.startDepositRun(player, deposits.getChest(player).orElseThrow(), () -> {
                     // v0.8.0: if the chest couldn't take it, don't loop forever
-                    if (host.lootSlotsUsed(player) >= JarvisNPC.LOOT_CAPACITY - 2) {
+                    if (host.lootSlotsUsed(player) >= host.lootCapacity() - 2) {
                         mode = Mode.DONE;
-                        host.reportFailure(TaskFailure.of(plugin.owner(player), "branch_mine")
+                        host.reportFailure(TaskFailure.of(player, "branch_mine")
                                 .step("delivering a full load to the deposit chest")
                                 .reason("the chest would not take the load and his own bags are still "
                                         + "full, so nothing further can be picked up")
                                 .say("The chest is full and so are my bags, sir. "
                                         + "Pausing the mine until there's room somewhere.")
-                                .where(com.gadgetman.jarvis.platform.PaperWorlds.site(host.getCurrentLocation(player)))
+                                .where(here())
                                 .state("loot slots used", host.lootSlotsUsed(player)
-                                        + " of " + JarvisNPC.LOOT_CAPACITY)
+                                        + " of " + host.lootCapacity())
                                 .state("ores recovered", oresMined)
                                 .state("plan progress", index + " of " + plan.size() + " cells")
                                 .option("mine_without_collecting",
@@ -307,7 +305,7 @@ class BranchMiner {
                         return;
                     }
                     mode = Mode.RETURNING;
-                    host.applyNavigatorDefaults(player, () -> navStuck = true);
+                    butler.applyNavigationDefaults(() -> navStuck = true);
                     runLoop();
                 });
                 return;
@@ -325,26 +323,24 @@ class BranchMiner {
 
         // Harvest ores exposed in the tunnel walls
         if (!harvestQueue.isEmpty()) {
-            Location oreLoc = harvestQueue.peek();
-            Block ore = oreLoc.getBlock();
-            if (!host.isOre(ore.getType())
-                    || npcLoc.distance(oreLoc.clone().add(0.5, 0.5, 0.5)) > REACH + 1) {
+            BlockPos ore = harvestQueue.peek();
+            String oreType = world.block(ore).id();
+            if (!Blocks.isOre(oreType) || npcLoc.distance(ore.center()) > REACH + 1) {
                 harvestQueue.poll();
                 return;
             }
             breaking = true;
-            Material type = ore.getType();
-            host.breakBlockProperly(player, ore, success -> {
+            host.breakBlockProperly(player, world, ore, success -> {
                 breaking = false;
                 harvestQueue.poll();
                 if (success) {
                     oresMined++;
-                    host.sayQuiet(player, "Harvested " + host.formatOre(type) + " — " + oresMined + " so far.");
+                    host.sayQuiet(player, "Harvested " + Blocks.formatOre(oreType) + " — " + oresMined + " so far.");
                     if (oresMined % 10 == 0) {
                         host.say(player, oresMined + " ores from this mine so far, sir.");
                     }
                     // Vein following: neighbors of the mined ore, if still in reach
-                    queueAdjacentOres(oreLoc);
+                    queueAdjacentOres(ore);
                 }
             });
             return;
@@ -352,17 +348,18 @@ class BranchMiner {
 
         // Dig the current step's blocks
         if (!digQueue.isEmpty()) {
-            Block toDig = digQueue.peek().getBlock();
+            BlockPos toDig = digQueue.peek();
+            String digType = world.block(toDig).id();
 
-            if (host.isPassable(toDig)) {
+            if (Blocks.isPassable(world, toDig)) {
                 digQueue.poll();
                 return;
             }
-            if (host.isFluid(toDig.getType())) {
+            if (Blocks.isFluid(digType)) {
                 sealAndSkipSegment(toDig);
                 return;
             }
-            if (!host.canDig(toDig)) {
+            if (!Blocks.canDig(digType)) {
                 skipSegment("Something rather solid blocks that tunnel, sir. Rerouting.");
                 return;
             }
@@ -372,9 +369,9 @@ class BranchMiner {
                 return;
             }
 
-            boolean wasOre = host.isOre(toDig.getType());
+            boolean wasOre = Blocks.isOre(digType);
             breaking = true;
-            host.breakBlockProperly(player, toDig, success -> {
+            host.breakBlockProperly(player, world, toDig, success -> {
                 breaking = false;
                 if (success) {
                     digQueue.poll();
@@ -383,7 +380,7 @@ class BranchMiner {
                         oresMined++;
                         host.sayQuiet(player, "Ore in the tunnel itself — " + oresMined + " so far.");
                     }
-                    queueAdjacentOres(toDig.getLocation());
+                    queueAdjacentOres(toDig);
                 } else {
                     skipSegment("That block refuses to cooperate, sir. Rerouting.");
                 }
@@ -405,27 +402,27 @@ class BranchMiner {
         beginStep(plan.get(index++), npcLoc);
     }
 
-    private void beginStep(Step step, Location npcLoc) {
+    private void beginStep(Step step, Vec3 npcLoc) {
         // Torch the cell we're leaving
         if (step.torch && placeTorches) {
-            Block here = npcLoc.getBlock();
-            if (here.getType() == Material.AIR
-                    && here.getRelative(BlockFace.DOWN).getType().isSolid()) {
-                here.setType(Material.TORCH);
+            BlockPos here = npcLoc.block();
+            if (world.block(here).isAir() && world.isSolid(here.below())) {
+                world.setBlock(here, BlockState.of(Ids.TORCH));
             }
         }
 
-        for (Location dig : step.digs) {
-            if (!host.isPassable(dig.getBlock())) {
+        for (BlockPos dig : step.digs) {
+            if (!Blocks.isPassable(world, dig)) {
                 digQueue.add(dig);
             }
         }
 
         // Butler bridge: make sure the destination has a floor
-        Block below = step.cell.clone().add(0, -1, 0).getBlock();
-        if (host.isFluid(below.getType()) || !below.getType().isSolid()) {
-            if (!host.isFluid(below.getType()) || sealBlock(below)) {
-                if (!below.getType().isSolid()) below.setType(Material.COBBLESTONE);
+        BlockPos below = step.cell.below();
+        String belowType = world.block(below).id();
+        if (Blocks.isFluid(belowType) || !world.isSolid(below)) {
+            if (!Blocks.isFluid(belowType) || sealBlock(below)) {
+                if (!world.isSolid(below)) world.setBlock(below, BlockState.of(Ids.COBBLESTONE));
             }
         }
 
@@ -434,10 +431,10 @@ class BranchMiner {
         navStuck = false;
     }
 
-    private void tickAdvance(Location npcLoc) {
-        Location cellCenter = stepCell.clone().add(0.5, 0, 0.5);
-        double horiz = Math.hypot(npcLoc.getX() - cellCenter.getX(), npcLoc.getZ() - cellCenter.getZ());
-        double vert = Math.abs(npcLoc.getY() - stepCell.getY());
+    private void tickAdvance(Vec3 npcLoc) {
+        Vec3 cellCenter = stepCell.standing();
+        double horiz = Math.hypot(npcLoc.x() - cellCenter.x(), npcLoc.z() - cellCenter.z());
+        double vert = Math.abs(npcLoc.y() - stepCell.y());
 
         if (horiz < 0.7 && vert < 1.3) {
             stepCell = null;
@@ -450,15 +447,15 @@ class BranchMiner {
             // Shouldn't happen inside our own mine. Before v0.11.0 this simply
             // stopped; the tunnel is still there, so stepping back into it is a
             // move worth offering.
-            final Location target = stepCell;
-            failEarly(TaskFailure.of(plugin.owner(player), "branch_mine")
+            final BlockPos target = stepCell;
+            failEarly(TaskFailure.of(player, "branch_mine")
                     .step("walking to dig cell " + index + " of " + plan.size())
                     .reason("drifted " + String.format("%.1f", distance) + " blocks from the cell he was "
                             + "walking to, past the " + MAX_TRANSITION_DISTANCE + "-block limit — "
                             + "pathfinding has lost the tunnel")
                     .say("I seem to have lost the mine, sir. Stopping here. ("
                             + oresMined + " ores recovered.)")
-                    .where(com.gadgetman.jarvis.platform.PaperWorlds.site(npcLoc))
+                    .where(new Site(world, npcLoc))
                     .state("plan progress", index + " of " + plan.size() + " cells")
                     .state("ores recovered", oresMined)
                     .state("blocks excavated", blocksDug)
@@ -469,28 +466,26 @@ class BranchMiner {
         }
 
         advanceTicks++;
-        if (!provider.isNavigating(player) || navStuck) {
+        if (!butler.isNavigating() || navStuck) {
             navStuck = false;
-            host.navigateTo(player, cellCenter, () -> navStuck = true);
+            butler.navigateTo(cellCenter, () -> navStuck = true);
         }
 
         int limit = distance > 2.5 ? FAR_NUDGE_TICKS : NUDGE_TICKS;
         if (advanceTicks > limit) {
-            provider.cancelNavigation(player);
-            Location nudge = cellCenter.clone();
-            nudge.setYaw(npcLoc.getYaw());
-            provider.teleport(player, nudge);
+            butler.cancelNavigation();
+            butler.teleport(cellCenter, new Look(butler.look().yaw(), 0));
             stepCell = null;
             advanceTicks = 0;
         }
     }
 
-    private void tickReturning(Location npcLoc) {
+    private void tickReturning(Vec3 npcLoc) {
         if (resumeCell == null) {
             mode = Mode.EXECUTING;
             return;
         }
-        Location center = resumeCell.clone().add(0.5, 0, 0.5);
+        Vec3 center = resumeCell.standing();
         if (npcLoc.distance(center) < 2.0) {
             resumeCell = null;
             mode = Mode.EXECUTING;
@@ -498,13 +493,13 @@ class BranchMiner {
             return;
         }
         advanceTicks++;
-        if (!provider.isNavigating(player) || navStuck) {
+        if (!butler.isNavigating() || navStuck) {
             navStuck = false;
-            host.navigateTo(player, center, () -> navStuck = true);
+            butler.navigateTo(center, () -> navStuck = true);
         }
         if (advanceTicks > FAR_NUDGE_TICKS * 2) {
-            provider.cancelNavigation(player);
-            provider.teleport(player, center);
+            butler.cancelNavigation();
+            butler.teleport(center);
             advanceTicks = 0;
         }
     }
@@ -512,16 +507,13 @@ class BranchMiner {
     // ==================== ORE HARVESTING ====================
 
     /** Queue ores adjacent to a just-cleared block (bounded so veins don't derail the plan). */
-    private void queueAdjacentOres(Location cleared) {
+    private void queueAdjacentOres(BlockPos cleared) {
         if (harvestQueue.size() >= 12) return;
-        for (BlockFace face : new BlockFace[]{
-                BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH,
-                BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
-            Block neighbor = cleared.getBlock().getRelative(face);
-            if (host.isOre(neighbor.getType())) {
-                Location loc = neighbor.getLocation();
-                if (!harvestQueue.contains(loc)) {
-                    harvestQueue.add(loc);
+        for (Facing face : Facing.values()) {
+            BlockPos neighbor = cleared.side(face);
+            if (Blocks.isOre(world.block(neighbor).id())) {
+                if (!harvestQueue.contains(neighbor)) {
+                    harvestQueue.add(neighbor);
                 }
             }
         }
@@ -530,13 +522,11 @@ class BranchMiner {
     // ==================== SAFETY ====================
 
     /** Seal fluid neighbors of a block about to be dug. False = too much lava. */
-    private boolean sealFluidNeighbors(Block about) {
+    private boolean sealFluidNeighbors(BlockPos about) {
         int sealed = 0;
-        for (BlockFace face : new BlockFace[]{
-                BlockFace.UP, BlockFace.DOWN, BlockFace.NORTH,
-                BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
-            Block neighbor = about.getRelative(face);
-            if (host.isFluid(neighbor.getType())) {
+        for (Facing face : Facing.values()) {
+            BlockPos neighbor = about.side(face);
+            if (Blocks.isFluid(world, neighbor)) {
                 if (++sealed > 3) return false; // swimming in it — don't open this wall
                 sealBlock(neighbor);
             }
@@ -544,13 +534,13 @@ class BranchMiner {
         return true;
     }
 
-    private boolean sealBlock(Block fluid) {
-        fluid.setType(Material.COBBLESTONE);
+    private boolean sealBlock(BlockPos fluid) {
+        world.setBlock(fluid, BlockState.of(Ids.COBBLESTONE));
         sealedPockets++;
         return true;
     }
 
-    private void sealAndSkipSegment(Block fluid) {
+    private void sealAndSkipSegment(BlockPos fluid) {
         sealBlock(fluid);
         skipSegment("Sealed off a liquid pocket, sir. Rerouting.");
     }
@@ -563,13 +553,13 @@ class BranchMiner {
         if (index == 0 || index > plan.size()) {
             // No earlier segment to fall back on. The rest of the plan is still
             // good, so skipping the opening one is a real way forward.
-            failEarly(TaskFailure.of(plugin.owner(player), "branch_mine")
+            failEarly(TaskFailure.of(player, "branch_mine")
                     .step("clearing the opening segment of the mine")
                     .reason("the first segment was blocked before any of it was dug, so there is no "
                             + "earlier segment to reroute into")
                     .say("The very first stretch is blocked, sir. Stopping here. ("
                             + oresMined + " ores recovered.)")
-                    .where(com.gadgetman.jarvis.platform.PaperWorlds.site(host.getCurrentLocation(player)))
+                    .where(here())
                     .state("plan length", plan.size() + " cells")
                     .state("ores recovered", oresMined)
                     .option("skip_first_segment",
@@ -590,19 +580,19 @@ class BranchMiner {
 
     private void finish() {
         mode = Mode.DONE;
-        provider.cancelNavigation(player);
+        butler.cancelNavigation();
         String seals = sealedPockets > 0 ? " Sealed " + sealedPockets + " liquid pockets along the way." : "";
         host.say(player, "The mine is complete, sir. " + blocksDug + " blocks excavated, "
                 + oresMined + " ores recovered." + seals + " It's lit and walkable whenever you care to visit.");
-        Entertainer.celebrate(host, plugin.owner(player));
-        if (autoDeposit && deposits.hasChest(plugin.owner(player)) && host.lootSlotsUsed(player) > 0) {
-            deposits.startDepositRun(plugin.owner(player), deposits.getChest(plugin.owner(player)).orElseThrow(), () -> {});
+        Entertainer.celebrate(host, player);
+        if (autoDeposit && deposits.hasChest(player) && host.lootSlotsUsed(player) > 0) {
+            deposits.startDepositRun(player, deposits.getChest(player).orElseThrow(), () -> {});
         }
     }
 
     private void finishEarly(String message) {
         mode = Mode.DONE;
-        provider.cancelNavigation(player);
+        butler.cancelNavigation();
         host.say(player, message + " (" + oresMined + " ores recovered.)");
     }
 
@@ -614,24 +604,29 @@ class BranchMiner {
      */
     private void failEarly(TaskFailure.Builder failure) {
         mode = Mode.DONE;
-        provider.cancelNavigation(player);
+        butler.cancelNavigation();
         host.reportFailure(failure.build());
+    }
+
+    private Site here() {
+        Vec3 at = host.currentLocation(player);
+        return at == null ? null : new Site(world, at);
     }
 
     // ==================== RECOVERY MOVES ====================
     // Only reachable by name, and only from the site that offered them.
 
     /** Step back into the tunnel at a known-good cell and pick the plan up there. */
-    private void resumeAt(Location cell) {
-        if (cell == null || !player.isOnline() || !provider.isSpawned(player)) return;
-        provider.cancelNavigation(player);
-        provider.teleport(player, cell.clone().add(0.5, 0, 0.5));
+    private void resumeAt(BlockPos cell) {
+        if (cell == null || !player.isOnline() || !butler.isSpawned()) return;
+        butler.cancelNavigation();
+        butler.teleport(cell.standing());
         restartLoop();
     }
 
     /** Jump the plan forward to the first cell of the given segment. */
     private void skipToSegment(int segment) {
-        if (!player.isOnline() || !provider.isSpawned(player)) return;
+        if (!player.isOnline() || !butler.isSpawned()) return;
         int target = -1;
         for (int i = 0; i < plan.size(); i++) {
             if (plan.get(i).segment >= segment) {
@@ -649,7 +644,7 @@ class BranchMiner {
 
     /** Keep digging with nowhere to put the loot. Drops stay on the tunnel floor. */
     private void resumeWithoutDeposits() {
-        if (!player.isOnline() || !provider.isSpawned(player)) return;
+        if (!player.isOnline() || !butler.isSpawned()) return;
         depositsPaused = true;
         restartLoop();
     }
@@ -667,7 +662,7 @@ class BranchMiner {
         navStuck = false;
         breaking = false;
         mode = Mode.EXECUTING;
-        host.applyNavigatorDefaults(player, () -> navStuck = true);
+        butler.applyNavigationDefaults(() -> navStuck = true);
         runLoop();
     }
 }

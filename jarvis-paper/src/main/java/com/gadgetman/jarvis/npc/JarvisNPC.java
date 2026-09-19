@@ -259,7 +259,7 @@ public class JarvisNPC implements Listener, ButlerHost {
 
         this.depositManager = new DepositManager(plugin.getPlatform(), this);
         this.recoveryService = new RecoveryService(plugin, this);
-        this.escortService = new EscortService(plugin, this, depositManager);
+        this.escortService = new EscortService(this, depositManager);
 
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         plugin.getServer().getPluginManager().registerEvents(recoveryService, plugin);
@@ -1126,7 +1126,7 @@ public class JarvisNPC implements Listener, ButlerHost {
         stopTask(player);
         miningStates.remove(player.getUniqueId());
 
-        Defender defender = new Defender(this, player, stance, Defender.Mode.BODYGUARD);
+        Defender defender = new Defender(this, plugin.owner(player), stance, Defender.Mode.BODYGUARD);
         activeDefenders.put(player.getUniqueId(), defender);
         defender.start();
     }
@@ -1143,7 +1143,7 @@ public class JarvisNPC implements Listener, ButlerHost {
         miningStates.remove(player.getUniqueId());
 
         Defender.Stance stance = parseStance(stanceArg, Defender.Stance.AGGRESSIVE);
-        Defender defender = new Defender(this, player, stance, Defender.Mode.SENTRY);
+        Defender defender = new Defender(this, plugin.owner(player), stance, Defender.Mode.SENTRY);
         activeDefenders.put(player.getUniqueId(), defender);
         defender.start();
     }
@@ -1169,7 +1169,7 @@ public class JarvisNPC implements Listener, ButlerHost {
         if (victim instanceof Player p) {
             Defender defender = activeDefenders.get(p.getUniqueId());
             if (defender != null) {
-                defender.recordThreat(event.getDamager());
+                defender.recordThreat(new com.gadgetman.jarvis.platform.PaperEntity(event.getDamager()));
             }
             return;
         }
@@ -1179,7 +1179,7 @@ public class JarvisNPC implements Listener, ButlerHost {
             if (victim.equals(entry.getValue().getEntity())) {
                 Defender defender = activeDefenders.get(entry.getKey());
                 if (defender != null) {
-                    defender.recordThreat(event.getDamager());
+                    defender.recordThreat(new com.gadgetman.jarvis.platform.PaperEntity(event.getDamager()));
                 }
                 return;
             }
@@ -1363,9 +1363,9 @@ public class JarvisNPC implements Listener, ButlerHost {
         }
         stopTask(player);
         miningStates.remove(player.getUniqueId());
-        Material crop = Farmer.cropFromKeyword(cropKeyword);
+        String crop = Farmer.cropFromKeyword(cropKeyword);
         beginTask(player, tend ? "tend" : "farm");
-        new Farmer(this, player, depositManager, crop, tend).start();
+        new Farmer(this, plugin.owner(player), depositManager, crop, tend).start();
     }
 
     /** Lumberjack: fell N trees, replant saplings. */
@@ -1436,17 +1436,14 @@ public class JarvisNPC implements Listener, ButlerHost {
                 say(player, "Patrol route cleared, sir.");
             }
             default -> {
-                java.util.List<Location> route = new java.util.ArrayList<>();
-                for (var site : depositManager.getPatrol(plugin.owner(player))) {
-                    route.add(PaperWorlds.location(site.world(), site.pos()));
-                }
+                var route = depositManager.getPatrol(plugin.owner(player));
                 if (route.size() < 2) {
                     say(player, "I need at least two waypoints, sir — stand at each and say '/jarvis patrol add'.");
                     return;
                 }
                 stopTask(player);
                 miningStates.remove(player.getUniqueId());
-                Defender defender = new Defender(this, player,
+                Defender defender = new Defender(this, plugin.owner(player),
                         Defender.Stance.AGGRESSIVE, Defender.Mode.PATROL);
                 defender.setPatrolRoute(route);
                 activeDefenders.put(player.getUniqueId(), defender);
@@ -1622,7 +1619,7 @@ public class JarvisNPC implements Listener, ButlerHost {
         stopTask(player);
         miningStates.remove(player.getUniqueId());
         beginTask(player, "branch_mine");
-        new BranchMiner(this, player, depositManager).start();
+        new BranchMiner(this, plugin.owner(player), depositManager).start();
     }
 
     /**
@@ -1681,7 +1678,7 @@ public class JarvisNPC implements Listener, ButlerHost {
             heading = new int[]{ parsed.dx(), parsed.dz() };
         }
 
-        BranchMiner tunneller = new BranchMiner(this, player, depositManager,
+        BranchMiner tunneller = new BranchMiner(this, plugin.owner(player), depositManager,
                 BranchMiner.Layout.TUNNEL, len, heading);
         tunneller.start();
     }
@@ -1694,7 +1691,7 @@ public class JarvisNPC implements Listener, ButlerHost {
         stopTask(player);
         miningStates.remove(player.getUniqueId());
         beginTask(player, "dig_down");
-        new ShaftDigger(plugin, this, player, depth).start();
+        new ShaftDigger(this, plugin.owner(player), depth).start();
     }
 
     /** v0.2.0: follow mode — trail the player, carry the loot. */

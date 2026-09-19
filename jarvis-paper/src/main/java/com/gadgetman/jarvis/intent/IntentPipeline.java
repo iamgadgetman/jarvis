@@ -300,8 +300,8 @@ public class IntentPipeline {
                 if (plugin.getMorningReport() != null) plugin.getMorningReport().deliver(player, false);
             }
             case "recover" -> plugin.getJarvisNPC().getRecoveryService().recover(player);
-            case "take_home" -> plugin.getJarvisNPC().getEscortService().takeHome(player);
-            case "set_home" -> plugin.getJarvisNPC().getEscortService().setHome(player);
+            case "take_home" -> plugin.getJarvisNPC().getEscortService().takeHome(plugin.owner(player));
+            case "set_home" -> plugin.getJarvisNPC().getEscortService().setHome(plugin.owner(player));
             case "farm" -> plugin.getJarvisNPC().farm(player,
                     parameters != null ? parameters.optString("crop", null) : null, false);
             case "tend" -> plugin.getJarvisNPC().farm(player,

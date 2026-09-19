@@ -817,8 +817,8 @@ public class UIManager implements Listener {
         var npc = plugin.getJarvisNPC();
         var deposit = npc.getDepositManager();
         switch (slot) {
-            case 10 -> { npc.getEscortService().setHome(p); open(p, createHouseholdMenu(p)); }
-            case 11 -> { if (deposit.getHome(plugin.owner(p)).isPresent()) { npc.getEscortService().takeHome(p); p.closeInventory(); } }
+            case 10 -> { npc.getEscortService().setHome(plugin.owner(p)); open(p, createHouseholdMenu(p)); }
+            case 11 -> { if (deposit.getHome(plugin.owner(p)).isPresent()) { npc.getEscortService().takeHome(plugin.owner(p)); p.closeInventory(); } }
             case 12 -> { if (npc.getRecoveryService().hasDeathPoint(p)) { npc.getRecoveryService().recover(p); p.closeInventory(); } }
             case 14 -> { deposit.setChest(plugin.owner(p)); open(p, createHouseholdMenu(p)); }
             case 15 -> { if (deposit.hasChest(plugin.owner(p))) { deposit.deposit(plugin.owner(p)); p.closeInventory(); } }

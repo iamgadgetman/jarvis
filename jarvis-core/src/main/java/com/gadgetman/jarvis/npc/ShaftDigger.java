@@ -1,18 +1,17 @@
 package com.gadgetman.jarvis.npc;
 
-import com.gadgetman.jarvis.Jarvis;
-import com.gadgetman.jarvis.npc.provider.INPCProvider;
+import com.gadgetman.jarvis.core.platform.Butler;
+import com.gadgetman.jarvis.core.platform.Config;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.core.platform.Site;
+import com.gadgetman.jarvis.core.platform.Task;
+import com.gadgetman.jarvis.core.platform.World;
+import com.gadgetman.jarvis.core.world.BlockPos;
+import com.gadgetman.jarvis.core.world.BlockState;
+import com.gadgetman.jarvis.core.world.Facing;
+import com.gadgetman.jarvis.core.world.Ids;
+import com.gadgetman.jarvis.core.world.Vec3;
 import com.gadgetman.jarvis.recovery.TaskFailure;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.World;
-import org.bukkit.block.Block;
-import org.bukkit.block.BlockFace;
-import org.bukkit.block.data.BlockData;
-import org.bukkit.block.data.Directional;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
 
 /**
  * Digs a vertical shaft, ladder-lined and torch-lit.
@@ -30,10 +29,9 @@ import org.bukkit.scheduler.BukkitRunnable;
  */
 public class ShaftDigger {
 
-    private final Jarvis plugin;
-    private final JarvisNPC host;
-    private final Player player;
-    private final INPCProvider provider;
+    private final ButlerHost host;
+    private final Owner player;
+    private final Butler butler;
 
     private final int requestedDepth;
     private final boolean placeLadders;
@@ -43,18 +41,18 @@ public class ShaftDigger {
     /** Kept clear of bedrock; the branch miner uses the same margin. */
     private static final int FLOOR_MARGIN = 5;
 
-    private Location cursor;
+    private World world;
+    private BlockPos cursor;
     private int stopY;
     private int dug;
     private int sealed;
     private boolean breaking;
 
-    public ShaftDigger(Jarvis plugin, JarvisNPC host, Player player, int requestedDepth) {
-        this.plugin = plugin;
+    public ShaftDigger(ButlerHost host, Owner player, int requestedDepth) {
         this.host = host;
         this.player = player;
-        this.provider = host.getProvider();
-        FileConfiguration cfg = plugin.getConfig();
+        this.butler = host.butler(player);
+        Config cfg = host.config();
         this.requestedDepth = requestedDepth > 0
                 ? requestedDepth : cfg.getInt("mining.shaft.default-depth", 20);
         this.placeLadders = cfg.getBoolean("mining.shaft.place-ladders", true);
@@ -63,22 +61,21 @@ public class ShaftDigger {
     }
 
     public void start() {
-        Location anchor = host.getCurrentLocation(player);
-        if (anchor == null) {
+        Vec3 anchor = host.currentLocation(player);
+        world = butler.world().orElse(null);
+        if (anchor == null || world == null) {
             host.say(player, "Summon me first, sir — /jarvis summon.");
             return;
         }
-        World world = anchor.getWorld();
-        if (world == null) return;
 
-        this.cursor = anchor.getBlock().getLocation();
-        int floor = world.getMinHeight() + FLOOR_MARGIN;
-        this.stopY = Math.max(cursor.getBlockY() - requestedDepth, floor);
+        this.cursor = anchor.block();
+        int floor = world.minY() + FLOOR_MARGIN;
+        this.stopY = Math.max(cursor.y() - requestedDepth, floor);
 
-        int achievable = cursor.getBlockY() - stopY;
+        int achievable = cursor.y() - stopY;
         if (achievable <= 0) {
             host.say(player, "We are already as deep as I am willing to go, sir — "
-                    + "bedrock is " + (cursor.getBlockY() - world.getMinHeight()) + " below.");
+                    + "bedrock is " + (cursor.y() - world.minY()) + " below.");
             return;
         }
         if (achievable < requestedDepth) {
@@ -88,79 +85,76 @@ public class ShaftDigger {
             host.say(player, "Digging down " + achievable + ", sir. Mind the drop.");
         }
 
-        BukkitRunnable task = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (!provider.isSpawned(player) || !player.isOnline()) {
-                    cancel();
-                    host.taskDone(player, this);
-                    return;
-                }
-                tick(this);
+        Task task = host.platform().scheduler().every(0L, 5L, self -> {
+            if (!butler.isSpawned() || !player.isOnline()) {
+                self.cancel();
+                host.taskDone(player, self);
+                return;
             }
-        };
-        task.runTaskTimer(plugin, 0L, 5L);
+            tick(self);
+        });
         host.registerTask(player, task);
     }
 
-    private void tick(BukkitRunnable self) {
+    private void tick(Task self) {
         if (breaking) return;
 
-        if (cursor.getBlockY() <= stopY) {
+        if (cursor.y() <= stopY) {
             finish(self);
             return;
         }
 
-        Block below = cursor.clone().add(0, -1, 0).getBlock();
+        BlockPos below = cursor.below();
 
         // Sealing before opening, not after: the block being removed may be the
         // only thing holding back a lava pocket beside it.
         if (!sealNeighbours(below)) {
             // Nothing to be done about this one — the shaft is where the player
             // put it. The diagnosis is the whole of the value here.
-            host.reportFailure(TaskFailure.of(plugin.owner(player), "dig_down")
+            host.reportFailure(TaskFailure.of(player, "dig_down")
                     .step("sealing the walls before opening the next block down")
                     .reason("more adjacent lava than the sealer will take on in one step")
                     .say("There is more lava down there than I care for, sir. Stopping here."
                             + progressNote())
-                    .where(com.gadgetman.jarvis.platform.PaperWorlds.site(cursor))
-                    .state("depth reached", dug + " blocks, now at y=" + cursor.getBlockY())
+                    .where(new Site(world, cursor.center()))
+                    .state("depth reached", dug + " blocks, now at y=" + cursor.y())
                     .state("target depth", "y=" + stopY)
                     .state("pockets sealed so far", sealed)
                     .build());
             stopQuietly(self);
             return;
         }
-        if (host.isFluid(below.getType())) {
-            below.setType(Material.COBBLESTONE);
+        String belowId = world.block(below).id();
+        if (Blocks.isFluid(belowId)) {
+            world.setBlock(below, BlockState.of(Ids.COBBLESTONE));
             sealed++;
             return;
         }
-        if (host.isPassable(below)) {
+        if (Blocks.isPassable(world, below)) {
             descend();
             return;
         }
-        if (!host.canDig(below)) {
+        if (!Blocks.canDig(belowId)) {
             host.say(player, "Bedrock, sir. That is as far as anyone digs.");
             finish(self);
             return;
         }
 
         breaking = true;
-        host.breakBlockProperly(player, below, success -> {
+        host.breakBlockProperly(player, world, below, success -> {
             breaking = false;
             if (success) {
                 dug++;
                 descend();
             } else {
-                host.reportFailure(TaskFailure.of(plugin.owner(player), "dig_down")
-                        .step("breaking the block underfoot at y=" + (cursor.getBlockY() - 1))
+                host.reportFailure(TaskFailure.of(player, "dig_down")
+                        .step("breaking the block underfoot at y=" + (cursor.y() - 1))
                         .reason("the break did not complete — the block is protected, or something "
                                 + "changed it mid-swing")
                         .say("That block will not yield, sir. Stopping." + progressNote())
-                        .where(com.gadgetman.jarvis.platform.PaperWorlds.site(cursor))
-                        .state("block", below.getType().name().toLowerCase())
-                        .state("depth reached", dug + " blocks, now at y=" + cursor.getBlockY())
+                        .where(new Site(world, cursor.center()))
+                        .state("block", Blocks.pretty(world.block(below).id()))
+                        .state("depth reached", dug + " blocks, now at y=" + cursor.y())
                         .state("tool", host.describeHeldTool(player))
                         .build());
                 stopQuietly(self);
@@ -170,35 +164,25 @@ public class ShaftDigger {
 
     /** Step into the cleared block and line the walls behind us. */
     private void descend() {
-        cursor = cursor.clone().add(0, -1, 0);
-        provider.teleport(player, cursor.clone().add(0.5, 0, 0.5));
-        host.pickupNearbyItems(player, cursor);
+        cursor = cursor.below();
+        butler.teleport(cursor.standing());
+        host.pickupNearbyItems(player, cursor.standing());
         line(cursor);
     }
 
-    private void line(Location at) {
+    private void line(BlockPos at) {
         if (placeLadders) {
-            Block wall = at.clone().add(0, 0, -1).getBlock();   // north face
-            Block ladder = at.getBlock();
-            if (wall.getType().isSolid() && ladder.getType().isAir()) {
-                ladder.setType(Material.LADDER, false);
-                BlockData d = ladder.getBlockData();
-                if (d instanceof Directional dir) {
-                    dir.setFacing(BlockFace.SOUTH);             // back against the north wall
-                    ladder.setBlockData(dir, false);
-                }
+            BlockPos wall = at.side(Facing.NORTH);   // north face
+            if (world.isSolid(wall) && world.block(at).isAir()) {
+                // Back against the north wall, so the ladder faces south.
+                world.setBlock(at, BlockState.of(Ids.LADDER).with("facing", Facing.SOUTH.key()));
             }
         }
         if (placeTorches && dug > 0 && dug % torchInterval == 0) {
-            Block side = at.clone().add(1, 0, 0).getBlock();
-            Block anchor = at.clone().add(2, 0, 0).getBlock();
-            if (side.getType().isAir() && anchor.getType().isSolid()) {
-                side.setType(Material.WALL_TORCH, false);
-                BlockData d = side.getBlockData();
-                if (d instanceof Directional dir) {
-                    dir.setFacing(BlockFace.EAST);
-                    side.setBlockData(dir, false);
-                }
+            BlockPos side = at.side(Facing.EAST);
+            BlockPos anchor = at.offset(2, 0, 0);
+            if (world.block(side).isAir() && world.isSolid(anchor)) {
+                world.setBlock(side, BlockState.of(Ids.WALL_TORCH).with("facing", Facing.EAST.key()));
             }
         }
     }
@@ -208,26 +192,24 @@ public class ShaftDigger {
      *
      * @return false when the pocket is too large to be worth sealing
      */
-    private boolean sealNeighbours(Block target) {
+    private boolean sealNeighbours(BlockPos target) {
         int found = 0;
-        for (BlockFace face : new BlockFace[]{
-                BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH,
-                BlockFace.WEST, BlockFace.DOWN}) {
-            Block n = target.getRelative(face);
-            if (host.isFluid(n.getType())) {
+        for (Facing face : new Facing[]{Facing.NORTH, Facing.EAST, Facing.SOUTH, Facing.WEST, Facing.DOWN}) {
+            BlockPos n = target.side(face);
+            if (Blocks.isFluid(world, n)) {
                 if (++found > 4) return false;
-                n.setType(Material.COBBLESTONE);
+                world.setBlock(n, BlockState.of(Ids.COBBLESTONE));
                 sealed++;
             }
         }
         return true;
     }
 
-    private void finish(BukkitRunnable self) {
+    private void finish(Task self) {
         stopQuietly(self);
         String note = sealed > 0 ? " Sealed " + sealed + " fluid pocket(s) on the way." : "";
         host.say(player, "Shaft complete, sir — " + dug + " blocks down to y="
-                + cursor.getBlockY() + "." + note
+                + cursor.y() + "." + note
                 + (placeLadders ? " There are ladders, should you wish to return." : ""));
     }
 
@@ -236,14 +218,14 @@ public class ShaftDigger {
      * about to speak: a diagnosis followed two seconds later by "Shaft
      * complete, sir" reads as though he did not notice.
      */
-    private void stopQuietly(BukkitRunnable self) {
+    private void stopQuietly(Task self) {
         self.cancel();
         host.taskDone(player, self);
     }
 
     /** How far he got, folded into the line he says when the shaft stops early. */
     private String progressNote() {
-        return " " + dug + " blocks down, to y=" + cursor.getBlockY() + "."
+        return " " + dug + " blocks down, to y=" + cursor.y() + "."
                 + (sealed > 0 ? " Sealed " + sealed + " fluid pocket(s) on the way." : "");
     }
 }

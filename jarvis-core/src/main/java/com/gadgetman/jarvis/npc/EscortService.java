@@ -1,14 +1,14 @@
 package com.gadgetman.jarvis.npc;
 
-import com.gadgetman.jarvis.Jarvis;
-import com.gadgetman.jarvis.npc.provider.INPCProvider;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.block.Block;
-import org.bukkit.block.BlockFace;
-import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.util.Vector;
+import com.gadgetman.jarvis.core.platform.Butler;
+import com.gadgetman.jarvis.core.platform.Owner;
+import com.gadgetman.jarvis.core.platform.Site;
+import com.gadgetman.jarvis.core.platform.Task;
+import com.gadgetman.jarvis.core.platform.World;
+import com.gadgetman.jarvis.core.world.BlockPos;
+import com.gadgetman.jarvis.core.world.BlockState;
+import com.gadgetman.jarvis.core.world.Ids;
+import com.gadgetman.jarvis.core.world.Vec3;
 
 /**
  * EscortService (v0.6.0) - "Take me home, Jarvis."
@@ -20,9 +20,7 @@ import org.bukkit.util.Vector;
  */
 public class EscortService {
 
-    private final Jarvis plugin;
-    private final JarvisNPC host;
-    private final INPCProvider provider;
+    private final ButlerHost host;
     private final DepositManager data;
 
     private static final double ARRIVE_DISTANCE = 4.0;
@@ -33,22 +31,20 @@ public class EscortService {
     private static final int STALL_HOP_TICKS = 8;
     private static final int TORCH_LIGHT_THRESHOLD = 7;
 
-    public EscortService(Jarvis plugin, JarvisNPC host, DepositManager data) {
-        this.plugin = plugin;
+    public EscortService(ButlerHost host, DepositManager data) {
         this.host = host;
-        this.provider = host.getProvider();
         this.data = data;
     }
 
-    public void setHome(Player player) {
-        data.setHome(plugin.owner(player), com.gadgetman.jarvis.platform.PaperWorlds.site(player.getLocation()));
+    public void setHome(Owner player) {
+        World world = host.platform().world(player.world()).orElse(null);
+        if (world == null) return;
+        data.setHome(player, new Site(world, player.pos()));
         host.say(player, "Home noted, sir. Say the word and I shall lead you back.");
     }
 
-    public void takeHome(Player player) {
-        Location home = data.getHome(plugin.owner(player))
-                .map(site -> com.gadgetman.jarvis.platform.PaperWorlds.location(site.world(), site.pos()))
-                .orElse(null);
+    public void takeHome(Owner player) {
+        Site home = data.getHome(player).orElse(null);
         if (home == null) {
             host.say(player, "No home on record, sir. Stand where you'd like it and say '/jarvis home set'.");
             return;
@@ -72,51 +68,53 @@ public class EscortService {
      * @param wrongWorld what he says when the destination is not in this world;
      *                  he cannot take you through a portal, only to one
      */
-    public void escortTo(Player player, Location destination, String departure,
+    public void escortTo(Owner player, Site destination, String departure,
                          String arrival, String wrongWorld) {
-        if (!provider.isSpawned(player)) {
+        Butler butler = host.butler(player);
+        if (!butler.isSpawned()) {
             host.say(player, "Summon me first, sir — /jarvis summon.");
             return;
         }
-        Location npcLoc = host.getCurrentLocation(player);
-        if (destination.getWorld() != npcLoc.getWorld()) {
+        World world = butler.world().orElse(null);
+        if (world == null || !world.id().equals(destination.world().id())) {
             host.say(player, wrongWorld);
             return;
         }
+        Vec3 dest = destination.pos();
 
         host.stopTask(player);
-        host.applyNavigatorDefaults(player, null);
+        butler.applyNavigationDefaults(null);
         host.say(player, departure);
 
-        BukkitRunnable task = new BukkitRunnable() {
+        Task task = host.platform().scheduler().every(10L, 20L, new java.util.function.Consumer<Task>() {
             int stalled = 0;
             boolean waiting = false;
             boolean nagged = false;
-            Location lastPos = null;
+            Vec3 lastPos = null;
 
             @Override
-            public void run() {
-                if (!provider.isSpawned(player) || !player.isOnline()) {
-                    cancel();
-                    host.taskDone(player, this);
+            public void accept(Task self) {
+                if (!butler.isSpawned() || !player.isOnline()) {
+                    self.cancel();
+                    host.taskDone(player, self);
                     return;
                 }
 
-                Location loc = host.getCurrentLocation(player);
-                Location playerLoc = player.getLocation();
+                Vec3 loc = butler.pos();
+                Vec3 playerLoc = player.pos();
                 host.pickupNearbyItems(player, loc);
 
-                if (playerLoc.getWorld() != loc.getWorld()) {
-                    cancel();
-                    host.taskDone(player, this);
+                if (!player.world().equals(world.id())) {
+                    self.cancel();
+                    host.taskDone(player, self);
                     return;
                 }
 
                 // Arrived? (Both of us, ideally)
-                if (playerLoc.distance(destination) <= ARRIVE_DISTANCE + 2) {
-                    cancel();
-                    host.taskDone(player, this);
-                    provider.cancelNavigation(player);
+                if (playerLoc.distance(dest) <= ARRIVE_DISTANCE + 2) {
+                    self.cancel();
+                    host.taskDone(player, self);
+                    butler.cancelNavigation();
                     host.say(player, arrival);
                     return;
                 }
@@ -126,7 +124,7 @@ public class EscortService {
                 if (playerGap > WAIT_FOR_PLAYER_DISTANCE) {
                     if (!waiting) {
                         waiting = true;
-                        provider.cancelNavigation(player);
+                        butler.cancelNavigation();
                         if (!nagged) {
                             nagged = true;
                             host.say(player, "Do keep up, sir.");
@@ -137,28 +135,28 @@ public class EscortService {
                 waiting = false;
 
                 // Light the road
-                lightHere(loc);
+                lightHere(world, loc);
 
                 // Lead: walk it in legs. Aiming straight at a destination three hundred
                 // blocks off does not produce a long path, it produces no path,
                 // and a butler who never sets off.
-                if (!provider.isNavigating(player) && loc.distance(destination) > ARRIVE_DISTANCE) {
-                    provider.navigateTo(player, nextLeg(loc, destination));
+                if (!butler.isNavigating() && loc.distance(dest) > ARRIVE_DISTANCE) {
+                    butler.navigateTo(nextLeg(world, loc, dest));
                 }
-                if (loc.distance(playerLoc) > LEAD_DISTANCE && provider.isNavigating(player)) {
-                    provider.setNavigationPaused(player, true);
-                } else if (provider.isNavigationPaused(player)) {
-                    provider.setNavigationPaused(player, false);
+                if (loc.distance(playerLoc) > LEAD_DISTANCE && butler.isNavigating()) {
+                    butler.setNavigationPaused(true);
+                } else if (butler.isNavigationPaused()) {
+                    butler.setNavigationPaused(false);
                 }
 
                 // Stall watchdog
                 if (lastPos != null && loc.distance(lastPos) < 0.2 && !waiting
-                        && !provider.isNavigationPaused(player)) {
+                        && !butler.isNavigationPaused()) {
                     stalled++;
                 } else {
                     stalled = 0;
                 }
-                lastPos = loc.clone();
+                lastPos = loc;
 
                 // Stuck: a short bound TOWARD destination, the way the recovery run does
                 // it. This used to teleport him to the player, which is how an
@@ -168,14 +166,12 @@ public class EscortService {
                 // does not count as stalling -- so a hop can never leave you
                 // behind.
                 if (stalled > STALL_HOP_TICKS) {
-                    provider.cancelNavigation(player);
-                    provider.teleport(player, hopToward(loc, destination));
+                    butler.cancelNavigation();
+                    butler.teleport(hopToward(world, loc, dest));
                     stalled = 0;
                 }
             }
-        };
-
-        task.runTaskTimer(plugin, 10L, 20L);
+        });
         host.registerTask(player, task);
     }
 
@@ -190,36 +186,35 @@ public class EscortService {
      * the pathfinder will actually solve, which is what makes him walk the road
      * rather than appear at your elbow.
      */
-    private Location nextLeg(Location from, Location dest) {
-        return step(from, dest, LEG_DISTANCE);
+    private Vec3 nextLeg(World world, Vec3 from, Vec3 dest) {
+        return step(world, from, dest, LEG_DISTANCE);
     }
 
     /** A stalled bound in the same direction — short, visible, and never backwards. */
-    private Location hopToward(Location from, Location dest) {
-        return step(from, dest, HOP_DISTANCE);
+    private Vec3 hopToward(World world, Vec3 from, Vec3 dest) {
+        return step(world, from, dest, HOP_DISTANCE);
     }
 
-    private Location step(Location from, Location dest, double distance) {
-        Vector dir = dest.toVector().subtract(from.toVector());
-        if (dir.length() <= distance) return dest.clone();
+    private Vec3 step(World world, Vec3 from, Vec3 dest, double distance) {
+        Vec3 dir = dest.subtract(from);
+        if (dir.length() <= distance) return dest;
 
-        Location point = from.clone().add(dir.normalize().multiply(distance));
-        point.setY(point.getWorld().getHighestBlockYAt(point) + 1);
+        Vec3 point = from.add(dir.normalize().scale(distance));
+        double y = world.highestY(point.block().x(), point.block().z()) + 1;
         // Home is underground, or the surface here is a cliff above us: stay in
         // the current Y band rather than surfacing and walking over the top.
-        if (dest.getY() < from.getY() - 4 || from.getY() - point.getY() > 8) {
-            point.setY(from.getY());
+        if (dest.y() < from.y() - 4 || from.y() - y > 8) {
+            y = from.y();
         }
-        return host.findSafeNear(point);
+        return host.findSafeNear(world, new Vec3(point.x(), y, point.z()));
     }
 
     /** Place a torch at the NPC's feet when the road is spawn-dark. */
-    private void lightHere(Location loc) {
-        Block block = loc.getBlock();
-        if (block.getType() != Material.AIR) return;
-        if (block.getLightFromBlocks() > TORCH_LIGHT_THRESHOLD) return;
-        Block below = block.getRelative(BlockFace.DOWN);
-        if (!below.getType().isSolid()) return;
-        block.setType(Material.TORCH);
+    private void lightHere(World world, Vec3 loc) {
+        BlockPos block = loc.block();
+        if (!world.block(block).isAir()) return;
+        if (world.blockLight(block) > TORCH_LIGHT_THRESHOLD) return;
+        if (!world.isSolid(block.below())) return;
+        world.setBlock(block, BlockState.of(Ids.TORCH));
     }
 }

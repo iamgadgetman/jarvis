@@ -410,9 +410,9 @@ public class JarvisCommands implements CommandExecutor {
             case "recover" -> plugin.getJarvisNPC().getRecoveryService().recover(player);
             case "home" -> {
                 if (args.length > 1 && args[1].equalsIgnoreCase("set")) {
-                    plugin.getJarvisNPC().getEscortService().setHome(player);
+                    plugin.getJarvisNPC().getEscortService().setHome(plugin.owner(player));
                 } else {
-                    plugin.getJarvisNPC().getEscortService().takeHome(player);
+                    plugin.getJarvisNPC().getEscortService().takeHome(plugin.owner(player));
                 }
             }
             case "confirm"   -> handleConfirm(player);
@@ -1060,7 +1060,8 @@ public class JarvisCommands implements CommandExecutor {
         }
         var where = new org.bukkit.Location(player.getWorld(),
                 nearest.x() + 0.5, nearest.y(), nearest.z() + 0.5);
-        plugin.getJarvisNPC().getEscortService().escortTo(player, where,
+        plugin.getJarvisNPC().getEscortService().escortTo(plugin.owner(player),
+                com.gadgetman.jarvis.platform.PaperWorlds.site(where),
                 "The portal is " + (int) player.getLocation().distance(where) + " metres "
                         + com.gadgetman.jarvis.npc.portal.PortalScout.bearing(player.getLocation(), where)
                         + ", sir. This way — stay close.",
