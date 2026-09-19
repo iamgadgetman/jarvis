@@ -1,6 +1,6 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** steps 1 to 6 done. Steps 7 to 9 not started.
+**Status:** steps 1 to 7 done. Steps 8 and 9 not started.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -730,6 +730,21 @@ before. Order matters: each introduces the interfaces the next needs.
    SchematicManager, commands, menus, voice, and `Jarvis.java` wiring.
 7. **Building and schematics.** `BuildingAssistant` onto `World.setBlock`;
    `SchematicManager` split.
+   *Done.* `building.BuildingAssistant` is in core on `Platform`, `Owner`
+   and `World`: plans resolve through a new `BlockTypes` registry view
+   (`parse(spec)`, `placeableIds()`), go down with `World.setBlock(pos,
+   state, physics=false)`, and panes, bars, fences, walls and beds are
+   fixed up on `BlockState` properties. `BlockState.matches(partial)`
+   compares a plan's partial state against the block in the world;
+   `SituationSnapshot.capture(World, BlockPos)` replaces `PaperSituation`.
+   `schematics.SchemReader`, `LitematicConverter` and a shared `Nbt`
+   helper are in core, and `schematics.SchematicLibrary` owns the folder
+   scan, the matching and the native paste, with an `Accelerator` hook for
+   formats it cannot place. Paper's `SchematicManager` is a facade over
+   the library that keeps only the WorldEdit reflection (JSON paste,
+   clipboard save, rotated paste). The design's `Schematics` interface on
+   `Platform` was not needed: the library is core and the accelerator is
+   the only platform hook.
 8. **Commands and UI.** `CommandSink` and `Menu` in core; thin Paper wiring.
    `Jarvis.java` becomes a bootstrap.
 9. **Enforce.** Core's pom declares no platform dependency, so a stray import
