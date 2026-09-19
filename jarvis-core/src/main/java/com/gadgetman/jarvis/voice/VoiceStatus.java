@@ -14,6 +14,9 @@ public interface VoiceStatus {
     /** Tell {@code to} how voice stands. May send more lines later (a probe). */
     void report(Audience to);
 
+    /** The {@code voice.*} section changed on disk: re-read it, and register if that is what it now asks. */
+    default void settingsChanged() { }
+
     VoiceStatus NONE = to -> to.message(Colors.YELLOW + "Voice: not available on this server. "
             + Colors.GRAY + "Simple Voice Chat is not installed, or Jarvis could not register with it.");
 }

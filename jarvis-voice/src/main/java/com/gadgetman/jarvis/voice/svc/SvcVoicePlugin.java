@@ -199,6 +199,15 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
         attached.platform().log().info("Voice: ready to speak (distance " + serverApi.getVoiceChatDistance() + ")");
     }
 
+    /** The voice section was edited: read it again and start or stop listening accordingly. */
+    @Override
+    public synchronized void settingsChanged() {
+        VoiceHost h = attached;
+        if (h == null) return;
+        detach();
+        attach(h);
+    }
+
     /** Let go of the server run: the scheduler that ran the sweep is gone with it. */
     public synchronized void detach() {
         if (sweeper != null) {

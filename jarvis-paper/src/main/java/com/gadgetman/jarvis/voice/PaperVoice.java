@@ -6,6 +6,7 @@ import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.voice.svc.SvcVoicePlugin;
+import com.gadgetman.jarvis.voice.VoiceStatus;
 import com.gadgetman.jarvis.voice.svc.VoiceHost;
 import de.maxhenkel.voicechat.api.BukkitVoicechatService;
 import net.citizensnpcs.api.npc.NPC;
@@ -36,9 +37,17 @@ public final class PaperVoice implements VoiceHost {
      * @return true if registered; false when the plugin is absent or voice is off
      */
     public boolean register() {
+        if (svc != null) return true;                       // registered on an earlier call
         if (!plugin.getCoreConfig().getBoolean("voice.enabled", false)) {
-            plugin.core().setVoiceStatus(to -> to.message(Colors.YELLOW + "Voice: off. "
-                    + Colors.GRAY + "Set voice.enabled: true in plugins/Jarvis/config.yml and restart."));
+            // Not registered with voice chat while off; turning it on from
+            // the menu or the console calls back here and registers then.
+            plugin.core().setVoiceStatus(new VoiceStatus() {
+                @Override public void report(com.gadgetman.jarvis.core.platform.Audience to) {
+                    to.message(Colors.YELLOW + "Voice: off. " + Colors.GRAY
+                            + "Turn it on from Admin > Voice setup, or /jarvis voice enable.");
+                }
+                @Override public void settingsChanged() { register(); }
+            });
             return false;
         }
 

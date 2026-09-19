@@ -51,7 +51,9 @@ up (a singleplayer world has none until it is opened to LAN), whether
 key, or say a wake phrase), when the last packet arrived and whether the gate
 rejected it, the last transcript, and whether the speech server answers. On
 the mods the config is `config/jarvis/config.yml`, written fresh on first
-start with voice off. `voice.debug: true` logs every packet and every
+start with voice off and the speech server at `127.0.0.1:8000`; point it at
+yours with `/jarvis voice endpoint http://host:port` or from the bell menu
+(Admin, Voice setup), then `/jarvis voice enable`. Both take effect at once. `voice.debug: true` logs every packet and every
 transcript the wake word turned down.
 
 **"Database init error"** — `plugins/Jarvis/` must be writable. Failing that,

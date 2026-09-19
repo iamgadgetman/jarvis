@@ -2,6 +2,7 @@ package com.gadgetman.jarvis.ui;
 
 import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.ai.AiSettings;
+import com.gadgetman.jarvis.voice.VoiceConfig;
 import com.gadgetman.jarvis.core.platform.Config;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
@@ -638,8 +639,43 @@ public class Menus {
                 c -> { if (p.hasPermission("jarvis.admin")) run(p, "reload"); });
         m.put(14, item(Ids.CHEST_MINECART, Colors.YELLOW + "Export dataset", Colors.GRAY + "Dump intent & build pairs as JSONL"),
                 c -> { if (p.hasPermission("jarvis.admin")) run(p, "export-dataset"); });
+        m.put(15, item(Ids.NOTE_BLOCK, Colors.GREEN + "Voice setup", Colors.GRAY + "Speech server, gate, and a test"),
+                c -> { if (p.hasPermission("jarvis.admin")) open(p, voiceSetup(p)); });
 
         m.put(31, back(), c -> open(p, main(p)));
+        return m.build();
+    }
+
+    // ==================== VOICE SETUP ====================
+
+    private Menu voiceSetup(Owner p) {
+        Builder m = new Builder("Jarvis — Voice", 3);
+        VoiceConfig v = core.voiceConfig();
+        boolean on = v.enabled();
+
+        m.put(10, Item.of(on ? Ids.NOTE_BLOCK : Ids.GRAY_DYE)
+                        .named((on ? Colors.GREEN : Colors.DARK_GRAY) + "Voice " + onOff(on))
+                        .withLore(List.of(Colors.GRAY + "Needs Simple Voice Chat on the server", Colors.DARK_GRAY + "Click to turn " + (on ? "off" : "on"))),
+                c -> { if (p.hasPermission("jarvis.admin")) { v.setEnabled(!v.enabled()); open(p, voiceSetup(p)); } });
+        m.put(11, item(Ids.COMPASS, Colors.AQUA + "Speech server", Colors.WHITE + v.endpoint(),
+                        Colors.GRAY + "Where transcription and his voice come from", Colors.DARK_GRAY + "Click to type a new address"),
+                c -> askInChat(p, "Where is the speech server? (Currently " + v.endpoint() + ".)", url -> {
+                    String why = v.setEndpoint(url);
+                    p.message(why != null ? Colors.RED + "Jarvis: " + why + ", sir."
+                            : Colors.GREEN + "Jarvis: Speech server set to " + Colors.WHITE + v.endpoint());
+                    open(p, voiceSetup(p));
+                }));
+        m.put(12, item(Ids.LEVER, Colors.YELLOW + "Gate: " + v.gate(),
+                        Colors.GRAY + "whisper: hold the whisper key", Colors.GRAY + "always: everything you say",
+                        Colors.GRAY + "wake-word: sentences with his name", Colors.DARK_GRAY + "Click to cycle"),
+                c -> { if (p.hasPermission("jarvis.admin")) { v.setGate(v.nextGate()); open(p, voiceSetup(p)); } });
+        m.put(13, item(v.speakReplies() ? Ids.BELL : Ids.GRAY_DYE, Colors.WHITE + "Speak replies " + onOff(v.speakReplies()),
+                        Colors.GRAY + "Off keeps his replies in chat"),
+                c -> { if (p.hasPermission("jarvis.admin")) { v.setSpeakReplies(!v.speakReplies()); open(p, voiceSetup(p)); } });
+        m.put(16, item(Ids.BOOK, Colors.WHITE + "Status & test", Colors.GRAY + "Every link of the chain, in chat"),
+                c -> run(p, "voice"));
+
+        m.put(22, backTo("the admin page"), c -> open(p, admin(p)));
         return m.build();
     }
 

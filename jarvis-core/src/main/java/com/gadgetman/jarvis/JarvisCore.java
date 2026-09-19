@@ -33,6 +33,7 @@ import com.gadgetman.jarvis.steward.remarks.Remarks;
 import com.gadgetman.jarvis.ui.Menus;
 import com.gadgetman.jarvis.ui.Prompts;
 import com.gadgetman.jarvis.ui.TaskMonitor;
+import com.gadgetman.jarvis.voice.VoiceConfig;
 import com.gadgetman.jarvis.voice.VoiceStatus;
 
 import java.util.ArrayList;
@@ -66,6 +67,7 @@ public final class JarvisCore {
     private SchematicLibrary schematics;
     private SchematicExtras schematicExtras = SchematicExtras.NONE;
     private VoiceStatus voiceStatus = VoiceStatus.NONE;
+    private final VoiceConfig voiceConfig;
     private RequestDecomposer requestDecomposer;
     private ConfirmationManager confirmations;
     private PlayerRequestManager requests;
@@ -87,6 +89,7 @@ public final class JarvisCore {
 
     public JarvisCore(Platform platform, String version, Butlers butlerBackend, ActionExecutor actions) {
         this.platform = platform;
+        this.voiceConfig = new VoiceConfig(platform.config(), () -> voiceStatus.settingsChanged());
         this.version = version;
         this.butlerBackend = butlerBackend;
         this.actions = actions;
@@ -209,6 +212,7 @@ public final class JarvisCore {
         if (requestDecomposer != null) requestDecomposer.reload();
         if (remarks != null) remarks.reload();
         if (portalScout != null) portalScout.reload();
+        voiceStatus.settingsChanged();
         log.info("Jarvis v" + version + " reloaded!");
     }
 
@@ -223,6 +227,9 @@ public final class JarvisCore {
     }
 
     public VoiceStatus voiceStatus() { return voiceStatus; }
+
+    /** The writable voice settings, for the menu and the console. */
+    public VoiceConfig voiceConfig() { return voiceConfig; }
 
     // ==================== ACCESSORS ====================
 

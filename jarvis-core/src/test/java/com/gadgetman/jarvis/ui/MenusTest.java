@@ -170,6 +170,29 @@ class MenusTest {
     }
 
     @Test
+    @DisplayName("an operator turns voice on and sets the speech server from the admin page")
+    void voiceSetupFromTheMenu() {
+        p.op = true;
+        ringBell();
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Admin"), false);
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Voice setup"), false);
+        assertEquals("Jarvis — Voice", f.platform.ui().menuFor(p).title());
+
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Voice"), false);
+        assertTrue(f.platform.config().getBoolean("voice.enabled", false));
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Gate:"), false);
+        assertEquals("always", f.platform.config().getString("voice.gate", ""), "whisper cycles to always");
+
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Speech server"), false);
+        assertTrue(f.core.prompts().isWaiting(p));
+        AtomicBoolean cancelled = new AtomicBoolean();
+        f.platform.events().publish(new com.gadgetman.jarvis.core.platform.events.ChatEvent(p, "http://speech.lab:8000", cancelled::set));
+        assertTrue(cancelled.get());
+        assertEquals("http://speech.lab:8000", f.platform.config().getString("voice.endpoint", ""));
+        assertTrue(f.platform.ui().isOpen(p), "back on the voice page");
+    }
+
+    @Test
     @DisplayName("a player without admin rights never sees the AI page")
     void aiSetupNeedsAdmin() {
         ringBell();

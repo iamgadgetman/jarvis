@@ -5,6 +5,7 @@ import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.PlayerRequestManager;
 import com.gadgetman.jarvis.ai.AIConnector;
 import com.gadgetman.jarvis.ai.AiSettings;
+import com.gadgetman.jarvis.voice.VoiceConfig;
 import com.gadgetman.jarvis.building.BuildingAssistant;
 import com.gadgetman.jarvis.building.ScriptEngineProbe;
 import com.gadgetman.jarvis.core.platform.Audience;
@@ -89,10 +90,19 @@ public class CommandService implements CommandSink {
 
     private List<String> complete(List<String> args) {
         if (args.size() > 1) {
-            if (!args.get(0).equalsIgnoreCase("ai")) return List.of();
-            List<String> pool = args.size() == 2 ? AI_SUBCOMMANDS
-                    : args.size() == 3 && !args.get(1).equalsIgnoreCase("status") ? AiSettings.PROVIDERS
-                    : List.of();
+            List<String> pool;
+            if (args.get(0).equalsIgnoreCase("ai")) {
+                pool = args.size() == 2 ? AI_SUBCOMMANDS
+                        : args.size() == 3 && !args.get(1).equalsIgnoreCase("status") ? AiSettings.PROVIDERS
+                        : List.of();
+            } else if (args.get(0).equalsIgnoreCase("voice")) {
+                pool = args.size() == 2 ? VOICE_SUBCOMMANDS
+                        : args.size() == 3 && args.get(1).equalsIgnoreCase("gate") ? VoiceConfig.GATES
+                        : args.size() == 3 && args.get(1).equalsIgnoreCase("speak") ? List.of("on", "off")
+                        : List.of();
+            } else {
+                return List.of();
+            }
             String prefix = args.get(args.size() - 1).toLowerCase(Locale.ROOT);
             List<String> out = new ArrayList<>();
             for (String c : pool) {
@@ -125,10 +135,15 @@ public class CommandService implements CommandSink {
                 return;
             }
             case "voice" -> {
-                // Where the chain from microphone to order stands: the one
-                // question worth answering when he does not hear you.
-                sender.message(Colors.GOLD + "Jarvis: Voice, sir:");
-                core.voiceStatus().report(sender);
+                if (args.size() <= 1 || args.get(1).equalsIgnoreCase("status")) {
+                    // Where the chain from microphone to order stands: the one
+                    // question worth answering when he does not hear you.
+                    sender.message(Colors.GOLD + "Jarvis: Voice, sir:");
+                    core.voiceStatus().report(sender);
+                    return;
+                }
+                if (!isAdmin(sender, asPlayer)) { sender.message(Colors.RED + "You don't have permission."); return; }
+                handleVoiceSetup(sender, args);
                 return;
             }
             case "ai" -> {
@@ -702,6 +717,48 @@ public class CommandService implements CommandSink {
             player.message(Colors.GRAY + "  " + entry.getKey() + ": " + color + status);
         }
         player.message(Colors.GOLD + "════════════════════════");
+    }
+
+    private static final List<String> VOICE_SUBCOMMANDS = List.of(
+            "status", "enable", "disable", "endpoint", "gate", "speak", "test");
+
+    /** {@code /jarvis voice enable|disable|endpoint <url>|gate <g>|speak on|off|test}, for the console. */
+    private void handleVoiceSetup(Audience sender, List<String> args) {
+        VoiceConfig v = core.voiceConfig();
+        String what = args.get(1).toLowerCase(Locale.ROOT);
+        switch (what) {
+            case "enable", "on" -> {
+                v.setEnabled(true);
+                sender.message(Colors.GREEN + "Jarvis: Voice on, sir. Speech server: " + Colors.WHITE + v.endpoint());
+            }
+            case "disable", "off" -> {
+                v.setEnabled(false);
+                sender.message(Colors.YELLOW + "Jarvis: Voice off, sir.");
+            }
+            case "endpoint" -> {
+                if (args.size() < 3) { sender.message(Colors.RED + "Usage: /jarvis voice endpoint <http://host:port>"); return; }
+                String why = v.setEndpoint(args.get(2));
+                sender.message(why != null ? Colors.RED + "Jarvis: " + why + ", sir."
+                        : Colors.GREEN + "Jarvis: Speech server set to " + Colors.WHITE + v.endpoint()
+                        + Colors.GREEN + ". /jarvis voice test checks it.");
+            }
+            case "gate" -> {
+                if (args.size() < 3) { sender.message(Colors.RED + "Usage: /jarvis voice gate <" + String.join("|", VoiceConfig.GATES) + ">"); return; }
+                String why = v.setGate(args.get(2));
+                sender.message(why != null ? Colors.RED + "Jarvis: " + why + ", sir."
+                        : Colors.GREEN + "Jarvis: Gate set to " + Colors.WHITE + v.gate() + Colors.GREEN + ", sir.");
+            }
+            case "speak" -> {
+                boolean on = args.size() < 3 || !args.get(2).equalsIgnoreCase("off");
+                v.setSpeakReplies(on);
+                sender.message(Colors.GREEN + "Jarvis: I shall " + (on ? "speak my replies" : "keep my replies to chat") + ", sir.");
+            }
+            case "test" -> {
+                sender.message(Colors.GOLD + "Jarvis: Voice, sir:");
+                core.voiceStatus().report(sender);
+            }
+            default -> sender.message(Colors.RED + "Usage: /jarvis voice [status|enable|disable|endpoint <url>|gate <g>|speak on|off|test]");
+        }
     }
 
     private static final List<String> AI_SUBCOMMANDS = List.of(

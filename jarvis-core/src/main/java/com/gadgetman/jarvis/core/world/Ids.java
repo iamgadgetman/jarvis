@@ -116,6 +116,7 @@ public final class Ids {
     public static final String GRASS_BLOCK = "minecraft:grass_block";
     public static final String GRAVEL = "minecraft:gravel";
     public static final String GRAY_DYE = "minecraft:gray_dye";
+    public static final String LEVER = "minecraft:lever";
     public static final String GRAY_STAINED_GLASS_PANE = "minecraft:gray_stained_glass_pane";
     public static final String GREEN_WOOL = "minecraft:green_wool";
     public static final String HOPPER = "minecraft:hopper";

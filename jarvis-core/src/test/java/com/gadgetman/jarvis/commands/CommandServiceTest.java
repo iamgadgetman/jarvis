@@ -49,6 +49,25 @@ class CommandServiceTest {
     }
 
     @Test
+    @DisplayName("an operator points him at a speech server and turns voice on from the console")
+    void voiceSetupFromTheConsole() {
+        p.op = true;
+        run(p, "voice", "endpoint", "speech.lab");
+        assertTrue(p.wasTold("starts with http"));
+        run(p, "voice", "endpoint", "http://speech.lab:8000/");
+        assertEquals("http://speech.lab:8000", f.platform.config().getString("voice.endpoint", ""));
+        run(p, "voice", "enable");
+        assertTrue(f.platform.config().getBoolean("voice.enabled", false));
+        run(p, "voice", "gate", "wake_word");
+        assertEquals("wake-word", f.platform.config().getString("voice.gate", ""));
+        run(p, "voice", "gate", "shout");
+        assertTrue(p.wasTold("one of whisper"));
+
+        var tab = f.core.commands().jarvis(p, Optional.of(p), List.of("voice", "en"), true);
+        assertEquals(List.of("enable", "endpoint"), tab);
+    }
+
+    @Test
     @DisplayName("/jarvis summon reaches the butler")
     void summonReachesTheButler() {
         run(p, "summon");
