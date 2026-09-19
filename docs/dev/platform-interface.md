@@ -1,8 +1,8 @@
 # Jarvis platform interface (draft 1)
 
 **Status:** all nine steps done, the spike run, and the Fabric adapter built
-(see *The Fabric adapter*). Next: run the adapter in a world and fix what the
-first session finds.
+and running in a world (see *The Fabric adapter*). Next: whatever the next
+session in a world finds.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -895,7 +895,7 @@ repositories are not reachable from the development sandbox) and attaches
 
 ## The Fabric adapter
 
-*Built; not yet run in a world.* `jarvis-fabric/` replaces the spike. It is
+*Built and running in a world.* `jarvis-fabric/` replaces the spike. It is
 what steps 1 to 9 were for: a thin layer, about 3,000 lines against the Paper
 adapter's 4,000, and none of it butler logic.
 
@@ -984,11 +984,35 @@ and known-movement mixins.
 
 **To run it.** Fabric Loader 0.19.5 on Minecraft 26.3 with Fabric API, the
 jar in `mods/`, set the AI endpoint in `config/jarvis/config.yml`, restart.
-Things the first session should watch, none of them exercised yet: the
-first summon (profile, `placeNewPlayer`, and the saved player data vanilla
-loads for a returning fake), the bell menu (the `MenuScreen` resync), chat
-through `ALLOW_CHAT_MESSAGE`, a dig through `BlockBreaker`, and the sqlite
-driver loading from the nested jar through HikariCP.
+
+**The first session in a world** (singleplayer, integrated server) found
+four things, all fixed the same day:
+
+- The mod jar had no `databases.yml`: the repository ignores files of that
+  name, so the resource never got committed. The default is now a string
+  in `FabricPlatform`, and a failed start keeps its reason so `/jarvis`
+  can repeat it instead of "not up yet".
+- The GraalJS guard crashed the server. Calling
+  `ScriptBuildPlanner.isAvailable()` links the planner, whose catch
+  clauses make the JVM load `PolyglotException`; without the engine that
+  is a `NoClassDefFoundError` before the check runs. The probe now lives in
+  `ScriptEngineProbe`, which names no polyglot type. This was latent on
+  Paper too, for a server whose library download failed.
+- He appeared on top of his owner: `findSafeSpawn` checked the owner's own
+  block first. It now prefers the ring two blocks out, then one, then
+  three; the Fabric spawn also turns him to face the owner.
+- The menu filler's blank name drew an empty tooltip on the cursor; blank-
+  named items now carry the no-tooltip component on Fabric.
+
+Also from that session: the owner could take his issued sword from the
+inventory screen. Kit items now carry a `kit` marker (`Kit.MARKER`,
+`Kit.isIssued`), a dismissal keeps issued gear wherever it sits, and the
+Fabric inventory screen locks his hand slot and every issued item while
+loot moves freely. Paper's Citizens inventory screen has no such lock yet.
+
+What worked untouched: summon with the skin, walking and following on the
+pathfinder, chat through `ALLOW_CHAT_MESSAGE`, the bell menu, sqlite through
+the nested driver, and the AI routing.
 
 ---
 
