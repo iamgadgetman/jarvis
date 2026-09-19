@@ -46,9 +46,10 @@ public final class FabricPlatform implements Platform {
         this.dataDir = dataDir;
         this.log = log;
         Files.createDirectories(dataDir);
-        copyDefault("config.yml");
-        copyDefault("databases.yml");
-        this.config = YamlConfig.load(dataDir.resolve("config.yml"), YamlConfig.parse(resource("config.yml")));
+        String defaults = resource("config.yml");
+        writeDefault("config.yml", defaults);
+        writeDefault("databases.yml", DEFAULT_DATABASES);
+        this.config = YamlConfig.load(dataDir.resolve("config.yml"), YamlConfig.parse(defaults));
         this.scheduler = new FabricScheduler(server, log);
         this.players = new FabricPlayers(server);
         this.bells = new BellRegistry(dataDir, log);
@@ -58,10 +59,24 @@ public final class FabricPlatform implements Platform {
         this.ui = new FabricUi(server);
     }
 
-    private void copyDefault(String name) throws IOException {
+    /**
+     * The data sources core opens on first run: sqlite beside the config.
+     * Written from here rather than shipped as a resource, since the
+     * repository ignores files of that name to keep credentials out of it.
+     */
+    private static final String DEFAULT_DATABASES = String.join("\n",
+            "# Jarvis data sources. sqlite needs nothing installed; the file lives beside this one.",
+            "sqlite:",
+            "  driver: org.sqlite.JDBC",
+            "  url: jdbc:sqlite:./config/jarvis/database.db",
+            "  username: \"\"",
+            "  password: \"\"",
+            "");
+
+    private void writeDefault(String name, String content) throws IOException {
         Path target = dataDir.resolve(name);
         if (Files.exists(target)) return;
-        Files.writeString(target, resource(name), StandardCharsets.UTF_8);
+        Files.writeString(target, content, StandardCharsets.UTF_8);
         log.info("Wrote default " + name + " to " + target);
     }
 

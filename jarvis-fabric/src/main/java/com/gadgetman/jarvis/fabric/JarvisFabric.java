@@ -40,6 +40,8 @@ public final class JarvisFabric implements ModInitializer {
     private static JarvisFabric instance;
 
     private String version = "unknown";
+    /** Why the last start failed, for the command to repeat; null when it did not. */
+    private String startupError;
     private FabricPlatform platform;
     private FakeButlers butlers;
     private JarvisCore core;
@@ -102,14 +104,27 @@ public final class JarvisFabric implements ModInitializer {
             platform.fabricEvents().butlerResolver(butlers::ownerOf);
             core = new JarvisCore(platform, version, butlers, new FabricActionExecutor(this));
             core.start();
-            butlers.skins().prefetch("Jarvis");
+            startupError = null;
             LOG.info("Jarvis AI Companion v{} enabled successfully!", version);
         } catch (Exception e) {
             LOG.error("Jarvis could not start", e);
+            startupError = e.toString();
             if (platform != null) platform.shutdown();
             platform = null;
             core = null;
+            return;
         }
+        // His uniform, fetched ahead of the first summon. Never fatal.
+        try {
+            butlers.skins().prefetch("Jarvis");
+        } catch (Exception e) {
+            LOG.warn("Could not start fetching Jarvis's skin: {}", e.toString());
+        }
+    }
+
+    /** The reason the last start failed, or null. */
+    public String startupError() {
+        return startupError;
     }
 
     private void stop() {

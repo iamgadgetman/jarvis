@@ -62,7 +62,10 @@ public final class FabricCommands {
 
     private static int run(JarvisFabric mod, CommandSourceStack source, List<String> args) {
         if (mod.core() == null) {
-            source.sendFailure(Component.literal("Jarvis is not up yet."));
+            String why = mod.startupError();
+            source.sendFailure(Component.literal(why == null
+                    ? "Jarvis is not up yet."
+                    : "Jarvis could not start: " + why + " (see the server log)"));
             return 0;
         }
         mod.core().commands().jarvis(audience(mod, source), asPlayer(mod, source), args, false);
