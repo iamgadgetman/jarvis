@@ -3,7 +3,7 @@
 **Status:** all nine steps done, the spike run, the Fabric adapter built and
 running in a world (see *The Fabric adapter*), and the NeoForge adapter built
 on the same shared code (see *NeoForge*), started on a dedicated server by
-CI and awaiting its first session in a world.
+CI and confirmed working in a world.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -1116,7 +1116,8 @@ block off the wall's line, and a dirt block indoors. Two more changes:
 
 ### NeoForge
 
-*Built; started on a dedicated server by CI; not yet tried in a world.*
+*Built, started on a dedicated server by CI, and confirmed working in a
+world: the first session on NeoForge found nothing wrong.*
 
 Of the Fabric adapter's 35 files, two imported anything from Fabric, so
 the split was cheap: everything else moved to `jarvis-vanilla` as
