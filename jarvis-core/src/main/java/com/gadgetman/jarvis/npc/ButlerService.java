@@ -980,17 +980,18 @@ public class ButlerService implements ButlerHost {
         return findSafeSpawn(world, near);
     }
 
+    /**
+     * Somewhere for him to appear: a couple of blocks from the owner for
+     * choice, never on top of them unless nothing else nearby will hold him.
+     */
     private Vec3 findSafeSpawn(World world, Vec3 center) {
-        for (int dx = 0; dx <= 3; dx++) {
-            for (int dz = 0; dz <= 3; dz++) {
-                for (int dir = 0; dir < 4; dir++) {
-                    int x = (dir == 0 || dir == 2) ? dx : -dx;
-                    int z = (dir == 0 || dir == 1) ? dz : -dz;
-
-                    Vec3 check = center.add(x, 0, z);
-                    if (isSafeToStand(world, check.block())) {
-                        return check;
-                    }
+        BlockPos origin = center.block();
+        for (int r : new int[] { 2, 1, 3 }) {
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != r) continue; // ring edge only
+                    BlockPos feet = origin.offset(dx, 0, dz);
+                    if (isSafeToStand(world, feet)) return feet.standing();
                 }
             }
         }

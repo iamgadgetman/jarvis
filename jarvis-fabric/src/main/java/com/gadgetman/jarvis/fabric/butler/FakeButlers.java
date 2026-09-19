@@ -94,8 +94,15 @@ public final class FakeButlers implements Butlers {
             // name, say): same name and skin, a fresh id.
             profile = new GameProfile(UUID.randomUUID(), name, profile.properties());
         }
+        // Arrive facing the owner, if they are about.
+        float yaw = 0f;
+        ServerPlayer owner = platform.server().getPlayerList().getPlayer(ownerId);
+        if (owner != null && owner.level() == level) {
+            yaw = at.lookToward(new Vec3(owner.getX(), at.y(), owner.getZ())).yaw();
+        }
         FakePlayer p = FakePlayer.place(platform.server(), level, profile,
-                new net.minecraft.world.phys.Vec3(at.x(), at.y(), at.z()), 0f, 0f, GameType.SURVIVAL);
+                new net.minecraft.world.phys.Vec3(at.x(), at.y(), at.z()), yaw, 0f, GameType.SURVIVAL);
+        p.actionPack().look(yaw, 0f);
         registry.put(ownerId, p);
     }
 
