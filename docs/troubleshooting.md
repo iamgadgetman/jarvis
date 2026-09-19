@@ -87,7 +87,7 @@ more natural feel.
 git clone https://github.com/iamgadgetman/jarvis.git
 cd jarvis
 mvn clean package -DskipTests
-# Output: target/jarvis-<version>.jar
+# Output: jarvis-paper/target/jarvis-<version>.jar
 ```
 
-Requires Citizens and WorldEdit JARs on the Maven classpath as configured in `pom.xml`.
+The build is two Maven modules: `jarvis-core` (the platform-free brain) and `jarvis-paper` (the plugin, which shades core in). Citizens and WorldEdit resolve from the repositories configured in `jarvis-paper/pom.xml`.

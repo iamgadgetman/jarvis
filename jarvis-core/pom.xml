@@ -1,0 +1,30 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.gadgetman</groupId>
+        <artifactId>jarvis-parent</artifactId>
+        <version>0.16.0</version>
+    </parent>
+
+    <artifactId>jarvis-core</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Jarvis Core</name>
+    <description>
+        The platform-free part of Jarvis: the brain and the task logic. This
+        module declares no server API on purpose. Anything that needs Bukkit,
+        Citizens, Paper, Fabric, or Minecraft itself belongs in an adapter
+        module, and an import of one here fails the build.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,6 +1,6 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** design draft, nothing implemented yet.
+**Status:** step 1 done (module split). Steps 2 to 9 not started.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -616,6 +616,13 @@ before. Order matters: each introduces the interfaces the next needs.
 
 1. **Modules.** Parent pom, `jarvis-core` (empty), `jarvis-paper` (all current
    code). Shade core into the Paper jar. Confirm the plugin still runs.
+   *Done.* Root `pom.xml` is the parent; the old pom moved to
+   `jarvis-paper/pom.xml` with its dependencies intact; core holds only a
+   `package-info` stating the no-platform-imports rule. The plugin jar is now
+   `jarvis-paper/target/jarvis-<version>.jar`. The Paper module could not be
+   compiled in the session that made the split (its Maven repositories were
+   blocked by the network policy there), so the first thing step 2 does is
+   `mvn clean package` on a machine that can reach them.
 2. **Pure files to core.** Move the 18 files with no server imports. No edits.
 3. **Value types and Config.** Add `BlockPos`, `Vec3`, `Look`, `Facing`,
    `WorldId`, `BlockState`, `Tag`, `Item`, `Ids`. Add core `Config` backed by
