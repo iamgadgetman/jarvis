@@ -1,7 +1,8 @@
 # Jarvis platform interface (draft 1)
 
-**Status:** all nine steps done; the Fabric spike is built and has run in a
-world (see *The spike*). The Fabric adapter is the next piece of work.
+**Status:** all nine steps done, the spike run, and the Fabric adapter built
+(see *The Fabric adapter*). Next: run the adapter in a world and fix what the
+first session finds.
 **Branch:** `claude/brave-wright-m8yhbm`.
 **Baseline analysed:** commit `00af5c6` (v0.16.0), 68 files, ~22k lines.
 
@@ -11,8 +12,8 @@ Hand this file to a future session with one of:
 
 - "Implement step N of docs/dev/platform-interface.md" (see *Refactor steps*).
 - "Revise the platform interface: <change>" to amend the design before starting.
-- "Build the Fabric adapter from docs/dev/platform-interface.md" (see *Module
-  layout* and *The interfaces*; the spike has the fake player and the driver).
+- "Fix the Fabric adapter: <what went wrong in a world>" (see *The Fabric
+  adapter* for what is there and what was never run).
 
 Everything below is self-contained. The numbers in *Why* were measured on the
 baseline above and do not need re-measuring unless the code has moved a lot.
@@ -89,9 +90,9 @@ jarvis/
   jarvis-core/pom.xml          deps: org.json, snakeyaml, HikariCP, sqlite, junit
   jarvis-paper/pom.xml         deps: core, purpur-api, citizensapi, worldedit, voicechat-api
   jarvis-nav/pom.xml           deps: core (value types only), junit. The A* and follower.
-  jarvis-fabric-spike/         Gradle Loom project, outside the Maven reactor: the spike.
-  jarvis-fabric/build.gradle   (later) deps: core (as a jar-in-jar), nav, fabric-loader,
-                               fabric-api, voicechat-api
+  jarvis-fabric/build.gradle   Gradle Loom project, outside the Maven reactor. Compiles
+                               core and nav from source; deps: fabric-loader, fabric-api,
+                               and core's libraries nested in the jar.
 ```
 
 GraalJS is a Paper-only concern for now: Paper's library loader fetches it,
@@ -842,7 +843,7 @@ A throwaway Fabric mod, no core involved, to retire the one open-ended risk:
 Two weeks. If the follower is reliable, the Fabric adapter is straightforward.
 If not, that is the thing to solve before spending anything on the port.
 
-*Built and run.* `jarvis-fabric-spike/` is a Gradle Loom
+*Built, run, and since folded into the adapter.* `jarvis-fabric-spike/` was a Gradle Loom
 project outside the Maven reactor (Fabric's toolchain is Gradle), targeting
 Minecraft 26.3, Fabric Loader 0.19.5 and Loom 1.17, with no Fabric API: the
 command and the tick hook are mixins, the way Carpet does it. The
@@ -876,6 +877,7 @@ repositories are not reachable from the development sandbox) and attaches
 - `/jspike spawn [name]` (Jarvis by default), `goto x y z`, `dig x y z`,
   `stop`, `status`, `kill`. Operators only. One fake at a time. `status` says where he is and the
   driver's last word (path size and nodes, stuck, arrived, dug, no path).
+  (Gone with the spike; the adapter's `/jarvis summon` is the equivalent.)
 - Item 5: the first in-world run, on a Fabric 26.3 server with the jar from
   the workflow, spawned, walked and dug as intended. The fake player and the
   driver are therefore known to work against 26.3; the five-terrain sweep
@@ -891,19 +893,118 @@ repositories are not reachable from the development sandbox) and attaches
 
 ---
 
+## The Fabric adapter
+
+*Built; not yet run in a world.* `jarvis-fabric/` replaces the spike. It is
+what steps 1 to 9 were for: a thin layer, about 3,000 lines against the Paper
+adapter's 4,000, and none of it butler logic.
+
+**Build.** A Gradle Loom project (Minecraft 26.3, Fabric Loader 0.19.5,
+Fabric API 0.161, Loom 1.17, JDK 25) outside the Maven reactor. It compiles
+`jarvis-core` and `jarvis-nav` straight from their source directories and
+bundles core's libraries (org.json, snakeyaml, HikariCP, sqlite-jdbc) as
+nested jars, so the mod is one 15 MB file. The GraalJS polyglot API is on the
+compile path only; `ScriptBuildPlanner.isAvailable()` is false at runtime and
+freeform builds use the JSON planner. The plugin's default `config.yml` is
+copied into the jar at build time, so both adapters ship the same defaults.
+The `fabric` workflow builds it on GitHub's runners (the Fabric and Mojang
+repositories are unreachable from the development sandbox) and attaches the
+jar; the adapter compiled on the third push, the two before it being Loom
+1.17's dropped `modImplementation` and a round of 26.3 renames (arrows under
+`projectile.arrow`, `syncVelocity`, `getOverworldClockTime`,
+`ContainerInput`, weather on the server, a UUID on `ServerBossEvent`).
+
+**Platform** (`com.gadgetman.jarvis.fabric.platform`), one class per core
+interface, mirroring the Paper ones:
+
+- `FabricPlatform` boots at `SERVER_STARTED` (core needs the levels), writes
+  `config/jarvis/config.yml` and `databases.yml` on first run, and reads
+  config through core's own `YamlConfig` with the bundled file as fallback.
+  `tps()` and `mspt()` from the server's average tick time.
+- `FabricScheduler`: a task list run from `END_SERVER_TICK`; async work on a
+  small daemon pool; `sync` through `MinecraftServer.execute`.
+- `FabricPlayers`/`FabricOwner`: over the player list, fake players
+  excluded. No permission nodes on Fabric, so a node containing "admin"
+  means operator and anything else is open. Messages are literal components
+  with the legacy colour codes left in (the client renders them); rich lines
+  become click and hover events; the action bar is its packet.
+- `FabricWorld`/`FabricWorlds`: block state through the game's own parser in
+  both directions (`BlockStateParser.serialize`/`parseForBlock`), physics
+  off as `UPDATE_CLIENTS | UPDATE_KNOWN_SHAPE`, tags through `TagKey`,
+  snapshots copied block by block from loaded chunks into an id array,
+  containers over any block entity that is a `Container`.
+- `FabricItems`: the marker is a string under `jarvis_marker` in the stack's
+  custom data; names, lore, unbreakable and enchantments through data
+  components.
+- `FabricUi`: a menu is a `ChestMenu` subclass (`MenuScreen`) over a
+  `SimpleContainer` of icons whose `clicked` reports the slot to the model
+  and then resyncs the client so nothing moves; progress bars are
+  `ServerBossEvent`s.
+- `FabricEvents`: Fabric API's callbacks (`ServerPlayerEvents` join, leave
+  and allow-death, `ServerLivingEntityEvents` after-death and after-damage,
+  `ServerMessageEvents.ALLOW_CHAT_MESSAGE`, `UseItemCallback`,
+  `UseBlockCallback`, `UseEntityCallback`) are registered once by the mod
+  and forwarded here. Death drops come from a snapshot taken at allow-death,
+  since the inventory is empty by after-death; kept-inventory is the
+  inventory still being full afterwards. The portal event is a per-tick
+  dimension check, since Fabric API has no world-change event in 26.3. A
+  placed controller bell is remembered in `config/jarvis/bells.txt`
+  (`BellRegistry`), since a placed block keeps no item data; ringing one
+  raises the same `ItemUseEvent` as the held bell.
+
+**Butler** (`com.gadgetman.jarvis.fabric.butler`):
+
+- `FakeButlers` keeps one `FakePlayer` per owner. `SkinCache` resolves the
+  Mojang account of the butler's name (prefetched at start, so the first
+  summon is dressed) and falls back to an offline profile; a second butler
+  of the same name gets a fresh id with the same textures.
+- `FakeButler` implements core's `Butler`. Slot 0 of the fake's inventory is
+  his hand (the selected hotbar slot stays at 0), armour through
+  `setItemSlot`, his inventory opens to the owner as a four-row chest over
+  the player inventory. `attack` is `hurtServer` with a player-attack damage
+  source; arrows and tridents are spawned with pickup disallowed and
+  discarded after ten seconds if they hit nothing.
+- `FakeDriver` (from the spike, with a stuck handler for `goTo`, a follow
+  mode that re-plans as the target moves, and pause) and `BlockBreaker`
+  (cracks the block at `getDestroyProgress` speed, then
+  `gameMode.destroyBlock` so drops and tool wear are the game's) run from
+  `FakePlayer.tick` before the action pack applies input.
+
+**Commands and actions.** `/jarvis` is one greedy Brigadier argument handed
+to core's `CommandSink`; tab completion asks the sink with `tab=true` and
+offers the answers at the last token. `FabricActionExecutor` handles the same
+action names as the Paper one; where Paper dispatched a console command it
+does too (`performPrefixedCommand` as the server), and heal, feed, teleport,
+gamemode, difficulty, titles and item gifts reach the server directly.
+
+**Not on Fabric.** Voice (the voicechat API repository is unreachable from
+the sandbox; add a `Voice` interface when it is), WorldEdit's clipboard saves
+and rotated pastes (`SchematicExtras.NONE`), GraalJS, and Carpet's knockback
+and known-movement mixins.
+
+**To run it.** Fabric Loader 0.19.5 on Minecraft 26.3 with Fabric API, the
+jar in `mods/`, set the AI endpoint in `config/jarvis/config.yml`, restart.
+Things the first session should watch, none of them exercised yet: the
+first summon (profile, `placeNewPlayer`, and the saved player data vanilla
+loads for a returning fake), the bell menu (the `MenuScreen` resync), chat
+through `ALLOW_CHAT_MESSAGE`, a dig through `BlockBreaker`, and the sqlite
+driver loading from the nested jar through HikariCP.
+
+---
+
 ## Open questions
 
-- **Item marker for the controller bell.** Paper uses a `PersistentDataContainer`
-  key; Fabric uses a custom data component. `Item.marker` covers both, but the
-  adapters must agree on the string so a bell made on one is recognised on the
-  other only if worlds ever move between them (they will not, so a mismatch is
-  fine).
-- **ChatEvent threading.** Paper's chat event is async; Fabric's is on the
-  server thread. Core must treat `ChatEvent` as possibly async and hop with
-  `Scheduler.sync`, as `ChatListener` does today.
+- **Item marker for the controller bell.** Settled: Paper keeps it in a
+  `PersistentDataContainer` key, Fabric as a `jarvis_marker` string in custom
+  data. The marker value is the same on both; the storage is not, and need not
+  be, since worlds do not move between them.
+- **ChatEvent threading.** Settled: Paper's chat event is async; Fabric's
+  arrives on the server thread. Core treats `ChatEvent` as possibly async and
+  hops with `Scheduler.sync`, which is right on both.
 - **Who owns the pathfinder.** Settled: `jarvis-nav`, since the spike needed
   it testable without a game. A Citizens-free Paper provider would implement
   its `Terrain` over `World`.
-- **GraalJS on Fabric.** Ship without it (JSON planner) and revisit with Rhino.
+- **GraalJS on Fabric.** Shipped without it (JSON planner); revisit with Rhino
+  if scripted builds are wanted there.
 - **NeoForge.** Architectury from the start would cover it with the same
   adapter; decide when the Fabric adapter exists.
