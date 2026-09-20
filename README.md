@@ -129,6 +129,7 @@ command.
 | **[Configuration](docs/configuration.md)** | `config.yml` in full, AI providers and API keys, permission nodes |
 | **[Troubleshooting](docs/troubleshooting.md)** | When something misbehaves — plus updating, performance and building from source |
 | **[Voice](docs/voice.md)** | Talking to him and hearing him back: what it needs, what it costs, the gate |
+| **[Releasing](docs/dev/releasing.md)** | How a version ships: the workflow, the tag, Modrinth and CurseForge |
 | **[CHANGELOG](CHANGELOG.md)** | The full history, and why each thing was done that way |
 | **[ROADMAP](ROADMAP.md)** | Decided but not built, with the reasoning kept alongside |
 

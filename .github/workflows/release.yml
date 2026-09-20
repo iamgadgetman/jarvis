@@ -8,9 +8,10 @@
 #
 # Modrinth and CurseForge publishing rides on the same run and switches
 # itself on when the secrets exist (MODRINTH_TOKEN with MODRINTH_ID;
-# CURSEFORGE_TOKEN with CURSEFORGE_PLUGIN_ID for the plugin project and
-# CURSEFORGE_MOD_ID for the mod project, which CurseForge keeps apart).
-# Without them the GitHub release is the whole of it.
+# CURSEFORGE_TOKEN with CURSEFORGE_PLUGIN_ID for the plugin project on
+# dev.bukkit.org and CURSEFORGE_MOD_ID for the mods project, which
+# CurseForge keeps apart). Without them the GitHub release is the whole
+# of it. docs/dev/releasing.md says where each secret comes from.
 name: release
 
 on:
@@ -140,108 +141,54 @@ jobs:
           files: dist/jarvis-*.jar
           fail_on_unmatched_files: true
 
-      # ---- Modrinth: one project, three files per version ----
-      - name: Modrinth, Paper
-        if: env.MODRINTH_TOKEN != ''
-        uses: Kir-Antipov/mc-publish@v3.3
+      # ---- Modrinth and CurseForge, through .github/scripts/publish.py ----
+      # Each step runs only when its secrets exist; without them the GitHub
+      # release above is the whole of it. Modrinth takes all three files in
+      # one project, as Simple Voice Chat does; CurseForge keeps Bukkit
+      # plugins (dev.bukkit.org) and mods apart, so it needs two projects.
+      - name: Modrinth
+        if: env.MODRINTH_TOKEN != '' && env.MODRINTH_ID != ''
         env:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
-        with:
-          modrinth-id: ${{ secrets.MODRINTH_ID }}
-          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-          files: dist/jarvis-paper-*.jar
-          name: Jarvis ${{ steps.version.outputs.version }} for Paper
-          version: ${{ steps.version.outputs.version }}+paper
-          version-type: release
-          changelog-file: notes.md
-          loaders: paper purpur
-          game-versions: '>=1.21.11 <26.3'
-          java: 21 25
-          dependencies: simple-voice-chat(optional)
-      - name: Modrinth, Fabric
-        if: env.MODRINTH_TOKEN != ''
-        uses: Kir-Antipov/mc-publish@v3.3
-        env:
-          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
-        with:
-          modrinth-id: ${{ secrets.MODRINTH_ID }}
-          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-          files: dist/jarvis-fabric-*.jar
-          name: Jarvis ${{ steps.version.outputs.version }} for Fabric
-          version: ${{ steps.version.outputs.version }}+fabric
-          version-type: release
-          changelog-file: notes.md
-          loaders: fabric
-          game-versions: '26.3'
-          java: 25
-          dependencies: |
-            fabric-api(required)
-            simple-voice-chat(optional)
-      - name: Modrinth, NeoForge
-        if: env.MODRINTH_TOKEN != ''
-        uses: Kir-Antipov/mc-publish@v3.3
-        env:
-          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
-        with:
-          modrinth-id: ${{ secrets.MODRINTH_ID }}
-          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-          files: dist/jarvis-neoforge-*.jar
-          name: Jarvis ${{ steps.version.outputs.version }} for NeoForge
-          version: ${{ steps.version.outputs.version }}+neoforge
-          version-type: release
-          changelog-file: notes.md
-          loaders: neoforge
-          game-versions: '26.3'
-          java: 25
-          dependencies: simple-voice-chat(optional)
+          MODRINTH_ID: ${{ secrets.MODRINTH_ID }}
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          python3 .github/scripts/publish.py modrinth --project "$MODRINTH_ID" \
+            --file "dist/jarvis-paper-$V.jar" --version "$V+paper" --name "Jarvis $V for Paper" \
+            --loaders paper purpur --game-versions 1.21.11..26.2 \
+            --deps simple-voice-chat:optional --changelog notes.md
+          python3 .github/scripts/publish.py modrinth --project "$MODRINTH_ID" \
+            --file "dist/jarvis-fabric-$V.jar" --version "$V+fabric" --name "Jarvis $V for Fabric" \
+            --loaders fabric --game-versions 26.3 \
+            --deps fabric-api:required simple-voice-chat:optional --changelog notes.md
+          python3 .github/scripts/publish.py modrinth --project "$MODRINTH_ID" \
+            --file "dist/jarvis-neoforge-$V.jar" --version "$V+neoforge" --name "Jarvis $V for NeoForge" \
+            --loaders neoforge --game-versions 26.3 \
+            --deps simple-voice-chat:optional --changelog notes.md
 
-      # ---- CurseForge: plugins and mods are separate projects there ----
-      - name: CurseForge, Paper
-        if: env.CURSEFORGE_TOKEN != ''
-        uses: Kir-Antipov/mc-publish@v3.3
+      - name: CurseForge, the plugin (dev.bukkit.org)
+        if: env.CURSEFORGE_TOKEN != '' && env.CURSEFORGE_PLUGIN_ID != ''
         env:
           CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
-        with:
-          curseforge-id: ${{ secrets.CURSEFORGE_PLUGIN_ID }}
-          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
-          files: dist/jarvis-paper-*.jar
-          name: Jarvis ${{ steps.version.outputs.version }} for Paper
-          version: ${{ steps.version.outputs.version }}+paper
-          version-type: release
-          changelog-file: notes.md
-          loaders: paper purpur
-          game-versions: '>=1.21.11 <26.3'
-          java: 21 25
-      - name: CurseForge, Fabric
-        if: env.CURSEFORGE_TOKEN != ''
-        uses: Kir-Antipov/mc-publish@v3.3
+          CURSEFORGE_PLUGIN_ID: ${{ secrets.CURSEFORGE_PLUGIN_ID }}
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          python3 .github/scripts/publish.py curseforge --host dev.bukkit.org --project "$CURSEFORGE_PLUGIN_ID" \
+            --file "dist/jarvis-paper-$V.jar" --name "Jarvis $V for Paper" \
+            --game-versions 1.21.11..26.2 --changelog notes.md
+
+      - name: CurseForge, the mods (minecraft.curseforge.com)
+        if: env.CURSEFORGE_TOKEN != '' && env.CURSEFORGE_MOD_ID != ''
         env:
           CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
-        with:
-          curseforge-id: ${{ secrets.CURSEFORGE_MOD_ID }}
-          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
-          files: dist/jarvis-fabric-*.jar
-          name: Jarvis ${{ steps.version.outputs.version }} for Fabric
-          version: ${{ steps.version.outputs.version }}+fabric
-          version-type: release
-          changelog-file: notes.md
-          loaders: fabric
-          game-versions: '26.3'
-          java: 25
-          dependencies: fabric-api(required)
-      - name: CurseForge, NeoForge
-        if: env.CURSEFORGE_TOKEN != ''
-        uses: Kir-Antipov/mc-publish@v3.3
-        env:
-          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
-        with:
-          curseforge-id: ${{ secrets.CURSEFORGE_MOD_ID }}
-          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
-          files: dist/jarvis-neoforge-*.jar
-          name: Jarvis ${{ steps.version.outputs.version }} for NeoForge
-          version: ${{ steps.version.outputs.version }}+neoforge
-          version-type: release
-          changelog-file: notes.md
-          loaders: neoforge
-          game-versions: '26.3'
-          java: 25
+          CURSEFORGE_MOD_ID: ${{ secrets.CURSEFORGE_MOD_ID }}
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          python3 .github/scripts/publish.py curseforge --host minecraft.curseforge.com --project "$CURSEFORGE_MOD_ID" \
+            --file "dist/jarvis-fabric-$V.jar" --name "Jarvis $V for Fabric" \
+            --game-versions 26.3 --extra Fabric "Java 25" Server \
+            --deps fabric-api:requiredDependency simple-voice-chat:optionalDependency --changelog notes.md
+          python3 .github/scripts/publish.py curseforge --host minecraft.curseforge.com --project "$CURSEFORGE_MOD_ID" \
+            --file "dist/jarvis-neoforge-$V.jar" --name "Jarvis $V for NeoForge" \
+            --game-versions 26.3 --extra NeoForge "Java 25" Server \
+            --deps simple-voice-chat:optionalDependency --changelog notes.md
