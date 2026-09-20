@@ -44,6 +44,12 @@ not on the classpath. The engine is fetched at start via `libraries:` in
 write usable JavaScript. On an Ollama-only server, use schematics or set
 `build.planner: json`.
 
+**He hears you but takes seconds to answer** — `/jarvis voice` shows
+which stage took the time on the last order. Almost always it is
+"understanding", the AI call: switch to a smaller Ollama model or to
+Claude, or check the machine running Ollama is not busy. See
+[voice.md](voice.md#when-he-is-slow-to-answer).
+
 **He does not hear you** — run `/jarvis voice`. It reports each link in
 the chain: whether Simple Voice Chat took the plugin, whether the voice server is
 up (a singleplayer world has none until it is opened to LAN), whether

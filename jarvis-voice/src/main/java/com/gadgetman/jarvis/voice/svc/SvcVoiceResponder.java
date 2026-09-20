@@ -5,6 +5,7 @@ import com.gadgetman.jarvis.core.platform.Scheduler;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.intent.IntentPipeline;
 import com.gadgetman.jarvis.voice.Speech;
+import com.gadgetman.jarvis.voice.VoiceTimings;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
 import de.maxhenkel.voicechat.api.audiochannel.AudioPlayer;
 import de.maxhenkel.voicechat.api.audiochannel.EntityAudioChannel;
@@ -45,6 +46,7 @@ public final class SvcVoiceResponder implements IntentPipeline.Responder {
     private final Speech speech;
     private final VoicechatServerApi api;
     private final boolean echoSpokenText;
+    private final VoiceTimings timings;
 
     /** Lines waiting to be spoken, per player, and whatever is speaking now. */
     private final Map<UUID, Deque<String>> pending = new ConcurrentHashMap<>();
@@ -57,11 +59,13 @@ public final class SvcVoiceResponder implements IntentPipeline.Responder {
      */
     private final Set<UUID> busy = ConcurrentHashMap.newKeySet();
 
-    public SvcVoiceResponder(VoiceHost host, Speech speech, VoicechatServerApi api, boolean echoSpokenText) {
+    public SvcVoiceResponder(VoiceHost host, Speech speech, VoicechatServerApi api, boolean echoSpokenText,
+                             VoiceTimings timings) {
         this.host = host;
         this.speech = speech;
         this.api = api;
         this.echoSpokenText = echoSpokenText;
+        this.timings = timings;
     }
 
     @Override
@@ -116,7 +120,9 @@ public final class SvcVoiceResponder implements IntentPipeline.Responder {
         // is built and started back on it, because locating the butler
         // touches the world.
         scheduler().async(() -> {
+            long started = System.nanoTime();
             short[] pcm = speech.synthesize(Colors.strip(next).trim());
+            timings.synthesised((System.nanoTime() - started) / 1_000_000);
             scheduler().sync(() -> {
                 if (pcm == null || pcm.length == 0 || !owner.isOnline()) {
                     finished(owner);

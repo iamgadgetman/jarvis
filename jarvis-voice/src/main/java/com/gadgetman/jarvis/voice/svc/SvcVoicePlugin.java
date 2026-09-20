@@ -11,6 +11,7 @@ import com.gadgetman.jarvis.intent.IntentPipeline;
 import com.gadgetman.jarvis.voice.Speech;
 import com.gadgetman.jarvis.voice.SpeechService;
 import com.gadgetman.jarvis.voice.VoiceStatus;
+import com.gadgetman.jarvis.voice.VoiceTimings;
 import com.gadgetman.jarvis.voice.WakeWords;
 import de.maxhenkel.voicechat.api.VoicechatApi;
 import de.maxhenkel.voicechat.api.VoicechatPlugin;
@@ -121,6 +122,7 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
     private volatile long lastUtteranceAt;
     private volatile String lastTranscript;
     private volatile long lastTranscriptAt;
+    private final VoiceTimings timings = new VoiceTimings();
     private Speech speech;
     private SvcVoiceResponder responder;
     private Task sweeper;
@@ -189,7 +191,7 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
             return;
         }
         buildResponder();
-        sweeper = platform.scheduler().every(5L, 5L, t -> sweep());
+        sweeper = platform.scheduler().every(2L, 2L, t -> sweep());
         platform.log().info("Voice: listening (gate=" + settings.gate() + ", " + speech.describe() + ")");
         // Models fetched and engines loaded now, not at the first order.
         speech.warmUp();
@@ -197,7 +199,7 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
 
     private void buildResponder() {
         if (serverApi == null || attached == null || settings == null || !settings.speakReplies()) return;
-        responder = new SvcVoiceResponder(attached, speech, serverApi, settings.echoSpokenText());
+        responder = new SvcVoiceResponder(attached, speech, serverApi, settings.echoSpokenText(), timings);
         attached.platform().log().info("Voice: ready to speak (distance " + serverApi.getVoiceChatDistance() + ")");
     }
 
@@ -279,9 +281,9 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
     // ==================== END-OF-SENTENCE ====================
 
     /**
-     * A sentence ends when the packets stop. Checked four times a second:
-     * often enough that the pause feels like the end of speaking, cheap
-     * enough that it costs nothing when nobody is talking.
+     * A sentence ends when the packets stop. Checked ten times a second:
+     * the check is a map scan and costs nothing when nobody is talking,
+     * and every tick it waits is a tick added to the answer.
      */
     private void sweep() {
         VoiceHost h = attached;
@@ -314,7 +316,14 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
         Log log = h.platform().log();
 
         h.platform().scheduler().async(() -> {
+            long started = System.nanoTime();
             String text = speech.transcribe(pcm);
+            long ms = (System.nanoTime() - started) / 1_000_000;
+            timings.transcribed(pcm.length / 48000.0, ms);
+            if (settings.debug()) {
+                log.info("Voice debug: transcribed " + String.format("%.1f", pcm.length / 48000.0) + " s of speech in "
+                        + VoiceTimings.format(ms) + (text == null ? " (nothing heard)" : ": \"" + text + "\""));
+            }
             if (text == null || text.isBlank()) return;
 
             String cleaned = WakeWords.clean(text);
@@ -339,6 +348,21 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
                     owner.message(Colors.DARK_GRAY + "You (voice): " + Colors.GRAY + order);
                 }
                 IntentPipeline.Responder sink = responder != null ? responder : IntentPipeline.CHAT_RESPONDER;
+                if (settings.debug()) {
+                    sink = timings.timing(new IntentPipeline.Responder() {
+                        private final IntentPipeline.Responder inner = responder != null ? responder : IntentPipeline.CHAT_RESPONDER;
+                        @Override public void speak(Owner player, String jarvisLine) {
+                            log.info("Voice debug: understood in " + VoiceTimings.format(timings.intentMs()));
+                            inner.speak(player, jarvisLine);
+                        }
+                        @Override public void feedback(Owner player, String line) {
+                            log.info("Voice debug: understood in " + VoiceTimings.format(timings.intentMs()));
+                            inner.feedback(player, line);
+                        }
+                    });
+                } else {
+                    sink = timings.timing(sink);
+                }
                 h.core().intents().submit(owner, order.toLowerCase(java.util.Locale.ROOT),
                         IntentPipeline.Source.VOICE, sink);
             });
@@ -378,6 +402,10 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
         to.message(Colors.GRAY + "Last transcript: " + (lastTranscript == null
                 ? Colors.WHITE + "none yet"
                 : Colors.WHITE + "\"" + lastTranscript + "\"" + Colors.GRAY + " (" + ago(lastTranscriptAt) + ")"));
+        String timing = timings.describe();
+        if (!timing.isEmpty()) {
+            to.message(Colors.GRAY + "Last order took: " + Colors.WHITE + timing);
+        }
         to.message(Colors.GRAY + "Speaking: " + (responder != null
                 ? Colors.GREEN + "ready"
                 : Colors.YELLOW + (st.speakReplies() ? "waiting for the voice server" : "off (voice.speak-replies)")));

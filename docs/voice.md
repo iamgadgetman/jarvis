@@ -28,9 +28,9 @@ in, the last transcript, and whether the speech engine is ready.
 ## What it costs
 
 Recognition runs on the server's CPU (in singleplayer, your own machine):
-about a second for a short order on a modern desktop, using up to four
-threads while it works. Loaded, the two engines hold a few hundred
-megabytes of memory. The native libraries cover Linux x86_64 and arm64,
+well under a second for a short order on a modern desktop, using every
+core but two while it works (`voice.whisper-threads` pins the number).
+Loaded, the two engines hold a few hundred megabytes of memory. The native libraries cover Linux x86_64 and arm64,
 Windows x86_64 and macOS; they are what makes the mod jar a hundred
 megabytes rather than fifteen.
 
@@ -40,6 +40,26 @@ transcribed test orders verbatim. `voice.piper-voice` picks his voice from
 the [Piper voices](https://huggingface.co/rhasspy/piper-voices) repository
 by id, such as `en_GB-alan-medium`. Changing either fetches the new file
 on the next enable.
+
+## When he is slow to answer
+
+Three things happen after you stop speaking, and `/jarvis voice` reports
+how long each took for the last order:
+
+- **hearing**: transcription. Under a second on a desktop CPU. Slow here
+  means too few cores, or a bigger `voice.whisper-model` than needed;
+  `tiny.en` is the fastest.
+- **understanding**: the AI call, the same one chat uses. This is usually
+  the whole wait when there is one: a cloud model answers in one to three
+  seconds, a large local model on a busy machine can take ten. A smaller
+  Ollama model, or Claude, brings it down; the short direct orders
+  ("come", "follow me", "stop") skip the model and answer at once.
+- **speaking**: synthesis, a few hundred milliseconds for a sentence.
+
+`voice.debug: true` logs the same three numbers as they happen. The
+`voice.silence-ms` pause that ends a sentence (700 ms) is also part of the
+wait; shortening it saves that much, at the cost of splitting a pause for
+breath into two orders.
 
 ## Where a voice comes from
 

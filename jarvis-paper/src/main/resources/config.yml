@@ -396,12 +396,14 @@ ui:
 # talking are done inside the server by default (voice.engine: embedded);
 # the two model files are fetched the first time voice is turned on.
 #
-# Measured on the reference deployment, from the moment you stop speaking:
-#   transcription ~1.1s (base.en, int8, 8-thread CPU)
-#   intent parse  ~0.4s (warm local model)
-#   -> he starts moving in about a second and a half.
+# From the moment you stop speaking, three things happen in turn: hearing
+# (transcription, under a second for a short order on a modern desktop),
+# understanding (the AI call, which is most of the wait when it is slow: a
+# cloud model or a large local one takes seconds) and speaking (synthesis,
+# a few hundred milliseconds). `/jarvis voice` shows how long each took
+# for the last order; `debug: true` logs them as they happen.
 voice:
-  enabled: false                 # Off until an endpoint is configured
+  enabled: false                 # Off until turned on here or from the menu
 
   # How Jarvis knows an utterance is for him:
   #   whisper  hold the voice chat whisper key (default -- costs nothing,
@@ -421,6 +423,7 @@ voice:
   engine: embedded
   models-dir: models             # Under the data directory
   whisper-model: base.en         # ggml-<name>.bin from whisper.cpp; tiny.en is faster, small.en more accurate
+  whisper-threads: 0             # CPU threads for recognition; 0 = all but two, at most eight
   piper-voice: en_GB-alan-medium # A voice from the Piper voices repository
 
   # Matched loosely, and that is deliberate. Speech recognition mangles
@@ -457,7 +460,8 @@ voice:
   # model; move up only if you are misheard.
   stt-model: "guillaumekln/faster-whisper-base.en"
 
-  silence-ms: 700                # Quiet gap that ends a sentence
+  silence-ms: 700                # Quiet gap that ends a sentence; part of the wait,
+                                 # but shorter cuts a pause for breath into two orders
   min-seconds: 0.4               # Shorter than this is a cough, not an order
   max-seconds: 15.0              # Hard cap on one utterance
   echo-transcript: true          # Show what he heard, so mishears are obvious

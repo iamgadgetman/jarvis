@@ -32,6 +32,7 @@ public final class EmbeddedSpeech implements Speech {
     private final SpeechModels models;
     private final String hotwords;
     private final int threads;
+    private final boolean debug;
 
     private final Object whisperLock = new Object();
     private final Object piperLock = new Object();
@@ -47,8 +48,9 @@ public final class EmbeddedSpeech implements Speech {
     public EmbeddedSpeech(Config cfg, Log log, Path dataDir) {
         this.log = log;
         this.hotwords = cfg.getString("voice.hotwords", "");
-        int cores = Runtime.getRuntime().availableProcessors();
-        this.threads = Math.max(2, Math.min(4, cores / 2));
+        this.debug = cfg.getBoolean("voice.debug", false);
+        int configured = cfg.getInt("voice.whisper-threads", 0);
+        this.threads = configured > 0 ? configured : autoThreads(Runtime.getRuntime().availableProcessors());
         Path dir = dataDir.resolve(cfg.getString("voice.models-dir", "models"));
         this.models = new SpeechModels(dir,
                 cfg.getString("voice.whisper-model", "base.en"),
@@ -59,9 +61,36 @@ public final class EmbeddedSpeech implements Speech {
         return models;
     }
 
+    /**
+     * Threads for whisper when none are configured: nearly all of them.
+     * Recognition is the one thing the server is waiting on while it runs,
+     * and it runs for well under a second at a time; two cores are left for
+     * the tick loop (and, in singleplayer, the renderer).
+     */
+    static int autoThreads(int cores) {
+        return Math.max(2, Math.min(8, cores - 2));
+    }
+
+    /**
+     * How much of the encoder to run. whisper.cpp always pads audio to a
+     * thirty-second window and encodes all of it, 1500 positions, however
+     * short the clip; a three-word order spends most of its time encoding
+     * silence. Cutting the context to what the clip needs (fifty positions a
+     * second, with room to spare) is the single biggest saving available and
+     * costs nothing in accuracy for short speech.
+     */
+    static int audioContextFor(int samples16k) {
+        int needed = (int) Math.ceil(samples16k / 16000.0 * 50) + 128;
+        return Math.max(512, Math.min(1500, needed));
+    }
+
     @Override
     public void warmUp() {
-        models.ensure(this::load);
+        // Loading the models takes seconds and may run at the first packet
+        // or at enable time, both on threads the server is waiting on.
+        Thread t = new Thread(() -> models.ensure(this::load), "jarvis-speech-load");
+        t.setDaemon(true);
+        t.start();
     }
 
     /** Load both engines, once. @return whether they are usable. */
@@ -120,6 +149,16 @@ public final class EmbeddedSpeech implements Speech {
         WhisperFullParams params = new WhisperFullParams(WhisperSamplingStrategy.GREEDY);
         params.language = "en";
         params.nThreads = threads;
+        params.audioCtx = audioContextFor(samples.length);
+        // One pass, one answer. The binding's defaults retry at rising
+        // temperatures whenever the decoder is unsure, and each retry is a
+        // whole extra decode; an order misheard is cheaper to repeat than to
+        // wait for. A single segment is all one sentence needs.
+        params.temperature = 0f;
+        params.temperatureInc = 0f;
+        params.greedyBestOf = 1;
+        params.singleSegment = true;
+        params.noContext = true;
         params.noTimestamps = true;
         params.printProgress = false;
         params.printRealtime = false;
@@ -132,7 +171,12 @@ public final class EmbeddedSpeech implements Speech {
 
         synchronized (whisperLock) {
             try {
+                long started = System.nanoTime();
                 int result = whisper.full(context, params, samples, samples.length);
+                if (debug) {
+                    log.info(String.format("Speech: whisper took %d ms for %.1f s of audio (context %d, %d threads)",
+                            (System.nanoTime() - started) / 1_000_000, samples.length / 16000.0, params.audioCtx, threads));
+                }
                 if (result != 0) {
                     log.warn("Speech: whisper returned " + result);
                     return null;

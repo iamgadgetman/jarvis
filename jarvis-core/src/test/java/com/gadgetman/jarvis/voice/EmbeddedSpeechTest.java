@@ -5,6 +5,7 @@ import io.github.givimad.whisperjni.WhisperJNI;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -32,5 +33,24 @@ class EmbeddedSpeechTest {
             assertTrue(piper.isInitialized());
             assertNotNull(piper.getPiperVersion());
         }
+    }
+
+    @Test
+    @DisplayName("whisper's audio context is cut to the clip, within whisper's bounds")
+    void audioContext() {
+        assertEquals(512, EmbeddedSpeech.audioContextFor(16000));          // one second: the floor
+        assertEquals(512, EmbeddedSpeech.audioContextFor(16000 * 7));      // 350 + 128 = 478, still the floor
+        assertEquals(628, EmbeddedSpeech.audioContextFor(16000 * 10));     // 500 + 128
+        assertEquals(1500, EmbeddedSpeech.audioContextFor(16000 * 30));    // the whole window
+        assertEquals(1500, EmbeddedSpeech.audioContextFor(16000 * 60));    // never past it
+    }
+
+    @Test
+    @DisplayName("whisper leaves two cores to the server and never takes more than eight")
+    void threads() {
+        assertEquals(2, EmbeddedSpeech.autoThreads(2));
+        assertEquals(2, EmbeddedSpeech.autoThreads(4));
+        assertEquals(6, EmbeddedSpeech.autoThreads(8));
+        assertEquals(8, EmbeddedSpeech.autoThreads(16));
     }
 }
