@@ -44,8 +44,10 @@ not on the classpath. The engine is fetched at start via `libraries:` in
 write usable JavaScript. On an Ollama-only server, use schematics or set
 `build.planner: json`.
 
-**He does not hear you** — run `/jarvis voice`. It reports each link in the
-chain: whether Simple Voice Chat took the plugin, whether the voice server is
+**He does not hear you** — voice needs a speech server on your network, a
+small program that does the listening and the talking; see
+[voice.md](voice.md) for running one in Docker. Then run `/jarvis voice`.
+It reports each link in the chain: whether Simple Voice Chat took the plugin, whether the voice server is
 up (a singleplayer world has none until it is opened to LAN), whether
 `voice.enabled` is on in the config, which gate is in force (hold the whisper
 key, or say a wake phrase), when the last packet arrived and whether the gate

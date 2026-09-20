@@ -392,8 +392,9 @@ ui:
 # ========== VOICE (Simple Voice Chat) ==========
 # Jarvis listens on the voice chat channel and runs what he hears through the
 # same intent pipeline as chat. Needs Simple Voice Chat on the server (the
-# plugin on Paper, the mod on Fabric or NeoForge), plus a speech endpoint
-# (see voice.endpoint).
+# plugin on Paper, the mod on Fabric or NeoForge), plus a speech server on
+# your network that does the listening and the talking (see voice.endpoint,
+# and docs/voice.md for running one in Docker).
 #
 # Measured on the reference deployment, from the moment you stop speaking:
 #   transcription ~1.1s (base.en, int8, 8-thread CPU)

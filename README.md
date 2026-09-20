@@ -107,6 +107,7 @@ command.
 | **[Troubleshooting](docs/troubleshooting.md)** | When something misbehaves — plus updating, performance and building from source |
 | **[CHANGELOG](CHANGELOG.md)** | The full history, and why each thing was done that way |
 | **[ROADMAP](ROADMAP.md)** | Decided but not built, with the reasoning kept alongside |
+[Voice](docs/voice.md)
 
 ---
 
