@@ -85,3 +85,7 @@ jarvis-neoforge/run/
 jarvis-neoforge/smoke/
 jarvis-neoforge/server.out
 jarvis-neoforge/installer.out
+
+# Python bytecode from running the release scripts' tests
+__pycache__/
+*.pyc
