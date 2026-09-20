@@ -554,6 +554,21 @@ the voice chat API and Paper cannot see `jarvis-vanilla`:
   it through `VoiceHooks`, and only when the voicechat mod is loaded, so
   nothing links against the API when it is absent.
 
+*Embedded speech.* The speech server was the one piece of voice that was
+not in the jar, and on a mod that is a container to run just for voice.
+`voice/Speech` is now the engine contract, with two engines picked by
+`voice.engine`: `EmbeddedSpeech` (the default) runs whisper.cpp and Piper
+in-process through their JNI bindings (whisper-jni, piper-jni; natives
+for Linux x86_64 and arm64, Windows x86_64, macOS, extracted on first
+use), and `RemoteSpeech` is the old HTTP client. `SpeechModels` fetches
+the whisper model and the Piper voice into `<data>/models` the first
+time voice is on, with progress in the log and in `/jarvis voice`;
+`Resample` does the 48 kHz to 16 kHz and Piper-rate to 48 kHz arithmetic
+and is unit-tested. The bindings are core dependencies, so Paper shades
+them and the mods nest them; a core test loads both native libraries on
+every build, which is the risk worth testing. The jars grow to about a
+hundred megabytes, almost all of it onnxruntime for four platforms.
+
 ### Schematics
 
 ```java

@@ -8,6 +8,7 @@ import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Task;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.intent.IntentPipeline;
+import com.gadgetman.jarvis.voice.Speech;
 import com.gadgetman.jarvis.voice.SpeechService;
 import com.gadgetman.jarvis.voice.VoiceStatus;
 import com.gadgetman.jarvis.voice.WakeWords;
@@ -120,7 +121,7 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
     private volatile long lastUtteranceAt;
     private volatile String lastTranscript;
     private volatile long lastTranscriptAt;
-    private SpeechService speech;
+    private Speech speech;
     private SvcVoiceResponder responder;
     private Task sweeper;
 
@@ -181,7 +182,7 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
         attached = h;
         Platform platform = h.platform();
         settings = VoiceSettings.read(platform.config());
-        speech = new SpeechService(platform.config(), platform.log());
+        speech = SpeechService.open(platform.config(), platform.log(), platform.dataDir());
         h.core().setVoiceStatus(this);
         if (!settings.enabled()) {
             platform.log().info("Voice: off (voice.enabled is false)");
@@ -189,8 +190,9 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
         }
         buildResponder();
         sweeper = platform.scheduler().every(5L, 5L, t -> sweep());
-        platform.log().info("Voice: listening (gate=" + settings.gate()
-                + ", speech endpoint " + speech.getEndpoint() + ")");
+        platform.log().info("Voice: listening (gate=" + settings.gate() + ", " + speech.describe() + ")");
+        // Models fetched and engines loaded now, not at the first order.
+        speech.warmUp();
     }
 
     private void buildResponder() {
@@ -218,6 +220,10 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
         open.clear();
         responder = null;
         attached = null;
+        if (speech != null) {
+            speech.close();
+            speech = null;
+        }
     }
 
     // ==================== PACKETS ====================
@@ -376,11 +382,12 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
                 ? Colors.GREEN + "ready"
                 : Colors.YELLOW + (st.speakReplies() ? "waiting for the voice server" : "off (voice.speak-replies)")));
         if (attached == null || speech == null) return;
-        String endpoint = speech.getEndpoint();
+        final Speech engine = speech;
+        final String what = engine.describe();
         attached.platform().scheduler().async(() -> {
-            String problem = speech.probe();
-            attached.platform().scheduler().sync(() -> to.message(Colors.GRAY + "Speech server " + endpoint + ": "
-                    + (problem == null ? Colors.GREEN + "answering" : Colors.RED + "unreachable" + Colors.GRAY + " (" + problem + ")")));
+            String problem = engine.probe();
+            attached.platform().scheduler().sync(() -> to.message(Colors.GRAY + "Speech, " + what + ": "
+                    + (problem == null ? Colors.GREEN + "ready" : Colors.RED + "not ready" + Colors.GRAY + " (" + problem + ")")));
         });
     }
 }

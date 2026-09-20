@@ -99,6 +99,7 @@ public class CommandService implements CommandSink {
                 pool = args.size() == 2 ? VOICE_SUBCOMMANDS
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("gate") ? VoiceConfig.GATES
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("speak") ? List.of("on", "off")
+                        : args.size() == 3 && args.get(1).equalsIgnoreCase("engine") ? VoiceConfig.ENGINES
                         : List.of();
             } else {
                 return List.of();
@@ -720,7 +721,7 @@ public class CommandService implements CommandSink {
     }
 
     private static final List<String> VOICE_SUBCOMMANDS = List.of(
-            "status", "enable", "disable", "endpoint", "gate", "speak", "test");
+            "status", "enable", "disable", "engine", "endpoint", "gate", "speak", "test");
 
     /** {@code /jarvis voice enable|disable|endpoint <url>|gate <g>|speak on|off|test}, for the console. */
     private void handleVoiceSetup(Audience sender, List<String> args) {
@@ -734,6 +735,13 @@ public class CommandService implements CommandSink {
             case "disable", "off" -> {
                 v.setEnabled(false);
                 sender.message(Colors.YELLOW + "Jarvis: Voice off, sir.");
+            }
+            case "engine" -> {
+                if (args.size() < 3) { sender.message(Colors.RED + "Usage: /jarvis voice engine <embedded|server>"); return; }
+                String why = v.setEngine(args.get(2));
+                sender.message(why != null ? Colors.RED + "Jarvis: " + why + ", sir."
+                        : Colors.GREEN + "Jarvis: Speech engine set to " + Colors.WHITE + v.engine() + Colors.GREEN
+                        + (v.engine().equals("embedded") ? ". The models are fetched on first use." : ". Set the server with /jarvis voice endpoint."));
             }
             case "endpoint" -> {
                 if (args.size() < 3) { sender.message(Colors.RED + "Usage: /jarvis voice endpoint <http://host:port>"); return; }
@@ -757,7 +765,7 @@ public class CommandService implements CommandSink {
                 sender.message(Colors.GOLD + "Jarvis: Voice, sir:");
                 core.voiceStatus().report(sender);
             }
-            default -> sender.message(Colors.RED + "Usage: /jarvis voice [status|enable|disable|endpoint <url>|gate <g>|speak on|off|test]");
+            default -> sender.message(Colors.RED + "Usage: /jarvis voice [status|enable|disable|engine <e>|endpoint <url>|gate <g>|speak on|off|test]");
         }
     }
 

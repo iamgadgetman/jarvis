@@ -183,6 +183,9 @@ class MenusTest {
         f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Gate:"), false);
         assertEquals("always", f.platform.config().getString("voice.gate", ""), "whisper cycles to always");
 
+        assertEquals(-1, f.platform.ui().slotNamed(p, "Speech server"), "embedded needs no server address");
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Engine:"), false);
+        assertEquals("server", f.platform.config().getString("voice.engine", ""));
         f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Speech server"), false);
         assertTrue(f.core.prompts().isWaiting(p));
         AtomicBoolean cancelled = new AtomicBoolean();

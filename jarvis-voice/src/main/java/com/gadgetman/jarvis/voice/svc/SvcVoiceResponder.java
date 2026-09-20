@@ -4,7 +4,7 @@ import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Scheduler;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.intent.IntentPipeline;
-import com.gadgetman.jarvis.voice.SpeechService;
+import com.gadgetman.jarvis.voice.Speech;
 import de.maxhenkel.voicechat.api.VoicechatServerApi;
 import de.maxhenkel.voicechat.api.audiochannel.AudioPlayer;
 import de.maxhenkel.voicechat.api.audiochannel.EntityAudioChannel;
@@ -42,7 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class SvcVoiceResponder implements IntentPipeline.Responder {
 
     private final VoiceHost host;
-    private final SpeechService speech;
+    private final Speech speech;
     private final VoicechatServerApi api;
     private final boolean echoSpokenText;
 
@@ -57,7 +57,7 @@ public final class SvcVoiceResponder implements IntentPipeline.Responder {
      */
     private final Set<UUID> busy = ConcurrentHashMap.newKeySet();
 
-    public SvcVoiceResponder(VoiceHost host, SpeechService speech, VoicechatServerApi api, boolean echoSpokenText) {
+    public SvcVoiceResponder(VoiceHost host, Speech speech, VoicechatServerApi api, boolean echoSpokenText) {
         this.host = host;
         this.speech = speech;
         this.api = api;

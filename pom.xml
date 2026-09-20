@@ -50,6 +50,8 @@
         <graaljs.version>25.3.4.1</graaljs.version>
         <graaljs.scope>provided</graaljs.scope>
         <voicechat.api.version>2.6.20</voicechat.api.version>
+        <whisper-jni.version>1.7.1</whisper-jni.version>
+        <piper-jni.version>1.4.1</piper-jni.version>
     </properties>
 
     <dependencyManagement>

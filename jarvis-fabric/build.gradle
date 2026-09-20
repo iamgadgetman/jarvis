@@ -35,6 +35,9 @@ dependencies {
     include(implementation("org.yaml:snakeyaml:${project.snakeyaml_version}"))
     include(implementation("com.zaxxer:HikariCP:${project.hikaricp_version}"))
     include(implementation("org.xerial:sqlite-jdbc:${project.sqlite_version}"))
+    // Speech inside the process: whisper.cpp and Piper with their natives.
+    include(implementation("io.github.givimad:whisper-jni:${project.whisper_jni_version}"))
+    include(implementation("io.github.givimad:piper-jni:${project.piper_jni_version}"))
 
     // The polyglot API so ScriptBuildPlanner compiles; the engine is not
     // shipped, and the planner checks for it before use, so freeform builds

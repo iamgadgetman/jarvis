@@ -15,6 +15,7 @@ import java.util.Locale;
 public final class VoiceConfig {
 
     public static final List<String> GATES = List.of("whisper", "always", "wake-word");
+    public static final List<String> ENGINES = List.of("embedded", "server");
 
     private final Config cfg;
     private final Runnable changed;
@@ -28,6 +29,18 @@ public final class VoiceConfig {
     public String endpoint() { return cfg.getString("voice.endpoint", "http://127.0.0.1:8000"); }
     public String gate() { return cfg.getString("voice.gate", "whisper").toLowerCase(Locale.ROOT); }
     public boolean speakReplies() { return cfg.getBoolean("voice.speak-replies", true); }
+    public String engine() {
+        String e = cfg.getString("voice.engine", "embedded").trim().toLowerCase(Locale.ROOT);
+        return ENGINES.contains(e) ? e : "embedded";
+    }
+
+    /** @return null when accepted, otherwise why not */
+    public String setEngine(String engine) {
+        String e = engine == null ? "" : engine.trim().toLowerCase(Locale.ROOT);
+        if (!ENGINES.contains(e)) return "The engine is embedded or server";
+        write("voice.engine", e);
+        return null;
+    }
 
     public void setEnabled(boolean on) {
         write("voice.enabled", on);

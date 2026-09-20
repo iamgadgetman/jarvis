@@ -63,8 +63,13 @@ class CommandServiceTest {
         run(p, "voice", "gate", "shout");
         assertTrue(p.wasTold("one of whisper"));
 
+        run(p, "voice", "engine", "server");
+        assertEquals("server", f.platform.config().getString("voice.engine", ""));
+        run(p, "voice", "engine", "cloud");
+        assertTrue(p.wasTold("embedded or server"));
+
         var tab = f.core.commands().jarvis(p, Optional.of(p), List.of("voice", "en"), true);
-        assertEquals(List.of("enable", "endpoint"), tab);
+        assertEquals(List.of("enable", "engine", "endpoint"), tab);
     }
 
     @Test

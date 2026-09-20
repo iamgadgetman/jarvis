@@ -37,6 +37,19 @@
              engine itself is a runtime concern of the adapter: Paper's
              library loader fetches it, and the planner checks for it with
              Class.forName before touching it. -->
+        <!-- Speech inside the process: whisper.cpp to listen, Piper to speak.
+             Both carry their native libraries (Linux x86_64 and arm64, Windows
+             x86_64, macOS), extracted on first use. -->
+        <dependency>
+            <groupId>io.github.givimad</groupId>
+            <artifactId>whisper-jni</artifactId>
+            <version>${whisper-jni.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.givimad</groupId>
+            <artifactId>piper-jni</artifactId>
+            <version>${piper-jni.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.graalvm.polyglot</groupId>
             <artifactId>polyglot</artifactId>

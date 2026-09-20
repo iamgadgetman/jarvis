@@ -657,14 +657,22 @@ public class Menus {
                         .named((on ? Colors.GREEN : Colors.DARK_GRAY) + "Voice " + onOff(on))
                         .withLore(List.of(Colors.GRAY + "Needs Simple Voice Chat on the server", Colors.DARK_GRAY + "Click to turn " + (on ? "off" : "on"))),
                 c -> { if (p.hasPermission("jarvis.admin")) { v.setEnabled(!v.enabled()); open(p, voiceSetup(p)); } });
-        m.put(11, item(Ids.COMPASS, Colors.AQUA + "Speech server", Colors.WHITE + v.endpoint(),
-                        Colors.GRAY + "Where transcription and his voice come from", Colors.DARK_GRAY + "Click to type a new address"),
-                c -> askInChat(p, "Where is the speech server? (Currently " + v.endpoint() + ".)", url -> {
-                    String why = v.setEndpoint(url);
-                    p.message(why != null ? Colors.RED + "Jarvis: " + why + ", sir."
-                            : Colors.GREEN + "Jarvis: Speech server set to " + Colors.WHITE + v.endpoint());
-                    open(p, voiceSetup(p));
-                }));
+        boolean embedded = v.engine().equals("embedded");
+        m.put(11, item(embedded ? Ids.NOTE_BLOCK : Ids.COMPASS, Colors.AQUA + "Engine: " + v.engine(),
+                        Colors.GRAY + (embedded ? "Whisper and Piper inside the server; models fetched on first use"
+                                : "A speech server on your network"),
+                        Colors.DARK_GRAY + "Click to switch to " + (embedded ? "server" : "embedded")),
+                c -> { if (p.hasPermission("jarvis.admin")) { v.setEngine(embedded ? "server" : "embedded"); open(p, voiceSetup(p)); } });
+        if (!embedded) {
+            m.put(14, item(Ids.COMPASS, Colors.AQUA + "Speech server", Colors.WHITE + v.endpoint(),
+                            Colors.GRAY + "Where transcription and his voice come from", Colors.DARK_GRAY + "Click to type a new address"),
+                    c -> askInChat(p, "Where is the speech server? (Currently " + v.endpoint() + ".)", url -> {
+                        String why = v.setEndpoint(url);
+                        p.message(why != null ? Colors.RED + "Jarvis: " + why + ", sir."
+                                : Colors.GREEN + "Jarvis: Speech server set to " + Colors.WHITE + v.endpoint());
+                        open(p, voiceSetup(p));
+                    }));
+        }
         m.put(12, item(Ids.LEVER, Colors.YELLOW + "Gate: " + v.gate(),
                         Colors.GRAY + "whisper: hold the whisper key", Colors.GRAY + "always: everything you say",
                         Colors.GRAY + "wake-word: sentences with his name", Colors.DARK_GRAY + "Click to cycle"),

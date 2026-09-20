@@ -44,18 +44,17 @@ not on the classpath. The engine is fetched at start via `libraries:` in
 write usable JavaScript. On an Ollama-only server, use schematics or set
 `build.planner: json`.
 
-**He does not hear you** — voice needs a speech server on your network, a
-small program that does the listening and the talking; see
-[voice.md](voice.md) for running one in Docker. Then run `/jarvis voice`.
-It reports each link in the chain: whether Simple Voice Chat took the plugin, whether the voice server is
+**He does not hear you** — run `/jarvis voice`. It reports each link in
+the chain: whether Simple Voice Chat took the plugin, whether the voice server is
 up (a singleplayer world has none until it is opened to LAN), whether
 `voice.enabled` is on in the config, which gate is in force (hold the whisper
 key, or say a wake phrase), when the last packet arrived and whether the gate
-rejected it, the last transcript, and whether the speech server answers. On
-the mods the config is `config/jarvis/config.yml`, written fresh on first
-start with voice off and the speech server at `127.0.0.1:8000`; point it at
-yours with `/jarvis voice endpoint http://host:port` or from the bell menu
-(Admin, Voice setup), then `/jarvis voice enable`. Both take effect at once. `voice.debug: true` logs every packet and every
+rejected it, the last transcript, and whether the speech engine is ready.
+The first time voice is turned on the engine fetches two model files
+(about 200 MB); until they are here the report says "models downloading"
+and he cannot hear. Voice is off in a fresh config; turn it on from the
+bell menu (Admin, Voice setup) or with `/jarvis voice enable`. Both take
+effect at once. See [voice.md](voice.md). `voice.debug: true` logs every packet and every
 transcript the wake word turned down.
 
 **"Database init error"** — `plugins/Jarvis/` must be writable. Failing that,

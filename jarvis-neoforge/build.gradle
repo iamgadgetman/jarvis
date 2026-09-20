@@ -62,6 +62,13 @@ dependencies {
     jarJar(implementation("org.xerial:sqlite-jdbc")) {
         version { strictly "[${project.sqlite_version},)"; prefer project.sqlite_version }
     }
+    // Speech inside the process: whisper.cpp and Piper with their natives.
+    jarJar(implementation("io.github.givimad:whisper-jni")) {
+        version { strictly "[${project.whisper_jni_version},)"; prefer project.whisper_jni_version }
+    }
+    jarJar(implementation("io.github.givimad:piper-jni")) {
+        version { strictly "[${project.piper_jni_version},)"; prefer project.piper_jni_version }
+    }
 
     // The polyglot API so ScriptBuildPlanner compiles; the engine is not
     // shipped, and the planner checks for it before use, so freeform builds
