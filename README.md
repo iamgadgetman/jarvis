@@ -105,9 +105,9 @@ command.
 | **[Commands](docs/commands.md)** | The full command table, permissions, and natural-language examples |
 | **[Configuration](docs/configuration.md)** | `config.yml` in full, AI providers and API keys, permission nodes |
 | **[Troubleshooting](docs/troubleshooting.md)** | When something misbehaves — plus updating, performance and building from source |
+| **[Voice](docs/voice.md)** | The speech server that does his listening and talking, and how to run one |
 | **[CHANGELOG](CHANGELOG.md)** | The full history, and why each thing was done that way |
 | **[ROADMAP](ROADMAP.md)** | Decided but not built, with the reasoning kept alongside |
-[Voice](docs/voice.md)
 
 ---
 
