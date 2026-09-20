@@ -24,10 +24,18 @@ class VoiceTimingsTest {
     @DisplayName("each stage is named with its time, seconds above a second")
     void describes() {
         VoiceTimings t = new VoiceTimings();
-        t.transcribed(2.1, 850);
+        t.transcribed(2.1, 850, true);
         t.understood(3200);
         t.synthesised(310);
         assertEquals("hearing 850 ms (2.1 s of speech), understanding 3.2 s, speaking 310 ms", t.describe());
+    }
+
+    @Test
+    @DisplayName("a failed transcription is reported as a failure, not as slow hearing")
+    void failedHearing() {
+        VoiceTimings t = new VoiceTimings();
+        t.transcribed(1.6, 5004, false);
+        assertEquals("hearing failed after 5.0 s (1.6 s of speech)", t.describe());
     }
 
     @Test

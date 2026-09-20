@@ -47,6 +47,7 @@ public final class EmbeddedSpeech implements Speech {
     /** Why the engines could not be loaded, for the status report; null when they could or were not tried. */
     private volatile String failure;
     private volatile boolean warnedNotReady;
+    private volatile String lastProblem;
 
     public EmbeddedSpeech(Config cfg, Log log, Path dataDir) {
         this.log = log;
@@ -162,10 +163,19 @@ public final class EmbeddedSpeech implements Speech {
                 log.warn("Speech models are not here yet (" + models.status().describe() + "); he cannot hear until they are.");
             }
             models.ensure(this::load);
+            lastProblem = "the speech models are " + models.status().describe();
             return false;
         }
-        return (context != null && voice != null) || load();
+        if ((context != null && voice != null) || load()) {
+            lastProblem = null;
+            return true;
+        }
+        lastProblem = "the speech engines could not be loaded (" + failure + ")";
+        return false;
     }
+
+    @Override
+    public String lastProblem() { return lastProblem; }
 
     @Override
     public String transcribe(short[] pcm48k) {
@@ -211,6 +221,7 @@ public final class EmbeddedSpeech implements Speech {
                 }
                 if (result != 0) {
                     log.warn("Speech: whisper returned " + result);
+                    lastProblem = "whisper returned " + result;
                     return null;
                 }
                 StringBuilder text = new StringBuilder();
@@ -222,6 +233,7 @@ public final class EmbeddedSpeech implements Speech {
                 return new Run(out.isEmpty() ? null : out, ms);
             } catch (Throwable t) {
                 log.warn("Speech transcription error: " + t);
+                lastProblem = "whisper failed (" + t + ")";
                 return null;
             }
         }

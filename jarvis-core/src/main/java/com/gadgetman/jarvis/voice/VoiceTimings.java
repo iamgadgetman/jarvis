@@ -16,12 +16,15 @@ public final class VoiceTimings {
 
     private volatile double audioSeconds = -1;
     private volatile long transcribeMs = -1;
+    private volatile boolean heard = true;
     private volatile long intentMs = -1;
     private volatile long synthMs = -1;
 
-    public void transcribed(double seconds, long ms) {
+    /** @param heard false when the engine failed rather than the clip being silence */
+    public void transcribed(double seconds, long ms, boolean heard) {
         audioSeconds = seconds;
         transcribeMs = ms;
+        this.heard = heard;
     }
 
     public void understood(long ms) {
@@ -71,7 +74,7 @@ public final class VoiceTimings {
         if (transcribeMs < 0 && intentMs < 0 && synthMs < 0) return "";
         StringBuilder sb = new StringBuilder();
         if (transcribeMs >= 0) {
-            sb.append("hearing ").append(format(transcribeMs));
+            sb.append(heard ? "hearing " : "hearing failed after ").append(format(transcribeMs));
             if (audioSeconds >= 0) sb.append(String.format(" (%.1f s of speech)", audioSeconds));
         }
         if (intentMs >= 0) {

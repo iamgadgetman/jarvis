@@ -45,6 +45,7 @@ public final class RemoteSpeech implements Speech {
     private final String hotwords;
     private final String apiKey;
     private final int timeoutSeconds;
+    private volatile String lastProblem;
 
     public RemoteSpeech(Config cfg, Log log) {
         this.log            = log;
@@ -70,6 +71,16 @@ public final class RemoteSpeech implements Speech {
     @Override
     public String describe() {
         return "speech server at " + endpoint;
+    }
+
+    @Override
+    public String lastProblem() { return lastProblem; }
+
+    @Override
+    public boolean needsServer() { return true; }
+
+    private static String reason(Exception e) {
+        return e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
     }
 
     /**
@@ -129,14 +140,17 @@ public final class RemoteSpeech implements Speech {
             if (res.statusCode() != 200) {
                 log.warn("Speech transcription failed: HTTP " + res.statusCode()
                         + " — " + trim(res.body()));
+                lastProblem = describe() + " answered HTTP " + res.statusCode();
                 return null;
             }
 
+            lastProblem = null;
             String text = new org.json.JSONObject(res.body()).optString("text", "").trim();
             return text.isEmpty() ? null : text;
 
         } catch (Exception e) {
             log.warn("Speech transcription error: " + e.getMessage());
+            lastProblem = describe() + " did not answer (" + reason(e) + ")";
             return null;
         }
     }
@@ -174,12 +188,15 @@ public final class RemoteSpeech implements Speech {
             HttpResponse<byte[]> res = http.send(req.build(), HttpResponse.BodyHandlers.ofByteArray());
             if (res.statusCode() != 200) {
                 log.warn("Speech synthesis failed: HTTP " + res.statusCode());
+                lastProblem = describe() + " answered HTTP " + res.statusCode();
                 return null;
             }
+            lastProblem = null;
             return resampleTo48k(readWav(res.body()));
 
         } catch (Exception e) {
             log.warn("Speech synthesis error: " + e.getMessage());
+            lastProblem = describe() + " did not answer (" + reason(e) + ")";
             return null;
         }
     }

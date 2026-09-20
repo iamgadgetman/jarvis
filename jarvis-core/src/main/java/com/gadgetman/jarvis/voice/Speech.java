@@ -23,6 +23,17 @@ public interface Speech {
     /** @return null when the engine is ready to work, otherwise what stands in the way */
     String probe();
 
+    /**
+     * Why the last call returned nothing, when the reason was the engine
+     * rather than silence: a server that did not answer, a model that is not
+     * here. Null when the last call worked or simply heard nothing. Lets the
+     * listener tell the player, instead of leaving an order unanswered.
+     */
+    default String lastProblem() { return null; }
+
+    /** True when the work happens on a server elsewhere, which can be down. */
+    default boolean needsServer() { return false; }
+
     /** Get ready ahead of the first order: fetch models, load them. Never blocks. */
     default void warmUp() { }
 

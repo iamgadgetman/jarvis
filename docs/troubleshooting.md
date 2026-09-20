@@ -53,6 +53,13 @@ is the AI call: switch to a smaller Ollama model or to Claude, or check
 the machine running Ollama is not busy. See
 [voice.md](voice.md#when-he-is-slow-to-answer).
 
+**He hears you but says he could not make it out** — the engine failed
+rather than the clip being silent, and the line says why: usually a
+`voice.engine: server` pointing at a speech server that is no longer there,
+left over from before the engines moved inside the server. `/jarvis voice
+engine embedded` (or the Engine row on the Voice setup page) switches to the
+built-in engines; the models are fetched on first use.
+
 **He does not hear you** — run `/jarvis voice`. It reports each link in
 the chain: whether Simple Voice Chat took the plugin, whether the voice server is
 up (a singleplayer world has none until it is opened to LAN), whether

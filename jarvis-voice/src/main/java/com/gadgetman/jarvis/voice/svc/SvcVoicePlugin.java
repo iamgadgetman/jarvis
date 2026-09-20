@@ -124,6 +124,8 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
     private volatile String lastTranscript;
     private volatile long lastTranscriptAt;
     private final VoiceTimings timings = new VoiceTimings();
+    /** When each player was last told the engine failed, so a dead server is one line a minute, not one per sentence. */
+    private final Map<UUID, Long> lastProblemTold = new ConcurrentHashMap<>();
     private Speech speech;
     private SvcVoiceResponder responder;
     private Task sweeper;
@@ -318,12 +320,30 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
 
         h.platform().scheduler().async(() -> {
             long started = System.nanoTime();
-            String text = speech.transcribe(pcm);
+            Speech engine = speech;
+            if (engine == null) return;
+            String text = engine.transcribe(pcm);
             long ms = (System.nanoTime() - started) / 1_000_000;
-            timings.transcribed(pcm.length / 48000.0, ms);
+            String problem = text == null ? engine.lastProblem() : null;
+            timings.transcribed(pcm.length / 48000.0, ms, problem == null);
             if (settings.debug()) {
                 log.info("Voice debug: transcribed " + String.format("%.1f", pcm.length / 48000.0) + " s of speech in "
                         + VoiceTimings.format(ms) + (text == null ? " (nothing heard)" : ": \"" + text + "\""));
+            }
+            if (problem != null) {
+                // He was spoken to and could not listen: say so, and say what
+                // would fix it, rather than leaving the order unanswered.
+                long now = System.currentTimeMillis();
+                Long last = lastProblemTold.get(owner.id());
+                if (last == null || now - last > 60_000) {
+                    lastProblemTold.put(owner.id(), now);
+                    final String line = Colors.RED + "Jarvis: I could not make that out, sir: " + Colors.GRAY + problem + "."
+                            + (engine.needsServer()
+                                ? Colors.YELLOW + " /jarvis voice engine embedded" + Colors.GRAY + " needs no server."
+                                : "");
+                    h.platform().scheduler().sync(() -> { if (owner.isOnline()) owner.message(line); });
+                }
+                return;
             }
             if (text == null || text.isBlank()) return;
 
@@ -430,7 +450,8 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
         attached.platform().scheduler().async(() -> {
             String problem = engine.probe();
             attached.platform().scheduler().sync(() -> to.message(Colors.GRAY + "Speech, " + what + ": "
-                    + (problem == null ? Colors.GREEN + "ready" : Colors.RED + "not ready" + Colors.GRAY + " (" + problem + ")")));
+                    + (problem == null ? Colors.GREEN + "ready" : Colors.RED + "not ready" + Colors.GRAY + " (" + problem + ")"
+                    + (engine.needsServer() ? " " + Colors.YELLOW + "/jarvis voice engine embedded" + Colors.GRAY + " needs no server." : ""))));
         });
     }
 }
