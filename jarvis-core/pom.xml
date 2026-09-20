@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.gadgetman</groupId>
         <artifactId>jarvis-parent</artifactId>
-        <version>0.16.0</version>
+        <version>0.17.0</version>
     </parent>
 
     <artifactId>jarvis-core</artifactId>

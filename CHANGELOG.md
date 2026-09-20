@@ -1,5 +1,135 @@
 # Jarvis Changelog
 
+## v0.17.0 (2026-09-20) — the same butler on Fabric and NeoForge
+
+One release, three files: `jarvis-paper-0.17.0.jar` for Paper and Purpur,
+`jarvis-fabric-0.17.0.jar` for Fabric, `jarvis-neoforge-0.17.0.jar` for
+NeoForge. The plugin jar has a new name; everything a Paper server had
+still works, and the config file is the same on all three.
+
+### Added — Jarvis as a mod
+
+- **Fabric and NeoForge adapters.** Minecraft 26.3; Fabric Loader 0.19.5 and
+  Fabric API, or NeoForge 26.3.0.x. One jar each, with the libraries nested
+  inside, and the config in `config/jarvis/` rather than `plugins/Jarvis/`.
+- **A fake player for a body.** There is no Citizens on a mod, so the butler is
+  a server-side player: a real entity that other mods and the game itself
+  treat as a player, dressed in the skin of the Mojang account named Jarvis.
+  He walks on Jarvis's own A* pathfinder (`jarvis-nav`), opens doors, swims,
+  climbs ladders, and breaks blocks at tool speed through the game's own
+  game-mode code, so protection mods see an ordinary player breaking a block.
+- **Admin is operator** on the mods, where there are no permission nodes.
+- **What the mods do not have:** WorldEdit, so the schematic library is
+  Paper-only; the JavaScript build planner, so freeform builds use the JSON
+  planner (see below), which turned out to be the better one anyway.
+- **A NeoForge smoke test in CI** installs a real dedicated server, drops the
+  built jar in `mods/` and waits for Jarvis to come up, because the nested jars,
+  the mixins and the module graph only show their problems at runtime.
+
+### Added — the core/adapter split
+
+- Everything that is not a loader API now lives in `jarvis-core`, which the
+  build refuses to let import Bukkit, Citizens, Fabric or Minecraft. The Paper
+  plugin and the two mods are thin adapters over one interface (`Platform`,
+  `Butler`, `World`, `Owner`, `Scheduler`, `Ui`, `Events`), documented in
+  `docs/dev/platform-interface.md` with the reasoning for each seam.
+- Core is tested on a fake platform: a world in a map, a butler that walks in
+  straight lines, a scheduler that runs when told. 180-odd tests, each moved
+  task class with its own, every build.
+
+### Added — AI setup from the bell menu
+
+- **Admin > AI setup**: a row of providers, right-click to switch one on or
+  off, left-click for its page: the key or address (typed in chat, kept out
+  of chat and the chat log), the model (picked from what the Ollama server
+  offers, or typed) and a connection test that goes past the routing.
+- `/jarvis ai enable|disable|key|endpoint|model|models|test` mirror it for
+  the console, with tab completion.
+- Config writes keep the file's comments: `YamlConfig` saves changed values
+  into the existing text instead of dumping the whole document.
+
+### Added — freeform builds that come out whole, and furnished
+
+- **Shapes, not blocks.** The planner asks the model for a short list of
+  shapes (fill, walls, hollow, clear, set, door, bed, roof) and expands them
+  in core, so a wall is whole by construction, a door has both halves, a bed
+  has its head, and a pitched roof of stairs steps in to a ridge with its
+  gables closed. The old block-by-block plan is still read, because remembered
+  plans use it.
+- **Furnished by requirement.** A dwelling has a bed, a chest, a crafting
+  table, light and something on the walls; a larger building has rooms
+  furnished for their purpose. The first house built by the old prompt had no
+  door and one wall short, which is why this is in the prompt rather than
+  left to taste.
+- **Doors and windows snap into the wall** when the model places them one
+  block off its line, and the log says so.
+- **Blocks that are not blocks are left out.** A painting or an item frame,
+  which are entities, used to become dirt; now a spec the registry rejects is
+  retried as its bare id, and anything still unknown is skipped and named in
+  one warning line. `build.fallback-material` is retired.
+- **Custom build** on the Building page of the bell menu asks for a
+  description in chat and runs `/jarvis build` with it.
+
+### Added — voice on every platform, inside the server
+
+- **One Simple Voice Chat plugin for all three**, since its API is the same
+  everywhere: Paper registers it through Bukkit's service, Fabric through an
+  entrypoint, NeoForge through the annotation. He speaks from the butler's
+  body when he is beside you and into your ear when he is away.
+- **Speech inside the server.** whisper.cpp listens and Piper speaks, through
+  JNI bindings whose native libraries ride in the jar (Linux x86_64 and arm64,
+  Windows, macOS). The two model files, about 200 MB, are fetched the first
+  time voice is turned on, with progress in the log and in `/jarvis voice`.
+  No container, no second service. The HTTP client stays as
+  `voice.engine: server` for anyone who wants the work off the game host.
+- **Set up from the menu or the console.** Admin > Voice setup, and
+  `/jarvis voice enable|disable|engine|endpoint|gate|speak|threads|bench|test`;
+  every change takes effect at once, no restart.
+- **`/jarvis voice` reports every link of the chain**: whether voice chat took
+  the plugin and its voice server is up (a singleplayer world has none until
+  opened to LAN), the gate, when the last packet came in, the last transcript,
+  whether the engine is ready, and how long the last order took at each
+  stage: hearing, understanding, speaking.
+- **`/jarvis voice bench`** has Piper say a sentence and times whisper on it
+  at several thread counts, then names the fastest; `voice.whisper-threads`
+  keeps it.
+
+### Changed
+
+- **The Paper jar is `jarvis-paper-<version>.jar`**, so the three files of a
+  release tell you which is which.
+- **Recognition does less work.** whisper's audio context is cut to the clip
+  instead of a thirty-second window, decoding is one greedy pass with no
+  temperature fallbacks, and the models load on their own thread. Four
+  threads by default; more is slower on a machine that is also running the
+  game, because the workers spin while they wait for each other.
+- **Issued gear stays his.** Kit items carry a marker; a dismissal hands over
+  everything except them, and his inventory screen (Paper and the mods)
+  refuses to let the owner take them.
+- **He is summoned two blocks away, facing you**, rather than on your head.
+- **The build planner's request uses the build-script token ceiling**, so a
+  plan no longer stops mid-object at the default 2,000 tokens.
+
+### Fixed
+
+- "Failed to generate build plan" when the reply was cut short: the JSON is
+  now unfenced, de-prosed and, if still broken, salvaged for the complete
+  blocks so the build goes ahead with what arrived.
+- Core failed to start on a server without GraalJS because the availability
+  check itself linked a polyglot class. The probe is now a `Class.forName`
+  and nothing else.
+- The mods' first start failed on a missing `databases.yml`, which the
+  repository ignores by name; the default is now written from code.
+- Menu filler items on Fabric no longer show a blank tooltip.
+
+### Deliberately not done
+
+- **Not one jar for all three.** A Paper plugin and a mod cannot share a
+  file, and a Fabric jar that is also a NeoForge jar is possible but fragile.
+  Three files, one version, one changelog.
+- **Not classic Forge.** NeoForge is where 26.x modding is; nothing here is
+  Forge-specific enough to be worth a fourth build.
+
 ## v0.16.0 (2026-09-08) — he can find you a portal
 
 Three separate abilities, deliberately kept apart, because only one of them

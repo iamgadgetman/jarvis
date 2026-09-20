@@ -5,7 +5,7 @@
 
     <groupId>com.gadgetman</groupId>
     <artifactId>jarvis-parent</artifactId>
-    <version>0.16.0</version>
+    <version>0.17.0</version>
     <packaging>pom</packaging>
 
     <name>Jarvis</name>
@@ -20,7 +20,7 @@
                         jar it ships, so operators still drop in one file.
 
         Build everything with `mvn clean package -DskipTests`. The plugin jar
-        lands in jarvis-paper/target/jarvis-<version>.jar.
+        lands in jarvis-paper/target/jarvis-paper-<version>.jar.
     -->
     <modules>
         <module>jarvis-core</module>

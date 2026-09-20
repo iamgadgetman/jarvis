@@ -27,6 +27,10 @@ gradle runServer      # a dev server in run/server (accept the EULA there first)
 
 ## Running
 
+Players take `jarvis-neoforge-<version>.jar` from the
+[releases page](https://github.com/iamgadgetman/jarvis/releases); every
+release carries the Paper, Fabric and NeoForge files together.
+
 Minecraft 26.3, NeoForge 26.3.0.x. Drop the jar in `mods/`. On first start it
 writes `config/jarvis/config.yml` (the same file the plugin uses) and
 `config/jarvis/databases.yml`; set up your AI from the bell menu (Admin, AI

@@ -27,5 +27,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: jarvis-plugin
-          path: jarvis-paper/target/jarvis-*.jar
+          path: jarvis-paper/target/jarvis-paper-*.jar
           if-no-files-found: error

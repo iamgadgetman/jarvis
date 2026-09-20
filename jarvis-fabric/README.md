@@ -26,6 +26,10 @@ gradle build          # Gradle 9.5.1, JDK 25
 
 ## Running
 
+Players take `jarvis-fabric-<version>.jar` from the
+[releases page](https://github.com/iamgadgetman/jarvis/releases); every
+release carries the Paper, Fabric and NeoForge files together.
+
 Minecraft 26.3, Fabric Loader 0.19.5 or later, Fabric API. Drop the jar in
 `mods/`. On first start it writes `config/jarvis/config.yml` (the same file
 the plugin uses) and `config/jarvis/databases.yml`; set your AI endpoint in

@@ -77,7 +77,7 @@ delete `database.db` and restart, and check free disk space.
 
 1. Back up your config: `cp plugins/Jarvis/config.yml ~/jarvis-config-backup.yml`
 2. Stop the server
-3. Replace the jar: `rm plugins/jarvis-*.jar && cp Jarvis-<new>.jar plugins/`
+3. Replace the jar: `rm plugins/jarvis-*.jar && cp jarvis-paper-<new>.jar plugins/`
 4. Start the server
 
 New config keys are added automatically and your existing settings are kept.
@@ -109,7 +109,7 @@ more natural feel.
 git clone https://github.com/iamgadgetman/jarvis.git
 cd jarvis
 mvn clean package -DskipTests
-# Output: jarvis-paper/target/jarvis-<version>.jar
+# Output: jarvis-paper/target/jarvis-paper-<version>.jar
 ```
 
 The build is two Maven modules: `jarvis-core` (the platform-free brain) and `jarvis-paper` (the plugin, which shades core in). Citizens and WorldEdit resolve from the repositories configured in `jarvis-paper/pom.xml`.
