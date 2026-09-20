@@ -1,0 +1,50 @@
+# Builds the Fabric adapter (jarvis-fabric/, a Gradle Loom project that is
+# not part of the Maven reactor) and attaches the mod jar. Fabric's and
+# Mojang's repositories are reachable from GitHub's runners, which is the
+# reason this runs here rather than only locally. JDK 25 because Minecraft
+# 26.x is built for Java 25.
+name: fabric
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'jarvis-fabric/**'
+      - 'jarvis-vanilla/**'
+      - 'jarvis-voice/**'
+      - 'jarvis-core/src/main/**'
+      - 'jarvis-nav/src/main/**'
+      - 'jarvis-paper/src/main/resources/config.yml'
+      - '.github/workflows/fabric.yml'
+  pull_request:
+    paths:
+      - 'jarvis-fabric/**'
+      - 'jarvis-vanilla/**'
+      - 'jarvis-voice/**'
+      - 'jarvis-core/src/main/**'
+      - 'jarvis-nav/src/main/**'
+      - 'jarvis-paper/src/main/resources/config.yml'
+      - '.github/workflows/fabric.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+      - name: Build
+        working-directory: jarvis-fabric
+        run: gradle build --no-daemon --stacktrace
+      - name: Attach mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-fabric
+          path: jarvis-fabric/build/libs/jarvis-fabric-*.jar
+          if-no-files-found: error

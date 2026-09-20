@@ -1,15 +1,20 @@
 <!--
   The Modrinth store page for https://modrinth.com/plugin/jarvis-ai-butler
-  This file is the source of truth for that page's description. Edit here,
-  then PATCH /v2/project/{id} with it as `body` — otherwise the two drift and
-  the published copy silently becomes the only record of what was written.
+  One project, three files per version: the Paper plugin, the Fabric mod and
+  the NeoForge mod, uploaded by the release workflow as <version>+paper,
+  +fabric and +neoforge. This file is the source of truth for the page's
+  description. Edit here, then PATCH /v2/project/{id} with it as `body` —
+  otherwise the two drift and the published copy silently becomes the only
+  record of what was written.
 -->
 
 # Jarvis — Your AI Butler for Minecraft
 
 > *"Very good, sir. I shall see to the excavation."*
 
-**Jarvis** is a fully-featured AI butler NPC for your server — equal parts Alfred and Iron Man's JARVIS. Summon him with a bell, talk to him in plain English, and he mines, guards, farms, fishes, fells trees, fetches your death drops, runs your errands, and delivers a morning briefing on your server's health. Powered by the AI provider of your choice — including **fully local Ollama** on your own hardware, no cloud required.
+**Jarvis** is a fully-featured AI butler for your server — equal parts Alfred and Iron Man's JARVIS. Summon him with a bell, talk to him in plain English, and he mines, guards, farms, fishes, fells trees, builds, fetches your death drops, runs your errands, and delivers a morning briefing on your server's health. Powered by the AI provider of your choice — including **fully local Ollama** on your own hardware, no cloud required.
+
+**Paper, Fabric or NeoForge.** On Paper he is a Citizens NPC; on Fabric and NeoForge he is a fake player. Same butler, same config, same commands — pick the file for your server.
 
 ---
 
@@ -17,7 +22,7 @@
 
 ### ⛏️ He actually mines — properly
 
-No teleport-cheating, no instant block deletion. Jarvis pathfinds with Citizens' A\*, breaks blocks with **vanilla timing, arm swings, and crack animations**, and digs real 1×2 tunnels to reach buried ores — staircasing down and back up like a player would.
+No teleport-cheating, no instant block deletion. Jarvis pathfinds (Citizens' A\* on Paper, his own on the mods), breaks blocks with **vanilla timing, arm swings, and crack animations**, and digs real 1×2 tunnels to reach buried ores — staircasing down and back up like a player would.
 
 - `/jarvis mine [ore]` — hunts nearby ores ("jarvis, mine diamonds")
 - `/jarvis mine here` — digs a complete **branch mine**: staircase to diamond level, torch-lit main gallery, branch tunnels on a grid, lava pockets sealed with cobblestone. The mine stays lit and walkable for *you* afterwards.
@@ -91,12 +96,13 @@ you are running local-only. Save, rotate and convert schematics in-game;
 
 ## 🎙️ He listens, and he answers
 
-Through [Simple Voice Chat](https://modrinth.com/plugin/simple-voice-chat), with
-speech running wherever you point it — local is the intended setup. Measured
-from the moment you stop speaking: ~1.1 s to transcribe, ~0.4 s to work out what
-you meant, so he starts moving in about a second and a half. He speaks back
-through the NPC when he is beside you, and into your ear when he is away
-working.
+Through [Simple Voice Chat](https://modrinth.com/plugin/simple-voice-chat) —
+and nothing else. Speech recognition (whisper.cpp) and his voice (Piper) run
+**inside the server**; the two model files are fetched the first time you turn
+voice on. No container, no speech service, nothing to point at. Hearing a
+short order takes well under a second on a desktop CPU, and `/jarvis voice`
+tells you how long each stage of the last order took. He speaks back through
+the NPC when he is beside you, and into your ear when he is away working.
 
 Three ways to tell him a sentence is for him: hold the whisper key, treat
 everything as an order (fine solo), or use a wake word. The wake word is matched
@@ -144,23 +150,26 @@ same observation in new words. `/jarvis quiet` mutes him.
 
 ## 📋 Requirements
 
-| | |
-|---|---|
-| **Server** | Paper / Purpur **1.21.11 – 26.2** (26.3 support when Citizens ships theirs) |
-| **Java** | 25 on 26.x servers (21 on 1.21.x) |
-| **Required plugin** | [Citizens](https://citizensnpcs.co/ or their latest build at https://ci.citizensnpcs.co/job/citizens2/) **2.0.43+** |
-| **Optional** | WorldEdit (schematics), WorldGuard, an AI provider (any one of: Ollama, Claude, OpenAI, Grok, Gemini) |
+| File | Server | Needs |
+|---|---|---|
+| `jarvis-paper-x.y.z.jar` | Paper / Purpur **1.21.11 – 26.2** | [Citizens](https://ci.citizensnpcs.co/job/citizens2/) **2.0.43+** · Java 21 (25 on 26.x) · WorldEdit optional, for schematics |
+| `jarvis-fabric-x.y.z.jar` | Fabric, Minecraft **26.3** | Fabric Loader 0.19.5+ · Fabric API · Java 25 |
+| `jarvis-neoforge-x.y.z.jar` | NeoForge **26.3.0.x** | Java 25 |
+
+Optional everywhere: an AI provider (any one of Ollama, Claude, OpenAI, Grok, Gemini) and Simple Voice Chat (the plugin on Paper, the mod on Fabric and NeoForge).
 
 > **Note:** Citizens supports the latest patch of each Minecraft line — "1.21" support means 1.21.11. Older 1.21.x servers should update.
 
 ## 🚀 Quick start
 
-1. Install Citizens, drop `jarvis-x.y.z.jar` in `plugins/`, restart
-2. (Optional) Set an AI provider in `plugins/Jarvis/config.yml` — e.g. `ollama.endpoint: "http://your-box:11434"`
+1. Drop the file for your server in `plugins/` (with Citizens) or `mods/` (with Fabric API on Fabric), restart
+2. `/jarvis bell`, ring it, **Admin > AI setup**, pick a provider — or edit `config.yml` (`plugins/Jarvis/` on Paper, `config/jarvis/` on the mods)
 3. `/jarvis summon` → look at a chest → `/jarvis chest` → `/jarvis mine here`
 4. Watch him work. `/jarvis help` for everything else.
 
-Without any AI configured, all slash commands still work — you only lose natural-language chat and AI schematic picking.
+Without any AI configured, all slash commands still work — you only lose natural-language chat and freeform building.
+
+On the mods: the butler is a fake player, admin means operator, and there is no schematic library (no WorldEdit). Everything else is the same.
 
 ---
 

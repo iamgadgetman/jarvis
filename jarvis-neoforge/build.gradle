@@ -1,0 +1,125 @@
+// The NeoForge adapter: jarvis-core on a NeoForge server, with the butler as
+// a fake player walked by jarvis-nav. A ModDevGradle project outside the
+// Maven reactor. Core, nav and the loader-neutral server code in
+// jarvis-vanilla compile in from their sources, and core's libraries ride
+// along as nested jars (NeoForge's Jar-in-Jar). Only JarvisNeoForge itself
+// is in this module.
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version "${moddev_version}"
+}
+
+base {
+    archivesName = 'jarvis-neoforge'
+}
+
+version = project.mod_version
+group = 'com.gadgetman'
+
+repositories {
+    mavenCentral()
+    // Simple Voice Chat's API, compile-time only: the voice plugin is
+    // registered only when the voicechat mod is there to ask for it.
+    maven {
+        name = 'maxhenkel'
+        url = 'https://maven.maxhenkel.de/repository/public'
+    }
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+
+neoForge {
+    version = project.neo_version
+
+    runs {
+        server {
+            server()
+            programArgument '--nogui'
+            gameDirectory = project.file('run/server')
+        }
+    }
+
+    mods {
+        jarvis {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+dependencies {
+    // Core's libraries, bundled inside the mod jar. Jar-in-Jar wants a
+    // range, so another mod carrying the same library can be reconciled
+    // with this one; the preferred version is the one core is built against.
+    jarJar(implementation("org.json:json")) {
+        version { strictly "[${project.json_version},)"; prefer project.json_version }
+    }
+    jarJar(implementation("org.yaml:snakeyaml")) {
+        version { strictly "[${project.snakeyaml_version},)"; prefer project.snakeyaml_version }
+    }
+    jarJar(implementation("com.zaxxer:HikariCP")) {
+        version { strictly "[${project.hikaricp_version},)"; prefer project.hikaricp_version }
+    }
+    jarJar(implementation("org.xerial:sqlite-jdbc")) {
+        version { strictly "[${project.sqlite_version},)"; prefer project.sqlite_version }
+    }
+    // Speech inside the process: whisper.cpp and Piper with their natives.
+    jarJar(implementation("io.github.givimad:whisper-jni")) {
+        version { strictly "[${project.whisper_jni_version},)"; prefer project.whisper_jni_version }
+    }
+    jarJar(implementation("io.github.givimad:piper-jni")) {
+        version { strictly "[${project.piper_jni_version},)"; prefer project.piper_jni_version }
+    }
+
+    // The polyglot API so ScriptBuildPlanner compiles; the engine is not
+    // shipped, and the planner checks for it before use, so freeform builds
+    // use the JSON planner here.
+    compileOnly "org.graalvm.polyglot:polyglot:${project.graaljs_version}"
+    compileOnly "de.maxhenkel.voicechat:voicechat-api:${project.voicechat_api_version}"
+}
+
+// The bundled default config.yml is the plugin's; one file for every adapter.
+def defaultConfig = tasks.register('defaultConfig', Sync) {
+    from('../jarvis-paper/src/main/resources') {
+        include 'config.yml'
+    }
+    into layout.buildDirectory.dir('generated/default-config')
+}
+
+// neoforge.mods.toml with the versions filled in.
+def modMetadata = tasks.register('modMetadata', ProcessResources) {
+    def replacements = [
+            mod_version            : project.mod_version,
+            neo_version_range      : project.neo_version_range,
+            minecraft_version_range: project.minecraft_version_range,
+    ]
+    inputs.properties replacements
+    expand replacements
+    from 'src/main/templates'
+    into layout.buildDirectory.dir('generated/mod-metadata')
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir '../jarvis-core/src/main/java'
+            srcDir '../jarvis-nav/src/main/java'
+            srcDir '../jarvis-vanilla/src/main/java'
+            srcDir '../jarvis-voice/src/main/java'
+        }
+        resources {
+            srcDir '../jarvis-core/src/main/resources'      // libgomp for Linux, see natives/README.md
+            srcDir '../jarvis-vanilla/src/main/resources'
+            srcDir defaultConfig
+            srcDir modMetadata
+        }
+    }
+}
+neoForge.ideSyncTask modMetadata
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = 'UTF-8'
+}
+
+jar {
+    from('../jarvis-vanilla/THIRD-PARTY-LICENSES.md')
+}

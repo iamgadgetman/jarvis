@@ -32,6 +32,11 @@
 | `/jarvis portal where` | Where this side's portal comes out on the other | `jarvis.use` |
 | `/jarvis portals` | Portals he has noted in this world | `jarvis.use` |
 | `/jarvis quiet` | Mute (or unmute) his idle remarks, for you | `jarvis.use` |
+| `/jarvis voice` | Where voice stands: voice chat, the gate, what he last heard, the speech server | `jarvis.use` |
+| `/jarvis voice enable\|disable\|engine <e>\|endpoint <url>\|gate <g>\|speak on\|off\|test` | Set up voice from the console; the bell menu's Admin > Voice setup does the same | `jarvis.admin` |
+| `/jarvis voice bench [threads]`, `/jarvis voice threads <n>` | Time the embedded recogniser at several thread counts and name the fastest; keep a count (0 = automatic) | `jarvis.admin` |
+| `/jarvis ai [status]` | Which AI providers are on, and their models | `jarvis.use` |
+| `/jarvis ai enable\|disable\|key\|endpoint\|model\|models\|test ...` | Set up a provider from the console | `jarvis.admin` |
 | `/jarvis <anything>` | Natural language — Jarvis figures it out | `jarvis.use` |
 
 You can also just **type in chat** (no command needed) — if your message mentions Jarvis or contains a recognized keyword, he'll respond.

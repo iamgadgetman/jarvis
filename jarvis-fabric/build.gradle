@@ -1,0 +1,92 @@
+// The Fabric adapter: jarvis-core on a Fabric server, with the butler as a
+// fake player walked by jarvis-nav. A Gradle Loom project outside the Maven
+// reactor, since Fabric's toolchain is Loom. Core, nav and the loader-neutral
+// server code in jarvis-vanilla compile in from their sources, so nothing
+// has to be installed to a Maven repository first, and core's libraries ride
+// along as nested jars. Only JarvisFabric itself is in this module.
+plugins {
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+base {
+    archivesName = 'jarvis-fabric'
+}
+
+version = project.mod_version
+group = 'com.gadgetman'
+
+repositories {
+    mavenCentral()
+    // Simple Voice Chat's API, compile-time only: the voice plugin is
+    // registered only when the voicechat mod is there to ask for it.
+    maven {
+        name = 'maxhenkel'
+        url = 'https://maven.maxhenkel.de/repository/public'
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // Core's libraries, bundled inside the mod jar.
+    include(implementation("org.json:json:${project.json_version}"))
+    include(implementation("org.yaml:snakeyaml:${project.snakeyaml_version}"))
+    include(implementation("com.zaxxer:HikariCP:${project.hikaricp_version}"))
+    include(implementation("org.xerial:sqlite-jdbc:${project.sqlite_version}"))
+    // Speech inside the process: whisper.cpp and Piper with their natives.
+    include(implementation("io.github.givimad:whisper-jni:${project.whisper_jni_version}"))
+    include(implementation("io.github.givimad:piper-jni:${project.piper_jni_version}"))
+
+    // The polyglot API so ScriptBuildPlanner compiles; the engine is not
+    // shipped, and the planner checks for it before use, so freeform builds
+    // use the JSON planner here.
+    compileOnly "org.graalvm.polyglot:polyglot:${project.graaljs_version}"
+    compileOnly "de.maxhenkel.voicechat:voicechat-api:${project.voicechat_api_version}"
+}
+
+// The bundled default config.yml is the plugin's; one file for both adapters.
+def defaultConfig = tasks.register('defaultConfig', Sync) {
+    from('../jarvis-paper/src/main/resources') {
+        include 'config.yml'
+    }
+    into layout.buildDirectory.dir('generated/default-config')
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir '../jarvis-core/src/main/java'
+            srcDir '../jarvis-nav/src/main/java'
+            srcDir '../jarvis-vanilla/src/main/java'
+            srcDir '../jarvis-voice/src/main/java'
+        }
+        resources {
+            srcDir '../jarvis-core/src/main/resources'      // libgomp for Linux, see natives/README.md
+            srcDir '../jarvis-vanilla/src/main/resources'
+            srcDir defaultConfig
+        }
+    }
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = 'UTF-8'
+    it.options.release = 25
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+    from('../jarvis-vanilla/THIRD-PARTY-LICENSES.md')
+}

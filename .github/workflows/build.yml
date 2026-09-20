@@ -1,0 +1,31 @@
+# Builds both modules and attaches the plugin jar to the run, so a build is
+# available from any branch without a local toolchain. The Minecraft
+# repositories the Paper module needs are reachable from GitHub's runners.
+# JDK 25 because the 26.x server API ships Java 25 class files; the build
+# still emits Java 17 bytecode (see the parent pom).
+name: build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Build
+        run: mvn -B clean package
+      - name: Attach plugin jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-plugin
+          path: jarvis-paper/target/jarvis-paper-*.jar
+          if-no-files-found: error

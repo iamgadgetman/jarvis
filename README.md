@@ -1,10 +1,11 @@
-# Jarvis — AI-Powered Minecraft Butler Plugin
+# Jarvis — an AI butler for Minecraft
 
-Paper / Purpur · Java 17 bytecode · Minecraft 1.21.11 – 26.2 (26.x servers need Java 25)
+Paper / Purpur · Fabric · NeoForge · Minecraft 1.21.11 – 26.3
 
-Jarvis is an AI companion plugin that spawns a Citizens NPC who follows you,
-fights for you, mines for you, builds for you — and understands plain English
-via OpenAI, Claude, Grok, Gemini, or a local Ollama model.
+Jarvis is an AI companion who follows you, fights for you, mines for you,
+builds for you, and understands plain English via OpenAI, Claude, Grok,
+Gemini, or a local Ollama model. On Paper he is a Citizens NPC; on Fabric and
+NeoForge he is a fake player. Same butler, same config, same commands.
 
 ```
 you:     jarvis, dig me a staircase down to diamond level
@@ -40,24 +41,56 @@ Every one of those has a fuller account, with its limits, in
 
 ## Installation
 
-### Requirements
-- Paper / Purpur 1.21+ (or any fork with Bukkit API)
-- Java 17+
-- [Citizens 2 on spigot](https://www.spigotmc.org/resources/citizens.13811/) or [Citizens 2 Jenkins build](https://ci.citizensnpcs.co/job/citizens2/)
-- [WorldEdit](https://enginehub.org/worldedit/) (optional — for schematic pasting)
-- At least one AI API key (or local Ollama)
-- An embedding model for experience memory (optional but recommended):
-  `ollama pull nomic-embed-text` — without it memory still works, but on the
-  weaker keyword-matching path
+One release, three files. Take the one for your server from the
+[latest release](https://github.com/iamgadgetman/jarvis/releases/latest):
 
-### Steps
-1. Download **`Jarvis-<version>.jar`** from the
-   [latest release](https://github.com/iamgadgetman/jarvis/releases/latest)
-   and drop it into your `plugins/` folder
-2. Drop `Citizens.jar` and `WorldEdit.jar` into `plugins/` (if not already present)
-3. Start the server — Jarvis will generate `plugins/Jarvis/config.yml`
-4. Add your AI API key(s) to `config.yml` (see below)
-5. Restart or `/reload confirm`
+| Server | File | Needs |
+|---|---|---|
+| Paper / Purpur 1.21.11 – 26.2 | `jarvis-paper-<version>.jar` | [Citizens 2](https://ci.citizensnpcs.co/job/citizens2/) 2.0.43+ · Java 21 (25 on 26.x) |
+| Fabric, Minecraft 26.3 | `jarvis-fabric-<version>.jar` | Fabric Loader 0.19.5+ · [Fabric API](https://modrinth.com/mod/fabric-api) · Java 25 |
+| NeoForge 26.3.0.x | `jarvis-neoforge-<version>.jar` | Java 25 |
+
+On every platform: an AI provider is optional (every slash command works
+without one; natural language and freeform building need one), and
+[Simple Voice Chat](https://modrinth.com/plugin/simple-voice-chat) is
+optional (for talking to him and hearing him back; the plugin on Paper, the
+mod on Fabric and NeoForge). Nothing else: speech recognition and his voice
+run inside the server, and their models are fetched the first time voice is
+turned on.
+
+### Paper / Purpur
+
+1. Drop `jarvis-paper-<version>.jar` and `Citizens.jar` into `plugins/`.
+   [WorldEdit](https://enginehub.org/worldedit/) too if you want the
+   schematic library.
+2. Start the server. Jarvis writes `plugins/Jarvis/config.yml`.
+3. `/jarvis bell`, ring it, **Admin > AI setup**, and pick a provider. Or set
+   the keys in `config.yml` and `/jarvis reload`.
+
+Optional but recommended for experience memory: `ollama pull nomic-embed-text`
+on your Ollama box. Without it memory still works, on the weaker
+keyword-matching path.
+
+### Fabric
+
+1. Drop `jarvis-fabric-<version>.jar` and Fabric API into `mods/`.
+2. Start the server (or the world). Jarvis writes `config/jarvis/config.yml`.
+3. Same as Paper from there: the bell, **Admin > AI setup**.
+
+### NeoForge
+
+1. Drop `jarvis-neoforge-<version>.jar` into `mods/`.
+2. Start the server (or the world). Jarvis writes `config/jarvis/config.yml`.
+3. Same as Paper from there: the bell, **Admin > AI setup**.
+
+What differs on the mods: the butler is a fake player rather than a Citizens
+NPC, admin means operator, there is no WorldEdit and so no schematic
+library, and freeform builds use the JSON planner. Details in
+[jarvis-fabric/README.md](jarvis-fabric/README.md) and
+[jarvis-neoforge/README.md](jarvis-neoforge/README.md). In singleplayer, the
+mod runs on the integrated server: open the world to LAN for voice (Escape >
+Open to LAN, or `/publish` in chat), since
+Simple Voice Chat has no voice server until you do.
 
 ### First run
 
@@ -95,6 +128,7 @@ command.
 | **[Commands](docs/commands.md)** | The full command table, permissions, and natural-language examples |
 | **[Configuration](docs/configuration.md)** | `config.yml` in full, AI providers and API keys, permission nodes |
 | **[Troubleshooting](docs/troubleshooting.md)** | When something misbehaves — plus updating, performance and building from source |
+| **[Voice](docs/voice.md)** | Talking to him and hearing him back: what it needs, what it costs, the gate |
 | **[CHANGELOG](CHANGELOG.md)** | The full history, and why each thing was done that way |
 | **[ROADMAP](ROADMAP.md)** | Decided but not built, with the reasoning kept alongside |
 

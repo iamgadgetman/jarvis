@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "jarvis",
+  "version": "${version}",
+  "name": "Jarvis",
+  "description": "An AI butler: summon him, talk to him, and he mines, farms, builds and guards.",
+  "authors": ["Jarvis Minecraft Plugin Contributors"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.gadgetman.jarvis.fabric.JarvisFabric"],
+    "voicechat": ["com.gadgetman.jarvis.fabric.FabricVoicePlugin"]
+  },
+  "mixins": ["jarvis.mixins.json"],
+  "suggests": {
+    "voicechat": "*"
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "fabric-api": "*",
+    "minecraft": ">=26.3",
+    "java": ">=25"
+  }
+}

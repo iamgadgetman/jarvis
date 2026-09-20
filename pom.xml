@@ -4,15 +4,42 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.gadgetman</groupId>
-    <artifactId>jarvis</artifactId>
-    <version>0.16.0</version>
-    <packaging>jar</packaging>
+    <artifactId>jarvis-parent</artifactId>
+    <version>0.17.0</version>
+    <packaging>pom</packaging>
 
     <name>Jarvis</name>
     <description>Jarvis AI Butler for Minecraft</description>
 
+    <!--
+        Module layout (see docs/dev/platform-interface.md):
+
+          jarvis-core   the brain and the task logic. Declares no server API,
+                        so a stray Bukkit or Minecraft import fails the build.
+          jarvis-paper  the Paper / Purpur plugin. Shades jarvis-core into the
+                        jar it ships, so operators still drop in one file.
+
+        Build everything with `mvn clean package -DskipTests`. The plugin jar
+        lands in jarvis-paper/target/jarvis-paper-<version>.jar.
+    -->
+    <modules>
+        <module>jarvis-core</module>
+        <module>jarvis-nav</module>
+        <module>jarvis-paper</module>
+    </modules>
+
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Bytecode targets Java 17 so the jars run on 1.21.x (Java 21) and
+             26.x (Java 25) servers alike. Build with JDK 25: the 26.x server API
+             the Paper module compiles against ships Java 25 class files. -->
+        <maven.compiler.release>17</maven.compiler.release>
+
+        <junit.version>5.11.3</junit.version>
+        <json.version>20231013</json.version>
+        <hikaricp.version>5.1.0</hikaricp.version>
+        <snakeyaml.version>2.2</snakeyaml.version>
+
         <!-- Server API compiled against by default: Purpur 26.2 (primary target).
              The legacy-check profile swaps in the 1.21.8 API as a floor check. -->
         <server.api.version>26.2.build.2622-stable</server.api.version>
@@ -23,111 +50,45 @@
         <graaljs.version>25.3.4.1</graaljs.version>
         <graaljs.scope>provided</graaljs.scope>
         <voicechat.api.version>2.6.20</voicechat.api.version>
+        <whisper-jni.version>1.7.1</whisper-jni.version>
+        <piper-jni.version>1.4.1</piper-jni.version>
     </properties>
 
-    <repositories>
-        <repository>
-            <id>purpur</id>
-            <url>https://repo.purpurmc.org/snapshots</url>
-        </repository>
-        <repository>
-            <id>citizens</id>
-            <url>https://maven.citizensnpcs.co/repo</url>
-        </repository>
-        <repository>
-            <id>enginehub</id>
-            <url>https://maven.enginehub.org/repo/</url>
-        </repository>
-        <repository>
-            <id>maxhenkel</id>
-            <url>https://maven.maxhenkel.de/repository/public</url>
-        </repository>
-    </repositories>
-
-    <dependencies>
-        <!--
-            Tests. The combat doctrine is a pure function of its situation and
-            was written that way on purpose, so the whole archery decision
-            table can be exercised without a server, a world, or a mock. That
-            is the only thing under test here. Anything needing a live Bukkit
-            registry is verified by deploying it, not by pretending.
-        -->
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>5.11.3</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.purpurmc.purpur</groupId>
-            <artifactId>purpur-api</artifactId>
-            <version>${server.api.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>net.citizensnpcs</groupId>
-            <artifactId>citizensapi</artifactId>
-            <version>2.0.43-SNAPSHOT</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.sk89q.worldedit</groupId>
-            <artifactId>worldedit-bukkit</artifactId>
-            <version>7.3.0</version>
-            <scope>provided</scope>
-        </dependency>
-        <!--
-            Simple Voice Chat. API only, and pinned to the version the servers
-            actually run: the plugin is a soft dependency, so a Jarvis built
-            against a newer API than the installed jar would load fine and then
-            fail at the first call.
-        -->
-        <dependency>
-            <groupId>de.maxhenkel.voicechat</groupId>
-            <artifactId>voicechat-api</artifactId>
-            <version>${voicechat.api.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.graalvm.polyglot</groupId>
-            <artifactId>polyglot</artifactId>
-            <version>${graaljs.version}</version>
-            <scope>${graaljs.scope}</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.graalvm.js</groupId>
-            <artifactId>js-language</artifactId>
-            <version>${graaljs.version}</version>
-            <scope>${graaljs.scope}</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.graalvm.truffle</groupId>
-            <artifactId>truffle-runtime</artifactId>
-            <version>${graaljs.version}</version>
-            <scope>${graaljs.scope}</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.json</groupId>
-            <artifactId>json</artifactId>
-            <version>20231013</version>
-        </dependency>
-        <dependency>
-            <groupId>com.zaxxer</groupId>
-            <artifactId>HikariCP</artifactId>
-            <version>5.1.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.yaml</groupId>
-            <artifactId>snakeyaml</artifactId>
-            <version>2.2</version>
-        </dependency>
-    </dependencies>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.gadgetman</groupId>
+                <artifactId>jarvis-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.json</groupId>
+                <artifactId>json</artifactId>
+                <version>${json.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.zaxxer</groupId>
+                <artifactId>HikariCP</artifactId>
+                <version>${hikaricp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.yaml</groupId>
+                <artifactId>snakeyaml</artifactId>
+                <version>${snakeyaml.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <profiles>
-        <!-- mvn -Pshade-graaljs clean package : bundles GraalJS into the jar
-             instead of resolving it at runtime. Produces a ~60 MB jar. Use this
-             if Paper's library loader cannot reach Maven Central on your host. -->
+        <!-- mvn -Pshade-graaljs clean package : bundles GraalJS into the plugin
+             jar instead of resolving it at runtime. Produces a ~60 MB jar. Use
+             this if Paper's library loader cannot reach Maven Central on your host. -->
         <profile>
             <id>shade-graaljs</id>
             <properties>
@@ -135,7 +96,7 @@
             </properties>
         </profile>
 
-        <!-- mvn -Plegacy-check clean compile : verifies the code also compiles
+        <!-- mvn -Plegacy-check clean compile : verifies the plugin also compiles
              against the oldest supported server API (1.21.x floor). -->
         <profile>
             <id>legacy-check</id>
@@ -146,65 +107,39 @@
     </profiles>
 
     <build>
-        <resources>
-            <!-- plugin.yml takes its version from the pom so the two can
-                 never drift; everything else is copied verbatim. -->
-            <resource>
-                <directory>src/main/resources</directory>
-                <filtering>true</filtering>
-                <includes><include>plugin.yml</include></includes>
-            </resource>
-            <resource>
-                <directory>src/main/resources</directory>
-                <filtering>false</filtering>
-                <excludes><exclude>plugin.yml</exclude></excludes>
-            </resource>
-        </resources>
-        <plugins>
-            <!-- Maven's default surefire predates JUnit 5 and would silently
-                 run no tests at all. Pin one that knows about it. -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.5.2</version>
-            </plugin>
-
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
-                <configuration>
-                    <!-- Bytecode targets Java 17 so the jar runs on 1.21.x (Java 21)
-                         and 26.x (Java 25) servers alike. Build with JDK 25. -->
-                    <release>17</release>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.4.1</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-                <version>3.3.1</version>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.3.0</version>
-                <configuration>
-                    <finalName>jarvis-${project.version}</finalName>
-                </configuration>
-            </plugin>
-        </plugins>
+        <pluginManagement>
+            <plugins>
+                <!-- Maven's default surefire predates JUnit 5 and would silently
+                     run no tests at all. Pin one that knows about it. -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.2</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.11.0</version>
+                    <configuration>
+                        <release>${maven.compiler.release}</release>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>3.4.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>3.3.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>3.3.0</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
     </build>
 </project>

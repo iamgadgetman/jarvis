@@ -79,3 +79,9 @@ databases.yml
 # Temporary files
 *.tmp
 *.temp
+
+# NeoForge servers started by the smoke test
+jarvis-neoforge/run/
+jarvis-neoforge/smoke/
+jarvis-neoforge/server.out
+jarvis-neoforge/installer.out

@@ -1,0 +1,27 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "MIT"
+
+[[mods]]
+modId = "jarvis"
+version = "${mod_version}"
+displayName = "Jarvis"
+authors = "Jarvis Minecraft Plugin Contributors"
+description = '''An AI butler: summon him, talk to him, and he mines, farms, builds and guards.'''
+
+[[mixins]]
+config = "jarvis.mixins.json"
+
+[[dependencies.jarvis]]
+modId = "neoforge"
+type = "required"
+versionRange = "${neo_version_range}"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.jarvis]]
+modId = "minecraft"
+type = "required"
+versionRange = "${minecraft_version_range}"
+ordering = "NONE"
+side = "BOTH"

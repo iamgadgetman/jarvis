@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "com.gadgetman.jarvis.vanilla.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "ConnectionAccessor",
+    "PlayerListMixin",
+    "ServerPlayerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

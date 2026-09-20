@@ -1,0 +1,37 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.gadgetman</groupId>
+        <artifactId>jarvis-parent</artifactId>
+        <version>0.17.0</version>
+    </parent>
+
+    <artifactId>jarvis-nav</artifactId>
+    <packaging>jar</packaging>
+
+    <name>Jarvis Navigation</name>
+    <description>
+        A pathfinder and a path follower for a butler that has no navigator of
+        its own: A* over block positions with walk, step, drop, jump, swim,
+        climb and door moves, and a follower that turns a path into per-tick
+        controls. It reads the world through its own small Terrain interface
+        and depends on nothing but core's value types, so the Fabric spike
+        compiles it from source and a Paper provider could use it too.
+    </description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.gadgetman</groupId>
+            <artifactId>jarvis-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

@@ -44,6 +44,48 @@ not on the classpath. The engine is fetched at start via `libraries:` in
 write usable JavaScript. On an Ollama-only server, use schematics or set
 `build.planner: json`.
 
+**He hears you but takes seconds to answer** — `/jarvis voice` shows
+which stage took the time on the last order. "Hearing" is the recogniser:
+run `/jarvis voice bench`, which times it at several thread counts and
+names the fastest, and set it with `/jarvis voice threads <n>`; a smaller
+model (`tiny.en`, or `base.en-q5_1`) is the next lever. "Understanding"
+is the AI call: switch to a smaller Ollama model or to Claude, or check
+the machine running Ollama is not busy. See
+[voice.md](voice.md#when-he-is-slow-to-answer).
+
+**He hears you but says he could not make it out** — the engine failed
+rather than the clip being silent, and the line says why: usually a
+`voice.engine: server` pointing at a speech server that is no longer there,
+left over from before the engines moved inside the server. `/jarvis voice
+engine embedded` (or the Engine row on the Voice setup page) switches to the
+built-in engines; the models are fetched on first use.
+
+**"libgomp.so.1: cannot open shared object file"** (or another library)
+— the server image is missing a system library whisper needs. The jar
+carries libgomp for Linux and falls back to it on its own; if the error
+still appears the message names the package (`apt install libgomp1`,
+`dnf install libgomp`, `apk add libgomp`). On Alpine (musl) the bundled
+libraries cannot load at all; use a glibc-based image.
+
+**"Speech models could not be fetched"** — the server cannot reach
+huggingface.co. The log line names the three files and their URLs; fetch
+them on any machine and put them in the models folder (`plugins/Jarvis/models/`
+or `config/jarvis/models/`), or set `voice.models-source` to a mirror. See
+[voice.md](voice.md#when-the-server-cannot-reach-huggingfaceco).
+
+**He does not hear you** — run `/jarvis voice`. It reports each link in
+the chain: whether Simple Voice Chat took the plugin, whether the voice server is
+up (a singleplayer world has none until it is opened to LAN), whether
+`voice.enabled` is on in the config, which gate is in force (hold the whisper
+key, or say a wake phrase), when the last packet arrived and whether the gate
+rejected it, the last transcript, and whether the speech engine is ready.
+The first time voice is turned on the engine fetches two model files
+(about 200 MB); until they are here the report says "models downloading"
+and he cannot hear. Voice is off in a fresh config; turn it on from the
+bell menu (Admin, Voice setup) or with `/jarvis voice enable`. Both take
+effect at once. See [voice.md](voice.md). `voice.debug: true` logs every packet and every
+transcript the wake word turned down.
+
 **"Database init error"** — `plugins/Jarvis/` must be writable. Failing that,
 delete `database.db` and restart, and check free disk space.
 
@@ -55,7 +97,7 @@ delete `database.db` and restart, and check free disk space.
 
 1. Back up your config: `cp plugins/Jarvis/config.yml ~/jarvis-config-backup.yml`
 2. Stop the server
-3. Replace the jar: `rm plugins/jarvis-*.jar && cp Jarvis-<new>.jar plugins/`
+3. Replace the jar: `rm plugins/jarvis-*.jar && cp jarvis-paper-<new>.jar plugins/`
 4. Start the server
 
 New config keys are added automatically and your existing settings are kept.
@@ -87,7 +129,7 @@ more natural feel.
 git clone https://github.com/iamgadgetman/jarvis.git
 cd jarvis
 mvn clean package -DskipTests
-# Output: target/jarvis-<version>.jar
+# Output: jarvis-paper/target/jarvis-paper-<version>.jar
 ```
 
-Requires Citizens and WorldEdit JARs on the Maven classpath as configured in `pom.xml`.
+The build is two Maven modules: `jarvis-core` (the platform-free brain) and `jarvis-paper` (the plugin, which shades core in). Citizens and WorldEdit resolve from the repositories configured in `jarvis-paper/pom.xml`.
