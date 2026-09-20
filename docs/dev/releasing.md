@@ -64,6 +64,23 @@ Minecraft version needs no change here as long as the range still says
 what is supported. A version the site does not list yet makes the step
 fail with the list it does have.
 
+## From your own machine, keys never leaving it
+
+The tokens do not have to be GitHub secrets. `.github/scripts/publish-release.sh`
+does the same uploads from a shell where the tokens are exported, for a
+release that already exists on GitHub:
+
+```
+export MODRINTH_TOKEN=...   MODRINTH_ID=...
+export CURSEFORGE_TOKEN=... CURSEFORGE_PLUGIN_ID=... CURSEFORGE_MOD_ID=...
+.github/scripts/publish-release.sh 0.17.0
+```
+
+It fetches the three jars from the release, takes the notes from
+`CHANGELOG.md`, and skips any platform whose variables are not set. Nothing
+is written to disk but the jars, in a temporary folder that is removed
+afterwards. Needs curl and Python 3.
+
 ## The uploader
 
 `.github/scripts/publish.py` does the talking, one file per call, and has
