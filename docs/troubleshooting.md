@@ -60,6 +60,13 @@ left over from before the engines moved inside the server. `/jarvis voice
 engine embedded` (or the Engine row on the Voice setup page) switches to the
 built-in engines; the models are fetched on first use.
 
+**"libgomp.so.1: cannot open shared object file"** (or another library)
+— the server image is missing a system library whisper needs. The jar
+carries libgomp for Linux and falls back to it on its own; if the error
+still appears the message names the package (`apt install libgomp1`,
+`dnf install libgomp`, `apk add libgomp`). On Alpine (musl) the bundled
+libraries cannot load at all; use a glibc-based image.
+
 **"Speech models could not be fetched"** — the server cannot reach
 huggingface.co. The log line names the three files and their URLs; fetch
 them on any machine and put them in the models folder (`plugins/Jarvis/models/`

@@ -116,7 +116,7 @@ public final class EmbeddedSpeech implements Speech {
         synchronized (whisperLock) {
             if (context == null) {
                 try {
-                    WhisperJNI.loadLibrary();
+                    NativeSupport.loadWhisper(log);
                     WhisperJNI.setLibraryLogger(null);
                     whisper = new WhisperJNI();
                     context = whisper.init(models.whisperFile());

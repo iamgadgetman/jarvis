@@ -63,6 +63,7 @@ sourceSets {
             srcDir '../jarvis-voice/src/main/java'
         }
         resources {
+            srcDir '../jarvis-core/src/main/resources'      // libgomp for Linux, see natives/README.md
             srcDir '../jarvis-vanilla/src/main/resources'
             srcDir defaultConfig
         }

@@ -25,6 +25,16 @@ process: there is nothing else to install and nothing to point him at.
 the plugin and its voice server is up, the gate, when the last packet came
 in, the last transcript, and whether the speech engine is ready.
 
+## What the server needs installed
+
+Nothing, on Linux x86_64 and arm64, Windows x86_64 and macOS: the native
+libraries are in the jar. whisper's math library on Linux wants `libgomp`,
+the GNU OpenMP runtime, which slim container images leave out; the jar
+carries a copy and uses it when the system has none. If the log still
+says a library "cannot open shared object file", it names the library and
+the package that provides it. An Alpine (musl) image cannot load these
+libraries at all; use a glibc-based image such as the Ubuntu ones.
+
 ## When the server cannot reach huggingface.co
 
 The models come from huggingface.co. A server with filtered egress logs
