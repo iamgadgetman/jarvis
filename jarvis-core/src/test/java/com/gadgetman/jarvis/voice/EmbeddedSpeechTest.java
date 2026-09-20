@@ -64,4 +64,14 @@ class EmbeddedSpeechTest {
         assertEquals(java.util.List.of(1, 2), EmbeddedSpeech.candidateThreads(1, 0));
         assertEquals(java.util.List.of(6), EmbeddedSpeech.candidateThreads(16, 6));
     }
+
+    @Test
+    @DisplayName("the bench only recommends more threads when they are clearly faster")
+    void verdicts() {
+        assertEquals("Fastest: 4 threads, which is what he uses.", EmbeddedSpeech.verdict(4, 386, 4, 386));
+        assertEquals("Fastest: 8 threads, but only 38 ms ahead of the 4 in use; not worth taking from the game.",
+                EmbeddedSpeech.verdict(8, 348, 4, 386));
+        assertEquals("Fastest: 8 threads; /jarvis voice threads 8 makes it so.", EmbeddedSpeech.verdict(8, 200, 4, 386));
+        assertEquals("Fastest: 2 threads; /jarvis voice threads 2 makes it so.", EmbeddedSpeech.verdict(2, 300, 4, 386));
+    }
 }

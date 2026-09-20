@@ -263,6 +263,7 @@ public final class EmbeddedSpeech implements Speech {
                 models.whisperModel(), samples.length / 16000.0, synthMs, audioContextFor(samples.length), cores, simd()));
         int best = -1;
         long bestMs = Long.MAX_VALUE;
+        long currentMs = -1;
         String heard = null;
         for (int n : candidateThreads(cores, wanted)) {
             Run first = recognise(samples, n);
@@ -273,6 +274,7 @@ public final class EmbeddedSpeech implements Speech {
             }
             out.add(n + " threads: " + VoiceTimings.format(first.ms()) + " then " + VoiceTimings.format(second.ms()));
             long ms = Math.min(first.ms(), second.ms());
+            if (n == threads) currentMs = ms;
             if (ms < bestMs) {
                 bestMs = ms;
                 best = n;
@@ -280,11 +282,24 @@ public final class EmbeddedSpeech implements Speech {
             }
         }
         if (best > 0) {
-            out.add("Fastest: " + best + " threads"
-                    + (best == threads ? ", which is what he uses" : "; /jarvis voice threads " + best + " makes it so")
-                    + ". Heard: \"" + (heard == null ? "" : heard) + "\"");
+            out.add(verdict(best, bestMs, threads, currentMs) + " Heard: \"" + (heard == null ? "" : heard) + "\"");
         }
         return out;
+    }
+
+    /**
+     * What to make of the fastest count. A count above the one in use is
+     * only worth taking when it is clearly faster: the extra threads come
+     * out of the cores the game is running on, and a tenth of a second on a
+     * short order is not worth a stutter.
+     */
+    static String verdict(int best, long bestMs, int current, long currentMs) {
+        if (best == current) return "Fastest: " + best + " threads, which is what he uses.";
+        if (currentMs > 0 && best > current && bestMs > currentMs * 0.8) {
+            return "Fastest: " + best + " threads, but only " + VoiceTimings.format(currentMs - bestMs) + " ahead of the "
+                    + current + " in use; not worth taking from the game.";
+        }
+        return "Fastest: " + best + " threads; /jarvis voice threads " + best + " makes it so.";
     }
 
     /** The vector instructions the bundled whisper build uses, from its own report. */
