@@ -21,6 +21,7 @@ import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
 import de.maxhenkel.voicechat.api.events.VoicechatServerStartedEvent;
 import de.maxhenkel.voicechat.api.opus.OpusDecoder;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -374,6 +375,20 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
     }
 
     @Override
+    public void benchmark(Audience to, int threads) {
+        VoiceHost h = attached;
+        Speech engine = speech;
+        if (h == null || engine == null) {
+            to.message(Colors.YELLOW + "Not attached to a server run yet.");
+            return;
+        }
+        h.platform().scheduler().async(() -> {
+            List<String> lines = engine.benchmark(threads);
+            h.platform().scheduler().sync(() -> lines.forEach(line -> to.message(Colors.GRAY + line)));
+        });
+    }
+
+    @Override
     public void report(Audience to) {
         VoiceSettings st = settings;
         to.message(Colors.GRAY + "Simple Voice Chat: " + Colors.WHITE + "plugin registered"
@@ -401,6 +416,10 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
         String timing = timings.describe();
         if (!timing.isEmpty()) {
             to.message(Colors.GRAY + "Last order took: " + Colors.WHITE + timing);
+            if (timings.transcribeMs() > 1500) {
+                to.message(Colors.YELLOW + "Hearing is slow. " + Colors.GRAY
+                        + "/jarvis voice bench times the recogniser here and finds the thread count this machine likes.");
+            }
         }
         to.message(Colors.GRAY + "Speaking: " + (responder != null
                 ? Colors.GREEN + "ready"

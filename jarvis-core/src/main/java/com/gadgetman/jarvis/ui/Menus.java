@@ -680,6 +680,11 @@ public class Menus {
         m.put(13, item(v.speakReplies() ? Ids.BELL : Ids.GRAY_DYE, Colors.WHITE + "Speak replies " + onOff(v.speakReplies()),
                         Colors.GRAY + "Off keeps his replies in chat"),
                 c -> { if (p.hasPermission("jarvis.admin")) { v.setSpeakReplies(!v.speakReplies()); open(p, voiceSetup(p)); } });
+        if (embedded) {
+            m.put(15, item(Ids.CLOCK, Colors.WHITE + "Time his hearing", Colors.GRAY + "Runs the recogniser here a few times",
+                            Colors.GRAY + "and finds the thread count this machine likes"),
+                    c -> run(p, "voice", "bench"));
+        }
         m.put(16, item(Ids.BOOK, Colors.WHITE + "Status & test", Colors.GRAY + "Every link of the chain, in chat"),
                 c -> run(p, "voice"));
 

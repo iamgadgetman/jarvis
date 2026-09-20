@@ -28,9 +28,9 @@ in, the last transcript, and whether the speech engine is ready.
 ## What it costs
 
 Recognition runs on the server's CPU (in singleplayer, your own machine):
-well under a second for a short order on a modern desktop, using every
-core but two while it works (`voice.whisper-threads` pins the number).
-Loaded, the two engines hold a few hundred megabytes of memory. The native libraries cover Linux x86_64 and arm64,
+well under a second for a short order on a modern desktop, on four threads
+while it works (`voice.whisper-threads` changes that; see below). Loaded,
+the two engines hold a few hundred megabytes of memory. The native libraries cover Linux x86_64 and arm64,
 Windows x86_64 and macOS; they are what makes the mod jar a hundred
 megabytes rather than fifteen.
 
@@ -46,9 +46,17 @@ on the next enable.
 Three things happen after you stop speaking, and `/jarvis voice` reports
 how long each took for the last order:
 
-- **hearing**: transcription. Under a second on a desktop CPU. Slow here
-  means too few cores, or a bigger `voice.whisper-model` than needed;
-  `tiny.en` is the fastest.
+- **hearing**: transcription. Under a second on a desktop CPU. When it is
+  not, `/jarvis voice bench` (or "Time his hearing" on the Voice setup
+  page) has Piper say a sentence and times whisper on it at several thread
+  counts, then names the fastest; `/jarvis voice threads <n>` keeps it.
+  More threads is not faster on a machine that is also running the game:
+  the recogniser's workers spin while they wait for each other, and once
+  they outnumber the free cores the whole pass crawls. The bench line also
+  says which vector instructions the build is using. Beyond threads, a
+  smaller `voice.whisper-model` is the lever: `tiny.en` is the fastest,
+  and `base.en-q5_1` is `base.en` quantised, smaller and usually quicker
+  on a CPU.
 - **understanding**: the AI call, the same one chat uses. This is usually
   the whole wait when there is one: a cloud model answers in one to three
   seconds, a large local model on a busy machine can take ten. A smaller

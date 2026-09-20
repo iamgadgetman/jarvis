@@ -17,6 +17,11 @@ public interface VoiceStatus {
     /** The {@code voice.*} section changed on disk: re-read it, and register if that is what it now asks. */
     default void settingsChanged() { }
 
+    /** Time the recogniser on this machine and tell {@code to} what was found; see {@link Speech#benchmark}. */
+    default void benchmark(Audience to, int threads) {
+        to.message(Colors.YELLOW + "Voice: nothing to benchmark; voice is not available on this server.");
+    }
+
     VoiceStatus NONE = to -> to.message(Colors.YELLOW + "Voice: not available on this server. "
             + Colors.GRAY + "Simple Voice Chat is not installed, or Jarvis could not register with it.");
 }

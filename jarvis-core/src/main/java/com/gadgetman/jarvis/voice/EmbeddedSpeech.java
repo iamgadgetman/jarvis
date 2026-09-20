@@ -10,6 +10,9 @@ import io.github.givimad.whisperjni.WhisperJNI;
 import io.github.givimad.whisperjni.WhisperSamplingStrategy;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.TreeSet;
 
 /**
  * Speech inside the server process: whisper.cpp listens and Piper speaks,
@@ -61,14 +64,27 @@ public final class EmbeddedSpeech implements Speech {
         return models;
     }
 
+    /** What the benchmark says, so the numbers are comparable between machines. */
+    static final String BENCH_SENTENCE = "Jarvis, build a small cottage by the river.";
+
     /**
-     * Threads for whisper when none are configured: nearly all of them.
-     * Recognition is the one thing the server is waiting on while it runs,
-     * and it runs for well under a second at a time; two cores are left for
-     * the tick loop (and, in singleplayer, the renderer).
+     * Threads for whisper when none are configured: four, or half the
+     * logical CPUs when there are fewer than eight. More is not faster on a
+     * machine that is also running the game: ggml's worker threads spin
+     * while they wait for each other, and once they outnumber the cores
+     * that are actually free the whole pass crawls. Four is whisper.cpp's
+     * own default; {@code /jarvis voice bench} measures the alternatives.
      */
     static int autoThreads(int cores) {
-        return Math.max(2, Math.min(8, cores - 2));
+        return Math.max(2, Math.min(4, cores / 2));
+    }
+
+    /** Thread counts worth timing on a machine with {@code cores} CPUs, or the one asked for. */
+    static List<Integer> candidateThreads(int cores, int wanted) {
+        if (wanted > 0) return List.of(wanted);
+        TreeSet<Integer> set = new TreeSet<>(List.of(2, 4, autoThreads(cores), Math.min(8, cores)));
+        set.removeIf(n -> n > Math.max(2, cores));
+        return List.copyOf(set);
     }
 
     /**
@@ -126,8 +142,18 @@ public final class EmbeddedSpeech implements Speech {
             }
         }
         failure = null;
+        // The first pass through a fresh context allocates its working
+        // memory; taking that hit here, on the loading thread, keeps it out
+        // of the first order. It also puts a baseline number in the log.
+        Run warm = recognise(new float[16000 + 1600], threads);
+        if (warm != null) {
+            log.info("Speech: ready; a warm run took " + warm.ms() + " ms on " + threads + " threads");
+        }
         return true;
     }
+
+    /** One recognition: what was heard (null for silence) and how long it took. */
+    record Run(String text, long ms) { }
 
     private boolean ready() {
         if (!models.ready()) {
@@ -145,10 +171,14 @@ public final class EmbeddedSpeech implements Speech {
     public String transcribe(short[] pcm48k) {
         if (pcm48k == null || pcm48k.length == 0 || !ready()) return null;
         // whisper refuses under a second of audio; a short "come" is padded out.
-        float[] samples = Resample.to16k(Resample.padTo(pcm48k, 48000 + 4800));
+        Run run = recognise(Resample.to16k(Resample.padTo(pcm48k, 48000 + 4800)), threads);
+        return run == null ? null : run.text();
+    }
+
+    private Run recognise(float[] samples, int nThreads) {
         WhisperFullParams params = new WhisperFullParams(WhisperSamplingStrategy.GREEDY);
         params.language = "en";
-        params.nThreads = threads;
+        params.nThreads = nThreads;
         params.audioCtx = audioContextFor(samples.length);
         // One pass, one answer. The binding's defaults retry at rising
         // temperatures whenever the decoder is unsure, and each retry is a
@@ -170,12 +200,14 @@ public final class EmbeddedSpeech implements Speech {
         if (hotwords != null && !hotwords.isBlank()) params.initialPrompt = hotwords;
 
         synchronized (whisperLock) {
+            if (context == null) return null;
             try {
                 long started = System.nanoTime();
                 int result = whisper.full(context, params, samples, samples.length);
+                long ms = (System.nanoTime() - started) / 1_000_000;
                 if (debug) {
                     log.info(String.format("Speech: whisper took %d ms for %.1f s of audio (context %d, %d threads)",
-                            (System.nanoTime() - started) / 1_000_000, samples.length / 16000.0, params.audioCtx, threads));
+                            ms, samples.length / 16000.0, params.audioCtx, nThreads));
                 }
                 if (result != 0) {
                     log.warn("Speech: whisper returned " + result);
@@ -187,11 +219,72 @@ public final class EmbeddedSpeech implements Speech {
                     text.append(whisper.fullGetSegmentText(context, i));
                 }
                 String out = text.toString().trim();
-                return out.isEmpty() ? null : out;
+                return new Run(out.isEmpty() ? null : out, ms);
             } catch (Throwable t) {
                 log.warn("Speech transcription error: " + t);
                 return null;
             }
+        }
+    }
+
+    @Override
+    public List<String> benchmark(int wanted) {
+        if (!ready()) {
+            return List.of("The engines are not loaded: " + (failure != null ? failure : "models " + models.status().describe()));
+        }
+        short[] pcm;
+        long synthMs;
+        synchronized (piperLock) {
+            try {
+                long started = System.nanoTime();
+                pcm = Resample.to48k(piper.textToAudio(voice, BENCH_SENTENCE), voiceRate);
+                synthMs = (System.nanoTime() - started) / 1_000_000;
+            } catch (Throwable t) {
+                return List.of("Piper could not make the test sentence: " + t);
+            }
+        }
+        float[] samples = Resample.to16k(Resample.padTo(pcm, 48000 + 4800));
+        int cores = Runtime.getRuntime().availableProcessors();
+        List<String> out = new ArrayList<>();
+        out.add(String.format("whisper %s on %.1f s of Piper speech (made in %d ms), context %d, %d CPUs, %s",
+                models.whisperModel(), samples.length / 16000.0, synthMs, audioContextFor(samples.length), cores, simd()));
+        int best = -1;
+        long bestMs = Long.MAX_VALUE;
+        String heard = null;
+        for (int n : candidateThreads(cores, wanted)) {
+            Run first = recognise(samples, n);
+            Run second = first == null ? null : recognise(samples, n);
+            if (second == null) {
+                out.add(n + " threads: failed");
+                continue;
+            }
+            out.add(n + " threads: " + VoiceTimings.format(first.ms()) + " then " + VoiceTimings.format(second.ms()));
+            long ms = Math.min(first.ms(), second.ms());
+            if (ms < bestMs) {
+                bestMs = ms;
+                best = n;
+                heard = second.text();
+            }
+        }
+        if (best > 0) {
+            out.add("Fastest: " + best + " threads"
+                    + (best == threads ? ", which is what he uses" : "; /jarvis voice threads " + best + " makes it so")
+                    + ". Heard: \"" + (heard == null ? "" : heard) + "\"");
+        }
+        return out;
+    }
+
+    /** The vector instructions the bundled whisper build uses, from its own report. */
+    private String simd() {
+        try {
+            String info = whisper.getSystemInfo();
+            List<String> on = new ArrayList<>();
+            for (String flag : List.of("AVX2", "AVX512", "FMA", "F16C", "NEON", "BLAS")) {
+                if (info.matches("(?s).*\\b" + flag + " = 1.*")) on.add(flag);
+            }
+            return on.isEmpty() ? "no vector instructions in use (a slow build for this CPU)" : "using " + String.join(", ", on);
+        } catch (Throwable t) {
+            return "";
         }
     }
 

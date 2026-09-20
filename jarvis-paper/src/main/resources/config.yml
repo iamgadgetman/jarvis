@@ -423,7 +423,8 @@ voice:
   engine: embedded
   models-dir: models             # Under the data directory
   whisper-model: base.en         # ggml-<name>.bin from whisper.cpp; tiny.en is faster, small.en more accurate
-  whisper-threads: 0             # CPU threads for recognition; 0 = all but two, at most eight
+  whisper-threads: 0             # CPU threads for recognition; 0 = four, or half the CPUs on
+                                 # a small machine. /jarvis voice bench measures the choices.
   piper-voice: en_GB-alan-medium # A voice from the Piper voices repository
 
   # Matched loosely, and that is deliberate. Speech recognition mangles

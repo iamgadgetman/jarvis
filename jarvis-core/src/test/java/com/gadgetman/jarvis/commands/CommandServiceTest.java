@@ -68,8 +68,34 @@ class CommandServiceTest {
         run(p, "voice", "engine", "cloud");
         assertTrue(p.wasTold("embedded or server"));
 
+        run(p, "voice", "threads", "4");
+        assertEquals(4, f.platform.config().getInt("voice.whisper-threads", 0));
+        run(p, "voice", "threads", "lots");
+        assertTrue(p.wasTold("Usage: /jarvis voice threads"));
+        run(p, "voice", "threads", "99");
+        assertTrue(p.wasTold("0 for automatic"));
+
         var tab = f.core.commands().jarvis(p, Optional.of(p), List.of("voice", "en"), true);
         assertEquals(List.of("enable", "engine", "endpoint"), tab);
+    }
+
+    @Test
+    @DisplayName("/jarvis voice bench goes to the plugin, and says so when there is none")
+    void voiceBench() {
+        p.op = true;
+        run(p, "voice", "bench");
+        assertTrue(p.wasTold("nothing to benchmark"), String.join("\n", p.plainMessages()));
+
+        f.core.setVoiceStatus(new com.gadgetman.jarvis.voice.VoiceStatus() {
+            @Override public void report(com.gadgetman.jarvis.core.platform.Audience to) { }
+            @Override public void benchmark(com.gadgetman.jarvis.core.platform.Audience to, int threads) {
+                to.message("timed on " + threads + " threads");
+            }
+        });
+        run(p, "voice", "bench", "4");
+        assertTrue(p.wasTold("timed on 4 threads"));
+        run(p, "voice", "bench", "many");
+        assertTrue(p.wasTold("Usage: /jarvis voice bench"));
     }
 
     @Test

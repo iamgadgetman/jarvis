@@ -45,9 +45,12 @@ write usable JavaScript. On an Ollama-only server, use schematics or set
 `build.planner: json`.
 
 **He hears you but takes seconds to answer** — `/jarvis voice` shows
-which stage took the time on the last order. Almost always it is
-"understanding", the AI call: switch to a smaller Ollama model or to
-Claude, or check the machine running Ollama is not busy. See
+which stage took the time on the last order. "Hearing" is the recogniser:
+run `/jarvis voice bench`, which times it at several thread counts and
+names the fastest, and set it with `/jarvis voice threads <n>`; a smaller
+model (`tiny.en`, or `base.en-q5_1`) is the next lever. "Understanding"
+is the AI call: switch to a smaller Ollama model or to Claude, or check
+the machine running Ollama is not busy. See
 [voice.md](voice.md#when-he-is-slow-to-answer).
 
 **He does not hear you** — run `/jarvis voice`. It reports each link in

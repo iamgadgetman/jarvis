@@ -100,6 +100,7 @@ public class CommandService implements CommandSink {
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("gate") ? VoiceConfig.GATES
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("speak") ? List.of("on", "off")
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("engine") ? VoiceConfig.ENGINES
+                        : args.size() == 3 && (args.get(1).equalsIgnoreCase("threads") || args.get(1).equalsIgnoreCase("bench")) ? List.of("0", "2", "4", "8")
                         : List.of();
             } else {
                 return List.of();
@@ -721,9 +722,11 @@ public class CommandService implements CommandSink {
     }
 
     private static final List<String> VOICE_SUBCOMMANDS = List.of(
-            "status", "enable", "disable", "engine", "endpoint", "gate", "speak", "test");
+            "status", "enable", "disable", "engine", "endpoint", "gate", "speak", "threads", "bench", "test");
 
-    /** {@code /jarvis voice enable|disable|endpoint <url>|gate <g>|speak on|off|test}, for the console. */
+    private static final String VOICE_USAGE = "Usage: /jarvis voice [status|enable|disable|engine <e>|endpoint <url>|gate <g>|speak on|off|threads <n>|bench [n]|test]";
+
+    /** {@code /jarvis voice enable|disable|endpoint <url>|gate <g>|speak on|off|threads <n>|bench|test}, for the console. */
     private void handleVoiceSetup(Audience sender, List<String> args) {
         VoiceConfig v = core.voiceConfig();
         String what = args.get(1).toLowerCase(Locale.ROOT);
@@ -761,11 +764,35 @@ public class CommandService implements CommandSink {
                 v.setSpeakReplies(on);
                 sender.message(Colors.GREEN + "Jarvis: I shall " + (on ? "speak my replies" : "keep my replies to chat") + ", sir.");
             }
+            case "threads" -> {
+                Integer n = args.size() > 2 ? parseCount(args.get(2)) : null;
+                if (n == null) { sender.message(Colors.RED + "Usage: /jarvis voice threads <n>  (0 = automatic)"); return; }
+                String why = v.setThreads(n);
+                sender.message(why != null ? Colors.RED + "Jarvis: " + why + ", sir."
+                        : Colors.GREEN + "Jarvis: The recogniser will use " + Colors.WHITE
+                        + (n == 0 ? "the automatic thread count" : n + " thread" + (n == 1 ? "" : "s")) + Colors.GREEN + ", sir.");
+            }
+            case "bench" -> {
+                Integer n = args.size() > 2 ? parseCount(args.get(2)) : Integer.valueOf(0);
+                if (n == null) { sender.message(Colors.RED + "Usage: /jarvis voice bench [threads]"); return; }
+                sender.message(Colors.GOLD + "Jarvis: Timing the recogniser, sir; a few seconds.");
+                core.voiceStatus().benchmark(sender, n);
+            }
             case "test" -> {
                 sender.message(Colors.GOLD + "Jarvis: Voice, sir:");
                 core.voiceStatus().report(sender);
             }
-            default -> sender.message(Colors.RED + "Usage: /jarvis voice [status|enable|disable|engine <e>|endpoint <url>|gate <g>|speak on|off|test]");
+            default -> sender.message(Colors.RED + VOICE_USAGE);
+        }
+    }
+
+    /** A small non-negative count, or null when it is not one. */
+    private static Integer parseCount(String s) {
+        try {
+            int n = Integer.parseInt(s.trim());
+            return n < 0 ? null : n;
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

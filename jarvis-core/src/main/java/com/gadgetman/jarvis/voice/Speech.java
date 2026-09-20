@@ -1,5 +1,7 @@
 package com.gadgetman.jarvis.voice;
 
+import java.util.List;
+
 /**
  * Turning audio into text and text into audio: Jarvis's ears and mouth,
  * whichever engine is doing the work. Audio is 48 kHz mono 16-bit PCM on
@@ -23,6 +25,15 @@ public interface Speech {
 
     /** Get ready ahead of the first order: fetch models, load them. Never blocks. */
     default void warmUp() { }
+
+    /**
+     * Time recognition on this machine and say what was found, one line per
+     * finding. Blocks for a few seconds. {@code threads} tries that count
+     * alone; zero tries several and names the fastest.
+     */
+    default List<String> benchmark(int threads) {
+        return List.of("There is nothing to time in this engine; the work happens on the speech server.");
+    }
 
     default void close() { }
 }

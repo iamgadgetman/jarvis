@@ -46,11 +46,22 @@ class EmbeddedSpeechTest {
     }
 
     @Test
-    @DisplayName("whisper leaves two cores to the server and never takes more than eight")
+    @DisplayName("whisper takes four threads, or half the CPUs on a small machine")
     void threads() {
         assertEquals(2, EmbeddedSpeech.autoThreads(2));
         assertEquals(2, EmbeddedSpeech.autoThreads(4));
-        assertEquals(6, EmbeddedSpeech.autoThreads(8));
-        assertEquals(8, EmbeddedSpeech.autoThreads(16));
+        assertEquals(3, EmbeddedSpeech.autoThreads(6));
+        assertEquals(4, EmbeddedSpeech.autoThreads(8));
+        assertEquals(4, EmbeddedSpeech.autoThreads(16));
+    }
+
+    @Test
+    @DisplayName("the benchmark tries the counts worth trying, or the one asked for")
+    void benchmarkCandidates() {
+        assertEquals(java.util.List.of(2, 4, 8), EmbeddedSpeech.candidateThreads(16, 0));
+        assertEquals(java.util.List.of(2, 3, 4, 6), EmbeddedSpeech.candidateThreads(6, 0));
+        assertEquals(java.util.List.of(2, 4), EmbeddedSpeech.candidateThreads(4, 0));
+        assertEquals(java.util.List.of(1, 2), EmbeddedSpeech.candidateThreads(1, 0));
+        assertEquals(java.util.List.of(6), EmbeddedSpeech.candidateThreads(16, 6));
     }
 }

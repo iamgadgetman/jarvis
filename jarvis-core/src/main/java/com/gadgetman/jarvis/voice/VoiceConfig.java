@@ -46,6 +46,16 @@ public final class VoiceConfig {
         write("voice.enabled", on);
     }
 
+    /** CPU threads for the embedded recogniser; 0 leaves it to the engine. */
+    public int threads() { return cfg.getInt("voice.whisper-threads", 0); }
+
+    /** @return null when accepted, otherwise why not */
+    public String setThreads(int n) {
+        if (n < 0 || n > 64) return "Threads is 0 for automatic, or 1 to 64";
+        write("voice.whisper-threads", n);
+        return null;
+    }
+
     /** @return null when accepted, otherwise why not */
     public String setEndpoint(String url) {
         String u = url == null ? "" : url.trim();
