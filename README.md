@@ -88,7 +88,8 @@ NPC, admin means operator, there is no WorldEdit and so no schematic
 library, and freeform builds use the JSON planner. Details in
 [jarvis-fabric/README.md](jarvis-fabric/README.md) and
 [jarvis-neoforge/README.md](jarvis-neoforge/README.md). In singleplayer, the
-mod runs on the integrated server: open the world to LAN for voice, since
+mod runs on the integrated server: open the world to LAN for voice (Escape >
+Open to LAN, or `/publish` in chat), since
 Simple Voice Chat has no voice server until you do.
 
 ### First run

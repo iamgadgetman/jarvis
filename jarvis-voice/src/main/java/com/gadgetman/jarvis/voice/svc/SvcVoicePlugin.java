@@ -416,7 +416,8 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
         to.message(Colors.GRAY + "Voice server: " + (serverApi != null
                 ? Colors.GREEN + "up" + Colors.GRAY + " (audible " + serverApi.getVoiceChatDistance() + " blocks)"
                 : Colors.RED + "not started" + Colors.GRAY
-                        + ". A singleplayer world has none until it is opened to LAN; on a server, check the voicechat port."));
+                        + ". A singleplayer world has none until it is opened to LAN: Escape > Open to LAN, or type "
+                        + Colors.WHITE + "/publish" + Colors.GRAY + " (cheats must be allowed in the world). On a server, check the voicechat port."));
         if (st == null) {
             to.message(Colors.YELLOW + "Not attached to a server run yet.");
             return;

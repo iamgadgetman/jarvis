@@ -131,6 +131,9 @@ that server should use.
 
 ## Singleplayer
 
-A singleplayer world has no voice server until you open it to LAN
-(Escape, Open to LAN); Simple Voice Chat starts one then. A dedicated server
+A singleplayer world has no voice server until you open it to LAN;
+Simple Voice Chat starts one then. Escape, Open to LAN does it; so does
+the vanilla `/publish` command typed in chat, which is the same thing
+without the screen (it needs cheats allowed in that world). Each time
+the world is opened it has to be done again. A dedicated server
 always has one.
