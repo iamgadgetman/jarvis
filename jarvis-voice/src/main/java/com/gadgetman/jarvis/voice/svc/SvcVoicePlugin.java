@@ -347,22 +347,18 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
                 if (settings.echoTranscript()) {
                     owner.message(Colors.DARK_GRAY + "You (voice): " + Colors.GRAY + order);
                 }
-                IntentPipeline.Responder sink = responder != null ? responder : IntentPipeline.CHAT_RESPONDER;
-                if (settings.debug()) {
-                    sink = timings.timing(new IntentPipeline.Responder() {
-                        private final IntentPipeline.Responder inner = responder != null ? responder : IntentPipeline.CHAT_RESPONDER;
-                        @Override public void speak(Owner player, String jarvisLine) {
-                            log.info("Voice debug: understood in " + VoiceTimings.format(timings.intentMs()));
-                            inner.speak(player, jarvisLine);
-                        }
-                        @Override public void feedback(Owner player, String line) {
-                            log.info("Voice debug: understood in " + VoiceTimings.format(timings.intentMs()));
-                            inner.feedback(player, line);
-                        }
-                    });
-                } else {
-                    sink = timings.timing(sink);
-                }
+                IntentPipeline.Responder base = responder != null ? responder : IntentPipeline.CHAT_RESPONDER;
+                IntentPipeline.Responder sink = timings.timing(settings.debug() ? new IntentPipeline.Responder() {
+                    // The timing wrapper outside has already stamped the stage by the time these run.
+                    @Override public void speak(Owner player, String jarvisLine) {
+                        log.info("Voice debug: understood in " + VoiceTimings.format(timings.intentMs()));
+                        base.speak(player, jarvisLine);
+                    }
+                    @Override public void feedback(Owner player, String line) {
+                        log.info("Voice debug: understood in " + VoiceTimings.format(timings.intentMs()));
+                        base.feedback(player, line);
+                    }
+                } : base);
                 h.core().intents().submit(owner, order.toLowerCase(java.util.Locale.ROOT),
                         IntentPipeline.Source.VOICE, sink);
             });
