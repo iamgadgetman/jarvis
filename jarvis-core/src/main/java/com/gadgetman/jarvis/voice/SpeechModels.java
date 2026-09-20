@@ -42,6 +42,8 @@ public final class SpeechModels {
     private record Item(String label, String url, Path target) { }
 
     private static final long MIN_MODEL_BYTES = 1L << 20;
+    /** Where both repositories live; a mirror that keeps the same paths can stand in. */
+    public static final String DEFAULT_SOURCE = "https://huggingface.co";
 
     private final Log log;
     private final String whisperModel;
@@ -60,22 +62,29 @@ public final class SpeechModels {
      * @param piperVoice   a Piper voice id such as {@code en_GB-alan-medium}
      */
     public SpeechModels(Path dir, String whisperModel, String piperVoice, Log log) {
+        this(dir, whisperModel, piperVoice, DEFAULT_SOURCE, log);
+    }
+
+    /** @param source the host both repositories are fetched from; {@link #DEFAULT_SOURCE} or a mirror with the same paths */
+    public SpeechModels(Path dir, String whisperModel, String piperVoice, String source, Log log) {
         this.log = log;
         this.whisperModel = whisperModel;
         this.piperVoice = piperVoice;
         this.whisperFile = dir.resolve("ggml-" + whisperModel + ".bin");
         this.voiceFile = dir.resolve(piperVoice + ".onnx");
         this.voiceConfigFile = dir.resolve(piperVoice + ".onnx.json");
+        String base = source == null || source.isBlank() ? DEFAULT_SOURCE : source.trim();
+        while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
         String voicePath = piperVoicePath(piperVoice);
         this.items = List.of(
                 new Item("whisper " + whisperModel,
-                        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-" + whisperModel + ".bin",
+                        base + "/ggerganov/whisper.cpp/resolve/main/ggml-" + whisperModel + ".bin",
                         whisperFile),
                 new Item("voice " + piperVoice,
-                        "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/" + voicePath + "/" + piperVoice + ".onnx",
+                        base + "/rhasspy/piper-voices/resolve/v1.0.0/" + voicePath + "/" + piperVoice + ".onnx",
                         voiceFile),
                 new Item("voice config " + piperVoice,
-                        "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/" + voicePath + "/" + piperVoice + ".onnx.json",
+                        base + "/rhasspy/piper-voices/resolve/v1.0.0/" + voicePath + "/" + piperVoice + ".onnx.json",
                         voiceConfigFile));
         this.status = ready() ? new Status(State.READY, 100, null) : new Status(State.MISSING, 0, null);
     }
@@ -92,6 +101,21 @@ public final class SpeechModels {
         String name = String.join("-", java.util.Arrays.copyOfRange(parts, 1, parts.length - 1));
         String quality = parts[parts.length - 1];
         return family + "/" + locale + "/" + name + "/" + quality;
+    }
+
+    /** The three URLs, in fetch order, for the log and for tests. */
+    List<String> urls() { return items.stream().map(Item::url).toList(); }
+
+    /**
+     * How to get the files here without this server reaching out: for a
+     * server whose outbound traffic is filtered, or one with no route at all.
+     */
+    public String manualInstructions() {
+        StringBuilder sb = new StringBuilder("Fetch them on any machine and put them in " + whisperFile.getParent() + ":");
+        for (Item item : items) sb.append("\n  ").append(item.target.getFileName()).append("  from  ").append(item.url);
+        sb.append("\nOr point voice.models-source at a mirror that keeps the same paths. A proxy set on the JVM"
+                + " (-Dhttps.proxyHost, -Dhttps.proxyPort) is honoured.");
+        return sb.toString();
     }
 
     public String whisperModel() { return whisperModel; }
@@ -152,7 +176,7 @@ public final class SpeechModels {
         } catch (Exception e) {
             status = new Status(State.FAILED, 0, e.getMessage() == null ? e.toString() : e.getMessage());
             log.warn("Speech models could not be fetched: " + status.detail()
-                    + ". Jarvis will try again the next time voice is turned on.");
+                    + ". Jarvis will try again the next time voice is turned on. " + manualInstructions());
         }
     }
 
@@ -161,7 +185,16 @@ public final class SpeechModels {
         status = new Status(State.DOWNLOADING, 0, item.label);
         HttpRequest req = HttpRequest.newBuilder().uri(URI.create(item.url))
                 .timeout(Duration.ofMinutes(30)).GET().build();
-        HttpResponse<InputStream> res = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
+        HttpResponse<InputStream> res;
+        try {
+            res = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
+        } catch (IOException e) {
+            // "ConnectException" alone says nothing about which host, or why.
+            String why = e.getMessage() == null || e.getMessage().isBlank() ? e.getClass().getSimpleName()
+                    : e.getClass().getSimpleName() + ", " + e.getMessage();
+            throw new IOException("this server cannot reach " + URI.create(item.url).getHost()
+                    + " for " + item.label + " (" + why + ")", e);
+        }
         if (res.statusCode() != 200) {
             throw new IOException("HTTP " + res.statusCode() + " for " + item.url);
         }

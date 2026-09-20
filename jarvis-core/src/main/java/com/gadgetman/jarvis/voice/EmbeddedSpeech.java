@@ -58,7 +58,8 @@ public final class EmbeddedSpeech implements Speech {
         Path dir = dataDir.resolve(cfg.getString("voice.models-dir", "models"));
         this.models = new SpeechModels(dir,
                 cfg.getString("voice.whisper-model", "base.en"),
-                cfg.getString("voice.piper-voice", "en_GB-alan-medium"), log);
+                cfg.getString("voice.piper-voice", "en_GB-alan-medium"),
+                cfg.getString("voice.models-source", SpeechModels.DEFAULT_SOURCE), log);
     }
 
     public SpeechModels models() {

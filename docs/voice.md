@@ -25,6 +25,24 @@ process: there is nothing else to install and nothing to point him at.
 the plugin and its voice server is up, the gate, when the last packet came
 in, the last transcript, and whether the speech engine is ready.
 
+## When the server cannot reach huggingface.co
+
+The models come from huggingface.co. A server with filtered egress logs
+"Speech models could not be fetched: this server cannot reach
+huggingface.co ..." and then names the three files and their URLs. Three
+ways round it:
+
+- **Fetch them elsewhere and drop them in.** `ggml-base.en.bin`,
+  `en_GB-alan-medium.onnx` and `en_GB-alan-medium.onnx.json` (for the default
+  model and voice) go in `plugins/Jarvis/models/` on Paper or
+  `config/jarvis/models/` on the mods. Turn voice off and on, or
+  `/jarvis reload`, and they are found.
+- **A mirror.** `voice.models-source` replaces `https://huggingface.co`;
+  anything that serves the same paths will do, including a directory on an
+  internal web server laid out the same way.
+- **A proxy.** The JVM's `-Dhttps.proxyHost` and `-Dhttps.proxyPort` are
+  honoured.
+
 ## What it costs
 
 Recognition runs on the server's CPU (in singleplayer, your own machine):

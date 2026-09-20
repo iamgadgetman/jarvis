@@ -422,6 +422,11 @@ voice:
   #             (see endpoint, stt-model, tts-model below).
   engine: embedded
   models-dir: models             # Under the data directory
+  # Where the model files are fetched from. A mirror that keeps the same
+  # paths (ggerganov/whisper.cpp/..., rhasspy/piper-voices/...) can stand in
+  # for a server whose outbound traffic is filtered; or fetch the three files
+  # elsewhere and drop them in models-dir (the log names them and their URLs).
+  models-source: "https://huggingface.co"
   whisper-model: base.en         # ggml-<name>.bin from whisper.cpp; tiny.en is faster, small.en more accurate
   whisper-threads: 0             # CPU threads for recognition; 0 = four, or half the CPUs on
                                  # a small machine. /jarvis voice bench measures the choices.

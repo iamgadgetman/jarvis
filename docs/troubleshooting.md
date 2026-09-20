@@ -60,6 +60,12 @@ left over from before the engines moved inside the server. `/jarvis voice
 engine embedded` (or the Engine row on the Voice setup page) switches to the
 built-in engines; the models are fetched on first use.
 
+**"Speech models could not be fetched"** — the server cannot reach
+huggingface.co. The log line names the three files and their URLs; fetch
+them on any machine and put them in the models folder (`plugins/Jarvis/models/`
+or `config/jarvis/models/`), or set `voice.models-source` to a mirror. See
+[voice.md](voice.md#when-the-server-cannot-reach-huggingfaceco).
+
 **He does not hear you** — run `/jarvis voice`. It reports each link in
 the chain: whether Simple Voice Chat took the plugin, whether the voice server is
 up (a singleplayer world has none until it is opened to LAN), whether

@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SpeechModelsTest {
 
@@ -38,5 +39,22 @@ class SpeechModelsTest {
         assertEquals("ggml-base.en.bin", m.whisperFile().getFileName().toString());
         assertEquals("en_GB-alan-medium.onnx", m.voiceFile().getFileName().toString());
         assertEquals("en_GB-alan-medium.onnx.json", m.voiceConfigFile().getFileName().toString());
+        assertEquals(java.util.List.of(
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+                "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx",
+                "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json"),
+                m.urls());
+    }
+
+    @Test
+    @DisplayName("a mirror stands in for huggingface.co with the same paths, and the manual route names every file")
+    void mirrorAndManualRoute(@TempDir Path dir) {
+        SpeechModels m = new SpeechModels(dir.resolve("models"), "tiny.en", "en_US-lessac-high", "http://models.lab:8080/", QUIET);
+        assertEquals("http://models.lab:8080/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin", m.urls().get(0));
+        assertEquals("http://models.lab:8080/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/high/en_US-lessac-high.onnx", m.urls().get(1));
+        String how = m.manualInstructions();
+        assertTrue(how.contains("ggml-tiny.en.bin  from  http://models.lab:8080/"), how);
+        assertTrue(how.contains("en_US-lessac-high.onnx.json"), how);
+        assertTrue(how.contains(dir.resolve("models").toString()), how);
     }
 }
