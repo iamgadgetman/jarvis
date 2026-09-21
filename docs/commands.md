@@ -7,17 +7,47 @@
 | Command | Description | Permission |
 |---|---|---|
 | `/jarvis summon` | Summon your Jarvis NPC | `jarvis.use` |
-| `/jarvis dismiss` | Dismiss your Jarvis NPC | `jarvis.use` |
-| `/jarvis mine [ore]` | Start mining (optional ore type) | `jarvis.use` |
+| `/jarvis dismiss` | Dismiss him; he keeps issued gear, hands back the rest | `jarvis.use` |
+| `/jarvis return` | Recall him to your side | `jarvis.use` |
+| `/jarvis follow` | Follow you and carry loot | `jarvis.use` |
 | `/jarvis stop` | Stop current NPC task | `jarvis.use` |
-| `/jarvis follow` | Return NPC to your side | `jarvis.use` |
-| `/jarvis attack` | Attack nearby mobs | `jarvis.use` |
+| `/jarvis version` | What is actually running | `jarvis.use` |
+| `/jarvis help` | The full list, in game | `jarvis.use` |
+| `/jarvis mine [ore]` | Start mining (optional ore type) | `jarvis.use` |
+| `/jarvis mine here` | Dig a complete torch-lit branch mine | `jarvis.use` |
+| `/jarvis dig ...` | Sink a shaft | `jarvis.use` |
+| `/jarvis tunnel [n\|s\|e\|w] [length]` | Drive a 3×3 passage (Peerless rank) | `jarvis.use` |
+| `/jarvis guard [passive\|defensive\|aggressive]` | Bodyguard mode | `jarvis.use` |
+| `/jarvis attack` | Weapons free | `jarvis.use` |
+| `/jarvis watch` | Night watch: hold this position | `jarvis.use` |
+| `/jarvis patrol add\|start\|clear` | Guard a waypoint circuit | `jarvis.use` |
+| `/jarvis farm [crop]` | Harvest and replant the field once | `jarvis.use` |
+| `/jarvis tend [crop]` | Stay on as a farmhand | `jarvis.use` |
+| `/jarvis chop [n]` | Fell trees, replant saplings | `jarvis.use` |
+| `/jarvis fish` | A spot of fishing | `jarvis.use` |
+| `/jarvis light [radius] [type] [spacing]` | Spawn-proof an area | `jarvis.use` |
+| `/jarvis dance` | The performance | `jarvis.use` |
+| `/jarvis chest` | Register the chest you are looking at | `jarvis.use` |
+| `/jarvis deposit` | Deliver his cargo to that chest | `jarvis.use` |
 | `/jarvis loot` | Open NPC inventory | `jarvis.use` |
 | `/jarvis clearloot` | Clear NPC inventory | `jarvis.use` |
+| `/jarvis home set`, `/jarvis home` | Save a home point; be escorted back | `jarvis.use` |
+| `/jarvis recover` | Retrieve your death drops | `jarvis.use` |
+| `/jarvis bell` | Get the controller bell | `jarvis.use` |
+| `/jarvis report` | Server status briefing | `jarvis.use` |
+| `/jarvis duties`, `/jarvis duty add <min> <msg>` | Standing scheduled duties | `jarvis.use` |
+| `/jarvis rank` | Service record and what he has earned | `jarvis.use` |
+| `/jarvis queue <order>`, `/jarvis queue list\|clear` | Line up an order for when he is free | `jarvis.use` |
+| `/jarvis ask <question>` | Ask him anything | `jarvis.use` |
 | `/jarvis heal` | Heal yourself | `jarvis.use` |
 | `/jarvis feed` | Feed yourself | `jarvis.use` |
+| `/jarvis schematic list\|paste\|save\|rotate\|scan` | The schematic library (Paper, WorldEdit) | `jarvis.use` |
+| `/jarvis schematic litematic\|convert\|convertall` | Litematica files, converted to `.schem` | `jarvis.use` |
 | `/jarvis time <day\|night>` | Set time | `jarvis.admin` |
 | `/jarvis weather <clear\|rain\|storm>` | Set weather | `jarvis.admin` |
+| `/jarvis reload` | Re-read config.yml | `jarvis.admin` |
+| `/jarvis debug` | Provider, model, memory and subsystem status | `jarvis.admin` |
+| `/jarvis export-dataset` | Dump intent and build pairs as JSONL | `jarvis.admin` |
 | `/jarvis build <description>` | Build it — pastes a matching schematic, or has the AI design one | `jarvis.use` |
 | `/jarvis build undo` | Revert the last build | `jarvis.use` |
 | `/jarvis build cancel` | Stop the build in progress | `jarvis.use` |
@@ -38,6 +68,10 @@
 | `/jarvis ai [status]` | Which AI providers are on, and their models | `jarvis.use` |
 | `/jarvis ai enable\|disable\|key\|endpoint\|model\|models\|test ...` | Set up a provider from the console | `jarvis.admin` |
 | `/jarvis <anything>` | Natural language — Jarvis figures it out | `jarvis.use` |
+
+On Fabric and NeoForge there are no permission nodes: `jarvis.admin` means
+server operator, and everything else is open to all players. The full wiki
+page is [Commands & Permissions](https://github.com/iamgadgetman/jarvis/wiki/Commands-and-Permissions).
 
 You can also just **type in chat** (no command needed) — if your message mentions Jarvis or contains a recognized keyword, he'll respond.
 
