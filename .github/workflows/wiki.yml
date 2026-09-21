@@ -1,0 +1,58 @@
+# Publishes wiki/ to the GitHub wiki.
+#
+# The wiki is a second git repository (jarvis.wiki.git) with no pull
+# requests, no CI and no review. Keeping the pages here instead means they
+# are versioned with the code that they describe, changed in the same
+# commit as the behaviour they document, and reviewable; this job copies
+# them over whenever they change. Edit wiki/, never the wiki itself: an
+# edit made on the wiki is overwritten by the next run.
+name: wiki
+
+on:
+  push:
+    branches: [main]
+    paths: ['wiki/**', '.github/workflows/wiki.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy wiki/ over the wiki and push what changed
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone --quiet \
+            "https://x-access-token:$TOKEN@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki-repo
+
+          # Everything but .git is replaced, so a page deleted from wiki/
+          # goes from the wiki too.
+          find wiki-repo -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          # README.md explains the folder to a repository reader; it is not
+          # a wiki page.
+          for f in wiki/*.md; do
+            [ "$(basename "$f")" = "README.md" ] && continue
+            cp "$f" wiki-repo/
+          done
+
+          cd wiki-repo
+          if git diff --quiet && git diff --staged --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "The wiki already matches wiki/; nothing to push."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Publish wiki from ${GITHUB_SHA::7}"
+          git push origin master
+          echo "Pushed. https://github.com/${GITHUB_REPOSITORY}/wiki"
