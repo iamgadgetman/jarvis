@@ -84,20 +84,26 @@ ollama pull nomic-embed-text     # for experience memory; recommended
 ai:
   ollama:
     endpoint: "http://localhost:11434"
-    model: qwen2.5:7b
-    keep-alive: "5m"
-    timeout-seconds: 60
+    model: mistral
+    keep-alive: "30m"
+    timeout-seconds: 240
 ```
 
-`keep-alive` holds the model in VRAM between requests, which is most of the
-difference between a snappy butler and a thoughtful one.
+Those are the shipped defaults. `keep-alive` holds the model in VRAM between
+requests, which is most of the difference between a snappy butler and a
+thoughtful one: reloading a 7B model costs seconds. The long timeout is for
+build plans, which a local 7B can take minutes to write.
 
 ### Running only Ollama
 
-Fully supported, and Jarvis enters a **reduced mode**: constrained JSON
-parsing that small models handle reliably, schematic-based building instead of
-freeform AI designs on Paper, and risky console actions refused unless
-`ai.reduced-mode.allow-risky-actions` is on.
+Fully supported, and Jarvis enters a **reduced mode**, on every platform:
+constrained JSON parsing that small models handle reliably, and risky console
+actions refused unless `ai.reduced-mode.allow-risky-actions` is on. Build
+requests are answered from the schematic library; freeform designs are
+refused until experience memory holds
+`memory.min-successes-for-reduced-mode-builds` successful builds (20 by
+default), and then only through the `json` planner — the `script` planner
+needs a cloud model.
 
 ---
 
@@ -146,6 +152,8 @@ building.
 
 `/jarvis ai test` sends one small request straight to that provider, past the
 routing, so a failure tells you about the key rather than the fallback chain.
+It needs `jarvis.admin`, as do `/jarvis ai models` and every other setting
+command; plain `/jarvis ai` is open to all.
 
 ---
 

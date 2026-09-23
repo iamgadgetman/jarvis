@@ -17,22 +17,24 @@ the bell menu and the console, and writes from there keep the file's comments.
 |---|---|
 | `ai` | Providers, keys, models, tiered routing, timeouts — see [AI Providers](AI-Providers) |
 | `memory` | Experience memory and the embedding model |
-| `schematics` | The library folder and matching, Paper only |
+| `schematics` | How build requests are matched against the library |
 | `self-explain` | What he says when a task fails |
-| `mining` | Ore priority, vein mining, hazards, branch-mine layout |
-| `combat` | Stances, leash range, callouts |
-| `build` | Freeform building limits and undo |
+| `mining` | Search radius, block breaking, branch-mine, shaft and tunnel layout — see [Mining System](Mining-System) |
+| `build` | The planner (`script` or `json`), its limits, and undo — see [Building System](Building-System) |
 | `progression` | The service ladder — see [Progression](Progression) |
-| `ui` | The bell, menus, chat formatting |
+| `ui` | The task bar and the order queue (`task-bar`, `task-queue`) |
 | `voice` | Listening and speaking — see [Voice](Voice) |
 | `natural-language` | Chat parsing, prefix, cooldown |
 | `databases` | Which database file to use |
-| `features` | Feature switches for whole subsystems |
-| `performance` | Caching, tick budgets |
-| `defender` | Threat response |
-| `steward` | Briefings and standing duties |
+| `defender` | Combat: engage radius, leash range, damage, callouts, archery |
+| `steward` | Briefings, supply handoff, charm, idle remarks, death-drop recovery |
 | `portals` | Portal sighting and memory |
 | `farming`, `lighting` | Groundskeeping tuning |
+
+The shipped file also carries `combat`, `features`, `performance`,
+`config-copies`, `dev`, and a second `ui` block of colours and a message
+prefix. Nothing in 0.17.0 reads them; changing them does nothing. Combat
+tuning is under `defender`.
 
 ---
 
@@ -46,16 +48,6 @@ natural-language:
   prefix: "jarvis"
   require-prefix: false     # true on a 50+ player server
   cooldown-ms: 2000
-```
-
-**Features.** Whole subsystems, off in one line:
-
-```yaml
-features:
-  npc-system: true
-  building-system: true
-  schematic-system: true
-  voice-commands: false
 ```
 
 **Reduced mode.** On an Ollama-only server, risky console and permission
@@ -91,8 +83,9 @@ Three ways, and they agree:
 3. **The file.** Edit, then `/jarvis reload`.
 
 A value changed from the menu or the console is written into the existing
-text, so your comments and layout survive. New keys added by an upgrade appear
-with their own comments; your settings are kept.
+text, so your comments and layout survive. New keys added by an upgrade are
+**not** written into your file: they take their defaults silently, and your
+settings are kept. To change one, copy it in from the shipped `config.yml`.
 
 ---
 
@@ -102,7 +95,11 @@ with their own comments; your settings are kept.
 |---|---|
 | `config.yml` | Everything above |
 | `databases.yml` | Which database to use; rarely edited |
-| `jarvis.db` | Service records, memory, duties, requests |
+| `database.db` | SQLite: service records, experience memory, build and chat history |
+| `duties.yml` | Standing duties |
 | `data.yml` | Homes, deposit chests, portal sightings, patrol routes |
+| `bells.txt` | Placed controller bells (Fabric and NeoForge only) |
 | `models/` | Speech models, once voice has been turned on |
-| `schematics/` | The library, Paper only |
+| `schematics/` | The schematic library, on every platform |
+
+Player item requests are held in memory only and are lost on a restart.

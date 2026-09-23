@@ -195,6 +195,35 @@ def modrinth(args):
 CURSEFORGE_DEP_KINDS = ("requiredDependency", "optionalDependency", "embeddedLibrary", "incompatible", "tool")
 
 
+def curseforge_version_ids(host, types, versions, spec, extras):
+    """Pick CurseForge game-version ids for a range and some extra tags.
+
+    The list mixes every kind of version: '1.21.11' appears once per type
+    (Minecraft, Bukkit, Addons), and other games' numbers such as '2.0.0.65'
+    sit between 1.21.11 and 26.2 when compared as numbers. So the range is
+    matched only against the site's game versions — type 'bukkit' on
+    dev.bukkit.org, the 'minecraft-*' types on minecraft.curseforge.com —
+    and the extras (Fabric, Java 25, Server) against everything else.
+    """
+    slug = {t["id"]: t.get("slug") or "" for t in types}
+
+    def is_game(v):
+        s = slug.get(v["gameVersionTypeID"], "")
+        return s == "bukkit" if host == "dev.bukkit.org" else s.startswith("minecraft-")
+
+    game, other = {}, {}
+    for v in versions:
+        (game if is_game(v) else other).setdefault(v["name"], v["id"])
+    chosen = select_versions([n for n in game if parse_version(n)], spec)
+    ids = [game[n] for n in chosen]
+    for extra in extras:
+        if extra not in other:
+            near = [n for n in other if extra.split()[0].lower() in n.lower()]
+            raise SystemExit(f"{host} has no game version named '{extra}'; nearest: {', '.join(near[:20])}")
+        ids.append(other[extra])
+    return chosen, ids
+
+
 def curseforge(args):
     token = os.environ.get("CURSEFORGE_TOKEN", "")
     if not token and not args.dry_run:
@@ -206,17 +235,9 @@ def curseforge(args):
     if args.dry_run:
         ids = [f"<id of {args.game_versions}>"] + [f"<id of {x}>" for x in args.extra or []]
     else:
+        _, types = request("GET", f"{base}/game/version-types", headers)
         _, versions = request("GET", f"{base}/game/versions", headers)
-        by_name = {}
-        for v in versions:
-            by_name.setdefault(v["name"], v["id"])
-        chosen = select_versions([n for n in by_name if parse_version(n)], args.game_versions)
-        ids = [by_name[n] for n in chosen]
-        for extra in args.extra or []:
-            if extra not in by_name:
-                near = [n for n in by_name if extra.split()[0].lower() in n.lower()]
-                raise SystemExit(f"{args.host} has no game version named '{extra}'; nearest: {', '.join(near[:20])}")
-            ids.append(by_name[extra])
+        chosen, ids = curseforge_version_ids(args.host, types, versions, args.game_versions, args.extra or [])
         print(f"{args.host}: game versions {chosen} + {args.extra or []}")
 
     metadata = {

@@ -7,9 +7,12 @@ and which provider is being used. `/jarvis voice` does the same for voice.
 
 ## It will not load
 
-**"Citizens not found"** (Paper) — Citizens is a hard dependency. Install it
-from [ci.citizensnpcs.co](https://ci.citizensnpcs.co/job/citizens2/) and
-restart. Citizens supports the latest patch of each Minecraft line, so "1.21"
+**Jarvis does not load, and the console mentions a missing dependency**
+(Paper) — Citizens is a hard dependency, declared in `plugin.yml`, so the
+server itself refuses to load Jarvis without it and says so in its own words
+("Unknown/missing dependency plugins: [Citizens]" or similar); no message
+comes from Jarvis. Install Citizens from
+[ci.citizensnpcs.co](https://ci.citizensnpcs.co/job/citizens2/) and restart. Citizens supports the latest patch of each Minecraft line, so "1.21"
 support means 1.21.11; older 1.21.x servers should update.
 
 **"Unsupported class file major version" or the jar is ignored** — a Java
@@ -32,9 +35,9 @@ whether any is on cooldown after failing.
 
 - **No provider configured** — bell menu, **Admin → AI setup**, or
   `/jarvis ai key <provider> <key>`.
-- **A key that does not work** — `/jarvis ai test <provider>` sends one small
-  request straight to it, past the routing, so the error is about the key
-  rather than the fallback chain.
+- **A key that does not work** — `/jarvis ai test <provider>` (needs
+  `jarvis.admin`) sends one small request straight to it, past the routing,
+  so the error is about the key rather than the fallback chain.
 - **Ollama unreachable** — `/jarvis ai endpoint ollama http://your-box:11434`,
   and check the port is open from the game server. A failed provider goes on
   an exponential cooldown up to five minutes.
@@ -50,7 +53,10 @@ whether any is on cooldown after failing.
   struggle, so try a cloud provider for building.
 - **Something is missing from the build** — `/jarvis build undo` reverts it.
   Unknown block ids are dropped and named in one warning line in the log.
-- **No schematic commands** — that needs WorldEdit, and is Paper only.
+- **"WorldEdit is required" / "Rotation requires WorldEdit"** — saving and
+  rotating schematics need WorldEdit, so they are Paper only. Listing and
+  pasting work everywhere; check the folder with `/jarvis schematic folder`
+  and rescan with `/jarvis schematic scan`.
 
 ## Voice
 

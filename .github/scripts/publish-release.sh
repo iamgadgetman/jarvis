@@ -24,10 +24,16 @@ for name in jarvis-paper jarvis-fabric jarvis-neoforge; do
     "https://github.com/$REPO/releases/download/v$VERSION/$name-$VERSION.jar"
 done
 
-awk -v v="$VERSION" '
-  /^## v/ { if (found) exit; if (index($0, "## v" v " ") == 1 || $0 == "## v" v) { found = 1; next } }
-  found { print }
-' "$ROOT/CHANGELOG.md" > "$WORK/notes.md"
+# Player-facing notes in docs/release-notes/ win over the CHANGELOG section,
+# which is written for whoever reads the code.
+if [ -s "$ROOT/docs/release-notes/$VERSION.md" ]; then
+  cp "$ROOT/docs/release-notes/$VERSION.md" "$WORK/notes.md"
+else
+  awk -v v="$VERSION" '
+    /^## v/ { if (found) exit; if (index($0, "## v" v " ") == 1 || $0 == "## v" v) { found = 1; next } }
+    found { print }
+  ' "$ROOT/CHANGELOG.md" > "$WORK/notes.md"
+fi
 [ -s "$WORK/notes.md" ] || echo "Jarvis $VERSION" > "$WORK/notes.md"
 
 PUB="python3 $HERE/publish.py"
@@ -49,7 +55,8 @@ fi
 if [ -n "${CURSEFORGE_TOKEN:-}" ] && [ -n "${CURSEFORGE_PLUGIN_ID:-}" ]; then
   $PUB curseforge --host dev.bukkit.org --project "$CURSEFORGE_PLUGIN_ID" \
     --file "$WORK/jarvis-paper-$VERSION.jar" --name "Jarvis $VERSION for Paper" \
-    --game-versions 1.21.11..26.2 --changelog "$WORK/notes.md"
+    --game-versions 1.21.11..26.2 \
+    --deps citizens:requiredDependency simple-voice-chat:optionalDependency --changelog "$WORK/notes.md"
 else
   echo "CurseForge plugin: skipped (CURSEFORGE_TOKEN and CURSEFORGE_PLUGIN_ID not both set)"
 fi

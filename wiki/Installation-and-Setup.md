@@ -12,12 +12,13 @@ One release, three files. Take the one for your server from the
 Optional on every platform:
 
 - **An AI provider** — Ollama, Claude, OpenAI, Grok or Gemini. Every slash
-  command works without one; natural-language chat and freeform building need
-  one. See [AI Providers](AI-Providers).
+  command works without one except `/jarvis ask` and freeform
+  `/jarvis build <description>`; natural-language chat needs one too. See [AI Providers](AI-Providers).
 - **[Simple Voice Chat](https://modrinth.com/plugin/simple-voice-chat)** — for
   talking to him and hearing him back. The plugin on Paper, the mod on Fabric
   and NeoForge. See [Voice](Voice).
-- **WorldEdit** (Paper only) — for the schematic library.
+- **WorldEdit** (Paper only) — to save and rotate schematics. Pasting from
+  the library works without it, on every platform.
 
 Nothing else. Speech recognition and his voice run inside the server, and
 their model files are fetched the first time voice is turned on.
@@ -27,8 +28,13 @@ their model files are fetched the first time voice is turned on.
 ## Paper / Purpur
 
 1. Drop `jarvis-paper-<version>.jar` and `Citizens.jar` into `plugins/`. Add
-   [WorldEdit](https://enginehub.org/worldedit/) if you want schematics.
-2. Start the server. Jarvis writes:
+   [WorldEdit](https://enginehub.org/worldedit/) if you want to save or
+   rotate schematics.
+2. Start the server. On the first start Paper downloads GraalJS, which runs
+   the default build planner, from a Maven repository into the server's
+   `libraries/` folder — about 60 MB, once. A server with filtered egress
+   needs that allowed; without it Jarvis still loads and builds with the json
+   planner (see [Building System](Building-System)). Jarvis writes:
 
 ```
 plugins/
@@ -36,9 +42,10 @@ plugins/
     ├── config.yml        the main configuration
     ├── databases.yml     database settings, rarely edited
     ├── data.yml          homes, chests, portal sightings
-    ├── jarvis.db         SQLite, created on first run
+    ├── duties.yml        standing duties
+    ├── database.db       SQLite, created on first run
     ├── models/           speech models, once voice is on
-    └── schematics/       .schem files for the library
+    └── schematics/       .schem / .schematic files for the library
 ```
 
 3. `/jarvis bell`, ring it, **Admin → AI setup**, pick a provider and paste
@@ -93,8 +100,10 @@ jarvis, take me home
 1. Stop the server.
 2. Replace the jar. On Paper the file is now `jarvis-paper-<version>.jar`;
    delete any older `jarvis-<version>.jar` so you do not load both.
-3. Start. New config keys are added to your file with their comments intact;
-   your settings, database and data are kept.
+3. Start. Your settings, database and data are kept. New config keys from
+   the upgrade are **not** written into your file: they take their defaults
+   silently. The shipped `config.yml` inside the jar, or the repository's
+   copy, shows what is new.
 
 ---
 

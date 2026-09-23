@@ -16,7 +16,8 @@ is no container to set up and no service to point at.
 2. `/jarvis bell` → **Admin → Voice setup → Voice on**, or `/jarvis voice enable`.
 3. The two model files, about 200 MB, are fetched into `models/` under the
    data folder. Progress goes to the log and to `/jarvis voice`. Once only.
-4. Hold the voice chat **whisper** key and give him an order.
+4. Say "hey jarvis, ..." and give him an order. That is the `wake-word` gate
+   the shipped config starts with; see below for the others.
 
 `/jarvis voice` reports every link of the chain: whether voice chat took the
 plugin, whether its voice server is up, the gate, when the last packet came
@@ -32,10 +33,12 @@ order took.
 
 `voice.gate`, in the menu or the config:
 
-- **whisper** (default) — hold the voice chat whisper key. Costs nothing and
-  never mistakes a conversation with another player for an order.
+- **wake-word** (the default in the shipped config) — say "hey jarvis, ..."
+  and the rest is the order. Everything is transcribed, but only sentences
+  that open with a wake phrase are acted on.
+- **whisper** — hold the voice chat whisper key. Costs nothing and never
+  mistakes a conversation with another player for an order.
 - **always** — everything you say is an order. Fine playing alone.
-- **wake-word** — say "hey jarvis, ..." and the rest is the order.
 
 The wake word is matched loosely on purpose. Recognisers mangle proper nouns:
 "Jarvis" came back from a real session as *"garibas"* every single time, so an
@@ -59,8 +62,10 @@ Last order took: hearing 380 ms (3.0 s of speech), understanding 27 ms, speaking
   setup page): Piper says a fixed sentence, whisper transcribes it at several
   thread counts, and the report names the fastest and says whether the
   difference is worth taking cores from the game. `/jarvis voice threads <n>`
-  keeps a count. A smaller `voice.whisper-model` is the next lever:
-  `base.en-q5_1` is the default quantised, `tiny.en` the fastest of all.
+  keeps a count in `voice.whisper-threads` (0, the default, means four, or
+  half the CPUs on a small machine). A smaller `voice.whisper-model` is the
+  next lever: `base.en` is the default, `base.en-q5_1` a quantised variant of
+  it, `tiny.en` the fastest of all.
 - **understanding** — the AI call, the same one chat uses. This is usually the
   whole wait when there is one. A smaller Ollama model or Claude brings it
   down; short direct orders ("come", "follow me", "stop") skip the model
@@ -89,8 +94,9 @@ off and keeps the listening.
 Recognition runs on the server's CPU — in singleplayer, your own machine —
 on four threads by default. Loaded, the two engines hold a few hundred
 megabytes of memory. The native libraries cover Linux x86_64 and arm64,
-Windows x86_64 and macOS, and are what make the mod jar a hundred megabytes
-rather than fifteen.
+Windows x86_64 and macOS, and are what make every jar large: about 86 MB for
+the Paper plugin and about 100 MB for each mod. If voice is never turned on
+they are never loaded.
 
 `voice.whisper-model` picks the recognition model, `voice.piper-voice` his
 voice, by id from the [Piper voices](https://huggingface.co/rhasspy/piper-voices)
@@ -132,7 +138,7 @@ sends it to an OpenAI-compatible speech server
 
 ```
 /jarvis voice engine server
-/jarvis voice endpoint http://10.0.8.8:8123
+/jarvis voice endpoint http://192.0.2.10:8000
 ```
 
 The embedded engine is the default and needs none of that. If a server is

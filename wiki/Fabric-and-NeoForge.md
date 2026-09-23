@@ -43,13 +43,13 @@ ordinary block, and stops him exactly as it would stop you.
 | Body | Citizens NPC | Fake player |
 | Admin | `jarvis.admin` permission | Server operator |
 | Config | `plugins/Jarvis/config.yml` | `config/jarvis/config.yml` |
-| Schematic library | WorldEdit | not available |
-| Freeform building | JavaScript planner where GraalJS is present | the JSON planner |
+| Schematic library | `plugins/Jarvis/schematics/`; save and rotate with WorldEdit | `config/jarvis/schematics/`; paste only |
+| Freeform building | `script` planner (GraalJS, fetched on first start); `json` if GraalJS cannot load | the `json` planner |
 | Voice | Simple Voice Chat plugin | Simple Voice Chat mod |
 
-The JSON planner is the one both platforms use in practice, and it is the
-better of the two; the shapes it produces are expanded by the core rather
-than written block by block.
+The mods carry no GraalJS, so freeform builds there always use the `json`
+planner: the model lists shapes, which the core expands rather than the model
+writing every block. See [Building System](Building-System).
 
 ---
 
@@ -67,8 +67,9 @@ Without that step voice cannot hear you, and `/jarvis voice` says so.
 
 ## Known limits
 
-- **No schematic library** without WorldEdit. `/jarvis build <description>`
-  works; `/jarvis schematic ...` does not appear.
+- **No WorldEdit.** Schematics paste from the library as on Paper, but
+  `/jarvis schematic save` and `rotate` need WorldEdit and answer that they
+  cannot.
 - **Java 25** is required, because Minecraft 26.3 is built for it.
 - The mods are server-side. Other players need nothing installed beyond
   Simple Voice Chat if you want voice.

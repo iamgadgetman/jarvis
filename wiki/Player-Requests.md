@@ -32,6 +32,11 @@ click to approve or deny.
 
 Both need `jarvis.admin`, or operator on the mods.
 
+Requests are held in memory. A restart loses every pending one, and a request
+nobody decides on is dropped after fifteen to twenty minutes. Approving a
+request from a player who is offline removes it without delivering anything,
+so they have to ask again once they are back.
+
 ---
 
 ## Why it is gated

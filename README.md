@@ -23,7 +23,7 @@ Jarvis:  Right away, sir. Mind the lava.
   you nominate. Real pathfinding and real block-breaking — no teleport-hopping.
 - **Fights.** Sword, trident in water, bow at range, with the stance chosen from
   the situation rather than from his rank alone.
-- **Earns his kit.** A service ladder from Probationary to Without Equal; better
+- **Earns his kit.** A service ladder from Hired to Without Equal; better
   tools and enchantments arrive as he works, not from a config file.
 - **Learns.** He remembers builds that went well and reasons about a request
   before searching his memory for a precedent.

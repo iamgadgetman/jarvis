@@ -1,6 +1,6 @@
 # Progression
 
-Jarvis earns his kit. He starts with a stone pickaxe and works up to
+Jarvis earns his kit. He starts with an iron pickaxe and works up to
 **Without Equal**, and the ranks are earned from what he has actually done for
 you — per player, persisted across restarts. `/jarvis rank`, or **Service
 record** in the bell menu, shows where he stands and what is next.
@@ -18,9 +18,9 @@ record** in the bell menu, shows where he stands and what is next.
 | Trusted | 300 | Fortune I, Looting I |
 | Seasoned | 500 | Efficiency V, Sharpness III |
 | Valued | 800 | Fortune II, Looting II |
-| Indispensable | 1500 | Netherite, **archery** (Power III) |
-| Peerless | 2500 | **Wide bore** — the 3×3 tunnelling capability |
-| Without Equal | 4000 | Fire Aspect II, Power V, Flame, **the returning trident** |
+| Indispensable | 1500 | Netherite, Sharpness IV, Fortune III, Looting III, **archery** (Power III) |
+| Peerless | 2500 | Sharpness V, Power IV, Punch I, **wide bore** — the 3×3 tunnelling capability |
+| Without Equal | 4000 | Fire Aspect II, Power V, Punch II, Flame, **the returning trident** |
 
 Two ranks buy a capability rather than a better metal: **Indispensable** gives
 him a bow and the doctrine to use it, and **Peerless** unlocks
@@ -32,11 +32,32 @@ comes back.
 ## Earning it
 
 Service points come from work done: ore mined, trees felled, crops harvested,
-mobs killed in your defence, deliveries made, death drops recovered. The
+fish caught, threats felled in your defence, and blocks placed. Building is
+divided down hard, so one large build cannot skip most of the ladder. The
 service record lists what he has done and what the next rank costs.
 
-Tuning lives under `progression:` in the config, including whether the ladder
-is on at all — turn it off and he keeps his full kit from the start.
+Tuning lives under `progression:` in the config:
+
+```yaml
+progression:
+  enabled: true      # off: he has the full kit from the start
+  op-bypass: true    # operators skip the ladder and get the top kit
+  op-rank: ""        # what rank a bypassed operator counts as; blank = the top
+  rate: 1.0          # multiplier on everything credited
+```
+
+`op-bypass` is on by default, so every operator's Jarvis is handed the top
+kit without the climb. On Fabric and NeoForge, where admin means operator,
+that is every admin — and in a singleplayer world with cheats allowed it is
+you. Set `op-bypass: false` if you want to earn the ladder.
+
+An admin can place their own Jarvis at a rank, or clear their own service
+record (reconnect afterwards to reload it):
+
+```
+/jarvis rank set Peerless      or a number, 1-10
+/jarvis rank reset
+```
 
 ---
 
