@@ -12,7 +12,9 @@ the files to Modrinth and CurseForge.
    it by number), `jarvis-fabric/gradle.properties` and
    `jarvis-neoforge/gradle.properties`, and add the `## vX.Y.Z` section to
    `CHANGELOG.md`. The workflow refuses to release if the jars and the
-   version disagree.
+   version disagree. Optionally add `docs/release-notes/X.Y.Z.md`: short,
+   player-facing notes that Modrinth and CurseForge get instead of the
+   CHANGELOG section, which the GitHub release keeps.
 2. Merge to `main`.
 3. Either push the tag (`git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`)
    or open Actions, pick **release**, **Run workflow** on `main`, and type

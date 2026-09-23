@@ -130,6 +130,13 @@ jobs:
             echo "| NeoForge | \`jarvis-neoforge-$VERSION.jar\` |"
           } >> notes.md
           cat notes.md
+          # The stores get the player-facing notes when there are some; the
+          # GitHub release keeps the CHANGELOG section.
+          if [ -s "docs/release-notes/$VERSION.md" ]; then
+            cp "docs/release-notes/$VERSION.md" store-notes.md
+          else
+            cp notes.md store-notes.md
+          fi
 
       - name: Publish the GitHub release
         uses: softprops/action-gh-release@v2
@@ -156,15 +163,15 @@ jobs:
           python3 .github/scripts/publish.py modrinth --project "$MODRINTH_ID" \
             --file "dist/jarvis-paper-$V.jar" --version "$V+paper" --name "Jarvis $V for Paper" \
             --loaders paper purpur --game-versions 1.21.11..26.2 \
-            --deps simple-voice-chat:optional --changelog notes.md
+            --deps simple-voice-chat:optional --changelog store-notes.md
           python3 .github/scripts/publish.py modrinth --project "$MODRINTH_ID" \
             --file "dist/jarvis-fabric-$V.jar" --version "$V+fabric" --name "Jarvis $V for Fabric" \
             --loaders fabric --game-versions 26.3 \
-            --deps fabric-api:required simple-voice-chat:optional --changelog notes.md
+            --deps fabric-api:required simple-voice-chat:optional --changelog store-notes.md
           python3 .github/scripts/publish.py modrinth --project "$MODRINTH_ID" \
             --file "dist/jarvis-neoforge-$V.jar" --version "$V+neoforge" --name "Jarvis $V for NeoForge" \
             --loaders neoforge --game-versions 26.3 \
-            --deps simple-voice-chat:optional --changelog notes.md
+            --deps simple-voice-chat:optional --changelog store-notes.md
 
       - name: CurseForge, the plugin (dev.bukkit.org)
         if: env.CURSEFORGE_TOKEN != '' && env.CURSEFORGE_PLUGIN_ID != ''
@@ -175,7 +182,8 @@ jobs:
         run: |
           python3 .github/scripts/publish.py curseforge --host dev.bukkit.org --project "$CURSEFORGE_PLUGIN_ID" \
             --file "dist/jarvis-paper-$V.jar" --name "Jarvis $V for Paper" \
-            --game-versions 1.21.11..26.2 --changelog notes.md
+            --game-versions 1.21.11..26.2 \
+            --deps citizens:requiredDependency simple-voice-chat:optionalDependency --changelog store-notes.md
 
       - name: CurseForge, the mods (minecraft.curseforge.com)
         if: env.CURSEFORGE_TOKEN != '' && env.CURSEFORGE_MOD_ID != ''
@@ -187,8 +195,8 @@ jobs:
           python3 .github/scripts/publish.py curseforge --host minecraft.curseforge.com --project "$CURSEFORGE_MOD_ID" \
             --file "dist/jarvis-fabric-$V.jar" --name "Jarvis $V for Fabric" \
             --game-versions 26.3 --extra Fabric "Java 25" Server \
-            --deps fabric-api:requiredDependency simple-voice-chat:optionalDependency --changelog notes.md
+            --deps fabric-api:requiredDependency simple-voice-chat:optionalDependency --changelog store-notes.md
           python3 .github/scripts/publish.py curseforge --host minecraft.curseforge.com --project "$CURSEFORGE_MOD_ID" \
             --file "dist/jarvis-neoforge-$V.jar" --name "Jarvis $V for NeoForge" \
             --game-versions 26.3 --extra NeoForge "Java 25" Server \
-            --deps simple-voice-chat:optionalDependency --changelog notes.md
+            --deps simple-voice-chat:optionalDependency --changelog store-notes.md

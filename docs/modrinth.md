@@ -83,15 +83,19 @@ Running **only Ollama**? Fully supported — Jarvis enters a reduced mode: const
 
 ## 🏗️ Building — he designs, not just pastes
 
-Describe a structure and the AI **writes the build as a small program** that
-calls `fill` and `setBlock`, rather than listing every block. A wall is one
-call instead of four hundred coordinates, so the model spends its effort on the
-design and the plan survives being scaled up. Underground requests carve their
-own space first.
+Describe a structure — or use **Building → Custom build** in the bell menu —
+and the AI designs it rather than listing every block. On Paper it **writes the
+build as a small program** that calls `fill` and `setBlock`; on the mods, and
+on Paper whenever the script engine is unavailable, it describes the building
+as **shapes** — walls, floors, doors, beds, pitched roofs. Either way a wall is
+whole by construction, doors have both halves, and houses come **furnished**:
+bed, chest, crafting table, light. Underground requests carve their own space
+first.
 
-Drop `.schem` or `.litematic` files into his library and "jarvis, build me a
-house" picks the best match and pastes it (WorldEdit) — still the path used when
-you are running local-only. Save, rotate and convert schematics in-game;
+Drop `.schem`, `.schematic` or `.litematic` files into his library and
+"jarvis, build me a house" picks the best match and pastes it — on every
+platform, and still the path used when you are running local-only. On Paper
+with WorldEdit you can also save and rotate schematics in-game;
 `/jarvis build undo` reverts the last one.
 
 ## 🎙️ He listens, and he answers
@@ -111,7 +115,7 @@ back from a real session as *"garibas"* every single time.
 
 ## 🎖️ He earns his kit
 
-He starts Probationary with a stone pickaxe and works up to **Without Equal**.
+He starts Hired, with an iron pickaxe, and works up to **Without Equal**.
 Ranks buy better tools, enchantments and abilities — Fortune, a trident that
 comes back, a bow with Power and Flame, the 3×3 tunnelling bore — and they are
 earned from what he has actually done for you, per player, persisted. `/jarvis
@@ -152,13 +156,15 @@ same observation in new words. `/jarvis quiet` mutes him.
 
 | File | Server | Needs |
 |---|---|---|
-| `jarvis-paper-x.y.z.jar` | Paper / Purpur **1.21.11 – 26.2** | [Citizens](https://ci.citizensnpcs.co/job/citizens2/) **2.0.43+** · Java 21 (25 on 26.x) · WorldEdit optional, for schematics |
+| `jarvis-paper-x.y.z.jar` | Paper / Purpur **1.21.11 – 26.2** | [Citizens](https://ci.citizensnpcs.co/job/citizens2/) **2.0.43+** · Java 21 (25 on 26.x) · WorldEdit optional, to save and rotate schematics |
 | `jarvis-fabric-x.y.z.jar` | Fabric, Minecraft **26.3** | Fabric Loader 0.19.5+ · Fabric API · Java 25 |
 | `jarvis-neoforge-x.y.z.jar` | NeoForge **26.3.0.x** | Java 25 |
 
 Optional everywhere: an AI provider (any one of Ollama, Claude, OpenAI, Grok, Gemini) and Simple Voice Chat (the plugin on Paper, the mod on Fabric and NeoForge).
 
 > **Note:** Citizens supports the latest patch of each Minecraft line — "1.21" support means 1.21.11. Older 1.21.x servers should update.
+
+**Why the files are large (~86–100 MB):** each carries the speech engine's native libraries for Linux, Windows and macOS, so voice works with nothing else installed. They are only loaded if you turn voice on; the two voice models (~200 MB) are downloaded the first time you do. On Paper, the build planner's script engine (~60 MB) is fetched into `libraries/` on first start.
 
 ## 🚀 Quick start
 
@@ -169,7 +175,7 @@ Optional everywhere: an AI provider (any one of Ollama, Claude, OpenAI, Grok, Ge
 
 Without any AI configured, all slash commands still work — you only lose natural-language chat and freeform building.
 
-On the mods: the butler is a fake player, admin means operator, and there is no schematic library (no WorldEdit). Everything else is the same.
+On the mods: the butler is a fake player, admin means operator, and schematics paste but cannot be saved or rotated (that needs WorldEdit). Everything else is the same.
 
 ---
 
