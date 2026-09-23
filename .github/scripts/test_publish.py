@@ -29,6 +29,41 @@ class VersionRanges(unittest.TestCase):
         with self.assertRaises(SystemExit):
             publish.parse_deps(["fabric-api:requiredDependency"], publish.MODRINTH_DEP_KINDS)
 
+class CurseForgeVersions(unittest.TestCase):
+    TYPES = [{"id": 1, "slug": "bukkit"}, {"id": 3, "slug": ""}, {"id": 615, "slug": "addons"},
+             {"id": 77784, "slug": "minecraft-1-21"}, {"id": 88556, "slug": "minecraft-26-3"},
+             {"id": 68441, "slug": "modloader"}, {"id": 2, "slug": "java"}, {"id": 75208, "slug": "environment"}]
+    VERSIONS = [
+        {"id": 900, "gameVersionTypeID": 615, "name": "1.21.11"},   # Addons, listed first
+        {"id": 901, "gameVersionTypeID": 1, "name": "1.21.11"},     # Bukkit
+        {"id": 902, "gameVersionTypeID": 77784, "name": "1.21.11"}, # Minecraft
+        {"id": 903, "gameVersionTypeID": 88556, "name": "26.3"},
+        {"id": 904, "gameVersionTypeID": 1, "name": "26.3"},
+        {"id": 905, "gameVersionTypeID": 3, "name": "2.0.0.65"},    # another game's number
+        {"id": 906, "gameVersionTypeID": 68441, "name": "Fabric"},
+        {"id": 907, "gameVersionTypeID": 2, "name": "Java 25"},
+        {"id": 908, "gameVersionTypeID": 75208, "name": "Server"},
+    ]
+
+    def test_bukkit_takes_bukkit_versions_only(self):
+        chosen, ids = publish.curseforge_version_ids("dev.bukkit.org", self.TYPES, self.VERSIONS, "1.21.11..26.2", [])
+        self.assertEqual((chosen, ids), (["1.21.11"], [901]))
+
+    def test_mods_take_minecraft_versions_and_the_extras(self):
+        chosen, ids = publish.curseforge_version_ids("minecraft.curseforge.com", self.TYPES, self.VERSIONS,
+                                                     "26.3", ["Fabric", "Java 25", "Server"])
+        self.assertEqual((chosen, ids), (["26.3"], [903, 906, 907, 908]))
+
+    def test_other_games_numbers_are_not_in_range(self):
+        _, ids = publish.curseforge_version_ids("minecraft.curseforge.com", self.TYPES, self.VERSIONS, "1.21.11..26.3", [])
+        self.assertNotIn(905, ids)
+        self.assertEqual(ids, [902, 903])
+
+    def test_unknown_extra_names_what_there_is(self):
+        with self.assertRaises(SystemExit) as e:
+            publish.curseforge_version_ids("minecraft.curseforge.com", self.TYPES, self.VERSIONS, "26.3", ["Java 99"])
+        self.assertIn("Java 25", str(e.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
