@@ -24,7 +24,7 @@ help` prints this list in game.
 |---|---|
 | `/jarvis mine [ore]` | Hunt nearby ores, or a named one (`diamond`, `iron`, `ancient_debris`) |
 | `/jarvis mine here` | Dig a complete torch-lit branch mine |
-| `/jarvis dig ...` | Sink a shaft |
+| `/jarvis dig [depth]` | Sink a ladder-lined, torch-lit shaft; depth defaults to `mining.shaft.default-depth` |
 | `/jarvis tunnel [n\|s\|e\|w] [length]` | Drive a 3×3 passage — Peerless rank and above |
 
 ## Combat
@@ -54,7 +54,7 @@ help` prints this list in game.
 | `/jarvis chest` | Register the chest you are looking at |
 | `/jarvis deposit` | Deliver his cargo to that chest |
 | `/jarvis loot` | Open his inventory |
-| `/jarvis clearloot` | Drop everything he carries |
+| `/jarvis clearloot` | Drop everything he carries; asks you to repeat it as `/jarvis clearloot confirm` |
 | `/jarvis home set` | Save this spot as home |
 | `/jarvis home` | Be escorted home, torch-lighting the road |
 | `/jarvis recover` | Travel to your death point and bring your things back |
@@ -66,19 +66,22 @@ help` prints this list in game.
 |---|---|
 | `/jarvis build <description>` | Design and build it |
 | `/jarvis build undo` | Revert the last build |
-| `/jarvis build cancel` | Stop the build in progress |
+| `/jarvis build cancel` / `/jarvis cancelbuild` | Stop the build in progress |
 | `/jarvis build wall\|floor\|pillar\|cube [size]` | Simple shapes, no AI |
+| `/jarvis paste <name>` | Paste a schematic by name, no AI |
 
-Paper with WorldEdit also has the schematic library:
+The schematic library works on every platform; `save` and `rotate` need
+WorldEdit, so those two are Paper only:
 
 | Command | What it does |
 |---|---|
 | `/jarvis schematic list` | What is in the library |
 | `/jarvis schematic paste <name>` | Paste one by name |
-| `/jarvis schematic save <name>` | Save your clipboard |
-| `/jarvis schematic rotate <name> <deg>` | Paste rotated |
 | `/jarvis schematic scan` | Rescan the folder |
+| `/jarvis schematic folder` | Where the folder is |
 | `/jarvis schematic litematic` / `convert <name>` / `convertall` | Litematica files, converted to `.schem` |
+| `/jarvis schematic save <name>` | Save your WorldEdit clipboard |
+| `/jarvis schematic rotate <name> <deg>` | Paste rotated (WorldEdit) |
 
 ## The estate
 
@@ -86,8 +89,10 @@ Paper with WorldEdit also has the schematic library:
 |---|---|
 | `/jarvis report` | The briefing: TPS, players, his cargo, pending requests |
 | `/jarvis duties` | Standing scheduled duties |
-| `/jarvis duty add <minutes> <message>` | Add one; survives restarts |
+| `/jarvis duty add <minutes> <message>` | Add one; survives restarts. Needs `jarvis.admin` |
+| `/jarvis duty remove <id>` | Strike one off. Needs `jarvis.admin` |
 | `/jarvis rank` | His service record and what he has earned |
+| `/jarvis rank set <name\|1-10>` / `rank reset` | Place him at a rank, or clear the record. Needs `jarvis.admin` |
 | `/jarvis queue <order>` | Line up an order for when he is free |
 | `/jarvis queue list\|clear` | Review or tear up the list |
 | `/jarvis quiet` | Mute his idle remarks, for you |
@@ -98,6 +103,8 @@ Paper with WorldEdit also has the schematic library:
 |---|---|
 | `/jarvis portal` | Lead you to the nearest portal he has seen |
 | `/jarvis portal where` | Where this side's portal comes out on the other |
+| `/jarvis portal mark` | Note a portal where you are standing, whether or not he has seen one |
+| `/jarvis portal forget` | Forget every portal he has noted for you |
 | `/jarvis portals` | Every portal he has noted in this world |
 
 ## Voice
@@ -123,12 +130,13 @@ All of these except `status` need `jarvis.admin`. See [Voice](Voice).
 | `/jarvis ai [status]` | Which providers are on, their models, and their health |
 | `/jarvis ai enable\|disable <provider>` | Switch one on or off |
 | `/jarvis ai key <provider> <key>` | Set an API key |
-| `/jarvis ai endpoint <provider> <url>` | Set an address, for Ollama |
+| `/jarvis ai endpoint <provider> <url>` | Set a provider's address; Ollama's, or a proxy or compatible server for the others |
 | `/jarvis ai model <provider> <model>` | Choose the model |
 | `/jarvis ai models` | What your Ollama server has pulled |
 | `/jarvis ai test <provider>` | One small request, past the routing |
 
-The setting commands need `jarvis.admin`. See [AI Providers](AI-Providers).
+Everything except `/jarvis ai` (or `ai status`) needs `jarvis.admin`,
+including `models` and `test`. See [AI Providers](AI-Providers).
 
 ## Requests and confirmation
 
@@ -192,7 +200,8 @@ Jarvis: I'm about to give you 64 diamonds.
         /jarvis confirm to proceed, /jarvis cancel to abort.
 ```
 
-The window expires after `confirmation.timeout-seconds`, 30 by default.
+The window expires after `confirmation-timeout-seconds`, a top-level key, 30
+by default. It is not in the shipped file; add it to change it.
 Console commands always require `jarvis.admin` as well, by design. On an
 Ollama-only server they are refused outright unless
 `ai.reduced-mode.allow-risky-actions` is turned on.

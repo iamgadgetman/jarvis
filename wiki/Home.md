@@ -24,7 +24,7 @@ Everything above that layer is identical.
 | [Mining System](Mining-System) | Ore hunting and branch mines |
 | [Building System](Building-System) | AI-designed builds and schematics |
 | [Progression](Progression) | The service ladder, from Hired to Without Equal |
-| [Butler Events](Butler-Events) | Greetings, death commentary, briefings |
+| [Butler Events](Butler-Events) | Greetings, death-drop recovery, briefings |
 | [Player Requests](Player-Requests) | Players asking for items, admins approving |
 | [Troubleshooting](Troubleshooting) | When something misbehaves |
 | [Changelog](Changelog) | Version history |
@@ -48,8 +48,10 @@ jarvis, build me a small stone cottage
 jarvis, take me home
 ```
 
-Without an AI provider every slash command still works; you lose
-natural-language chat and freeform building.
+Without an AI provider every slash command still works except the two that
+are an AI call: `/jarvis ask`, and `/jarvis build <description>` when nothing
+in the schematic library matches. You lose natural-language chat and freeform
+building.
 
 ---
 

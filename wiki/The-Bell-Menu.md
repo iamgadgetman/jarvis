@@ -28,10 +28,10 @@ The rest of the page opens the sub-pages:
 | **Mining** | Ores, branch mines, shafts |
 | **Combat & Guard** | Stances, night watch, patrol |
 | **Groundskeeping** | Farm, chop, fish, light the place |
-| **Building** | Custom build, and the schematic library on Paper |
+| **Building** | Custom build, and the schematic library |
 | **Household** | Home, escort, death drops |
-| **Steward** | Briefing, standing duties |
-| **Service record** | His rank, what he has earned, what is next |
+| **Steward** | Briefing, standing duties, AI status, version |
+| **Service record** | His rank, what he has earned, what is next. Shown only while progression is on |
 | **Settings** | Torches, pickup range, returns |
 | **Admin** | Only for admins — see below |
 
@@ -39,13 +39,15 @@ The rest of the page opens the sub-pages:
 
 ## Settings
 
-Per-owner preferences, each one a click:
+The page offers torch placement, torch spacing, pickup range, auto-return and
+vein mining, each a click.
 
-- **Torch placement** and **torch spacing** — whether he lights what he digs,
-  and how far apart
-- **Pickup range** — how far he will step for a dropped item
-- **Auto-return** — come back when stuck or full
-- **Vein mining** — follow a whole vein, or take the one block
+**Known issue in 0.17.0:** these buttons write `mining.place-torches`,
+`torch-spacing`, `pickup-radius`, `auto-return` and `enable-vein-mining` into
+`config.yml` — server-wide, not per player — and nothing reads those keys
+yet. The change is saved and has no effect. The same goes for the torch
+buttons on the Mining page. See **Tuning** in [Mining System](Mining-System)
+for the keys that do work.
 
 ---
 

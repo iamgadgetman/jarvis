@@ -36,7 +36,8 @@ One release, three files: `jarvis-paper`, `jarvis-fabric`, `jarvis-neoforge`.
 | 0.15.0 | Idle remarks, off by default |
 | 0.14.0 | Archery and combat doctrine |
 | 0.13.0 | Voice, the progression ladder, the bell menu |
-| 0.12.x | Dataset export, reasoning before retrieval, self-explaining recovery |
+| 0.12.x | Dataset export, reasoning before retrieval |
+| 0.11.0 | Self-explaining recovery: he says why a job failed |
 | 0.9.0 | The building assistant, rebuilt |
 | 0.8.0 | Experience memory |
 | 0.7.0 | Groundskeeping: farm, chop, fish, light |

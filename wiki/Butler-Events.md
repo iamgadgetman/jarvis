@@ -13,8 +13,9 @@ briefing you on the estate, and remarking on what he sees. Most of it is under
 ```
 
 TPS and MSPT with health colouring, players online, what he is carrying,
-pending item requests. With `steward.report-on-join: true` he gives it a few
-seconds after you join, which is the useful moment for it.
+pending item requests. He gives it a few seconds after you join, which is the
+useful moment for it; `steward.report-on-join` is on by default, and `false`
+stops it.
 
 ## Standing duties
 
@@ -24,7 +25,9 @@ seconds after you join, which is the useful moment for it.
 ```
 
 Broadcasts on a timer that **survive restarts**. He reads them out on
-schedule and keeps the list in the database.
+schedule and keeps the list in `duties.yml` beside the config. Anyone can list
+them; `duty add` and `duty remove <id>` need `jarvis.admin`, or operator on
+the mods.
 
 ## Supply handoff
 
@@ -87,4 +90,5 @@ He travels to where you died, collects everything, and brings it back.
 
 While guarding, he calls out hostiles outside your field of view — *"Creeper,
 behind you, sir!"* — rather than silently killing them. Tuning is under
-`defender:` and `combat:`.
+`defender:` (`defender.callouts` switches the callouts off). The `combat:`
+section in the file is not read.

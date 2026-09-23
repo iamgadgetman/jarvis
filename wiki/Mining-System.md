@@ -62,16 +62,25 @@ and goes back to work.
 
 ## Tuning
 
-Under `mining:` in the config, with the reasoning in the comments. The ones
-people change:
+Under `mining:` in the config, with the reasoning in the comments. The keys
+that 0.17.0 actually reads:
 
-- **Ore priority** — what he goes for first
-- **Vein mining** — whole vein, or the one block (also on the Settings menu)
-- **Torch placement and spacing** — whether he lights what he digs
-- **Hazards** — lava, water and fire avoidance
-- **Branch-mine layout** — depth, gallery length, branch spacing
-- **`mining.debug: true`** — logs every decision, for when he does something
-  you did not expect
+- **`search-radius`** — how far he looks for ore
+- **`timed-breaking`** and **`break-speed-modifier`** — vanilla-speed breaking
+  with animations, and how much faster or slower than that
+- **`auto-deposit`** — deliver to the registered chest when his bags fill
+- **`navigator-range`** — the longest path he will attempt (Paper)
+- **`branch.*`** — branch-mine depth, gallery and branch length, spacing,
+  torches
+- **`shaft.*`** — `/jarvis dig` depth, ladders, torches
+- **`tunnel.*`** — `/jarvis tunnel` default and maximum length
+- **`debug: true`** — logs every decision, for when he does something you did
+  not expect
 
-Pickup range, auto-return, torches and vein mining are all on the **Settings**
-page of the bell menu, per owner, without touching the file.
+**Known issue in 0.17.0:** the file also carries `place-torches`,
+`torch-spacing`, `pickup-radius`, `enable-vein-mining`, auto-return and the
+`safety.*` hazard keys, and the bell menu's **Settings** page (and the torch
+buttons on its **Mining** page) write several of them, but nothing reads them
+yet. Changing them is saved, server-wide rather than per player, and has no
+effect. Torches in branch mines and shafts are set under `branch.*` and
+`shaft.*`.
