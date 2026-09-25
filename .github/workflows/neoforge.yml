@@ -31,6 +31,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # One job per game version. An empty mc means gradle.properties as it
+    # stands (26.3); the older games are the same sources with the mc26.1
+    # McCompat shim, built by overriding the properties.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: default, mc: '', neo: '', neo_range: '', compat: '' }
+          - { name: '26.2', mc: '26.2', neo: 26.2.0.88, neo_range: '[26.2.0,26.2.1)', compat: '26.1' }
+          - { name: '26.1.2', mc: '26.1.2', neo: 26.1.2.109, neo_range: '[26.1.2,26.1.3)', compat: '26.1' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -42,11 +52,18 @@ jobs:
           gradle-version: '9.5.1'
       - name: Build
         working-directory: jarvis-neoforge
-        run: gradle build --no-daemon --stacktrace
+        run: |
+          PROPS=()
+          if [ -n "${{ matrix.mc }}" ]; then
+            PROPS=("-Pminecraft_version=${{ matrix.mc }}" "-Pminecraft_version_range=[${{ matrix.mc }}]"
+                   "-Pneo_version=${{ matrix.neo }}" "-Pneo_version_range=${{ matrix.neo_range }}"
+                   "-Pmc_compat=${{ matrix.compat }}")
+          fi
+          gradle build --no-daemon --stacktrace "${PROPS[@]}"
       - name: Attach mod jar
         uses: actions/upload-artifact@v4
         with:
-          name: jarvis-neoforge
+          name: jarvis-neoforge-${{ matrix.name }}
           path: jarvis-neoforge/build/libs/jarvis-neoforge-*.jar
           if-no-files-found: error
       - name: Start a real server with the built jar
@@ -56,7 +73,8 @@ jobs:
           # classpath. This installs NeoForge the way a player does and puts
           # the jar in mods/, so the nested jars and the module graph of
           # the real artifact are what get exercised.
-          NEO=$(grep '^neo_version=' gradle.properties | cut -d= -f2)
+          NEO='${{ matrix.neo }}'
+          [ -n "$NEO" ] || NEO=$(grep '^neo_version=' gradle.properties | cut -d= -f2)
           mkdir -p smoke/mods
           cp build/libs/jarvis-neoforge-*.jar smoke/mods/
           cd smoke
@@ -86,7 +104,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: neoforge-server-log
+          name: neoforge-server-log-${{ matrix.name }}
           path: |
             jarvis-neoforge/server.out
             jarvis-neoforge/installer.out

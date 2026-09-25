@@ -6,6 +6,7 @@ import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.world.Item;
 import com.gadgetman.jarvis.core.world.Vec3;
 import com.gadgetman.jarvis.core.world.WorldId;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
@@ -46,7 +47,7 @@ public final class VanillaEntity implements Entity {
     @Override
     public void setVelocity(Vec3 v) {
         e.setDeltaMovement(VanillaWorlds.mc(v));
-        e.syncVelocity = true;
+        McCompat.syncVelocity(e);
     }
 
     @Override

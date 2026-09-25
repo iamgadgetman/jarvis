@@ -1,5 +1,18 @@
 # Jarvis Changelog
 
+## Unreleased
+
+### Added
+
+- **NeoForge for Minecraft 26.1.2 and 26.2.** The same mod, built for the
+  older games: NeoForge 26.1.2.x and 26.2.0.x. 26.3 renamed four things the
+  butler uses (`hurtMarked`, `setInvulnerable`, `SwingSource.SERVER`, and
+  `swing` without a `SwingAnimation`), and those four calls now go through
+  `McCompat`, which has one copy per API in `jarvis-vanilla/src/mc26.1` and
+  `src/mc26.3`. Nothing else differs. A build picks the copy with
+  `-Pmc_compat`; see `jarvis-neoforge/gradle.properties`. The NeoForge CI
+  job builds and boots a server for all three versions.
+
 ## v0.17.0 (2026-09-20) — the same butler on Fabric and NeoForge
 
 One release, three files: `jarvis-paper-0.17.0.jar` for Paper and Purpur,
