@@ -1,10 +1,10 @@
 package com.gadgetman.jarvis.vanilla.butler;
 
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import com.gadgetman.jarvis.vanilla.fake.FakePlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
@@ -73,7 +73,7 @@ public final class BlockBreaker {
             return;
         }
         player.actionPack().lookAt(Vec3.atCenterOf(pos));
-        if (ticks % 4 == 1) player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+        if (ticks % 4 == 1) McCompat.swing(player, InteractionHand.MAIN_HAND);
 
         if (player.gameMode.isCreative()) {
             progress = 1;

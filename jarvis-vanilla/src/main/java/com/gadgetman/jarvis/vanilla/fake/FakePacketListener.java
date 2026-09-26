@@ -1,8 +1,10 @@
 package com.gadgetman.jarvis.vanilla.fake;
 
+import io.netty.channel.ChannelFutureListener;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
+import net.minecraft.network.protocol.Packet;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
@@ -21,6 +23,17 @@ public class FakePacketListener extends ServerGamePacketListenerImpl {
 
     public FakePacketListener(MinecraftServer server, Connection connection, ServerPlayer player, CommonListenerCookie cookie) {
         super(server, connection, player, cookie);
+    }
+
+    /**
+     * Nobody is listening, so nothing is sent. Dropping packets here rather
+     * than in {@link FakeConnection} also skips NeoForge's channel check,
+     * which throws for a mod's payload (Apothic Attributes syncs its config
+     * on login) because a fake player never negotiated any channels, and
+     * that throw used to abort the summon.
+     */
+    @Override
+    public void send(Packet<?> packet, ChannelFutureListener listener) {
     }
 
     @Override

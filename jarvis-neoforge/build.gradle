@@ -104,6 +104,8 @@ sourceSets {
             srcDir '../jarvis-core/src/main/java'
             srcDir '../jarvis-nav/src/main/java'
             srcDir '../jarvis-vanilla/src/main/java'
+            // The handful of game calls renamed between versions; see McCompat.
+            srcDir "../jarvis-vanilla/src/mc${project.mc_compat}/java"
             srcDir '../jarvis-voice/src/main/java'
         }
         resources {
