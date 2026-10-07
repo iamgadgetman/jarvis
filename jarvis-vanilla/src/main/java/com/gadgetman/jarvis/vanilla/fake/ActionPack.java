@@ -1,5 +1,7 @@
 package com.gadgetman.jarvis.vanilla.fake;
 
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
+
 import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -10,7 +12,6 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -156,8 +157,8 @@ public class ActionPack {
                         if (pos.getY() < world.getMaxY() - (side == Direction.UP ? 1 : 0) && world.mayInteract(player, pos)) {
                             InteractionResult result = player.gameMode.useItemOn(player, world, player.getItemInHand(hand), hand, blockHit);
                             if (result instanceof InteractionResult.Success success) {
-                                if (success.swingSource() == InteractionResult.SwingSource.SERVER_ONLY) {
-                                    player.swing(hand, SwingAnimation.DEFAULT, true);
+                                if (McCompat.serverSwings(success)) {
+                                    McCompat.swing(player, hand);
                                 }
                                 ap.itemUseCooldown = 3;
                                 return true;
@@ -188,7 +189,7 @@ public class ActionPack {
                     case ENTITY -> {
                         if (!action.isContinuous) {
                             player.attack(((net.minecraft.world.phys.EntityHitResult) hit).getEntity());
-                            player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+                            McCompat.swing(player, InteractionHand.MAIN_HAND);
                         }
                         player.resetAttackStrengthTicker();
                         player.resetLastActionTime();
@@ -241,7 +242,7 @@ public class ActionPack {
                             player.level().destroyBlockProgress(-1, pos, (int) (ap.curBlockDamageMP * 10));
                         }
                         player.resetLastActionTime();
-                        player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+                        McCompat.swing(player, InteractionHand.MAIN_HAND);
                         return blockBroken;
                     }
                     default -> {

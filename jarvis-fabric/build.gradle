@@ -60,6 +60,7 @@ sourceSets {
             srcDir '../jarvis-core/src/main/java'
             srcDir '../jarvis-nav/src/main/java'
             srcDir '../jarvis-vanilla/src/main/java'
+            srcDir '../jarvis-vanilla/src/mc26.3/java'      // see McCompat
             srcDir '../jarvis-voice/src/main/java'
         }
         resources {

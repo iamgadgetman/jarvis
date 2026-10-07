@@ -25,13 +25,28 @@ gradle build          # Gradle 9.5.1, JDK 25
 gradle runServer      # a dev server in run/server (accept the EULA there first)
 ```
 
+For an older game, override the versions (the comment in
+`gradle.properties` has them) and pick the `mc26.1` compatibility shim, which
+covers 26.1.x and 26.2:
+
+```
+gradle build -Pminecraft_version=26.1.2 '-Pminecraft_version_range=[26.1.2]' \
+  -Pneo_version=26.1.2.109 '-Pneo_version_range=[26.1.2,26.1.3)' -Pmc_compat=26.1
+```
+
+The jar keeps the name `jarvis-neoforge-<version>.jar` whatever it was built
+for; the game version it accepts is in its `neoforge.mods.toml`.
+
 ## Running
 
 Players take `jarvis-neoforge-<version>.jar` from the
 [releases page](https://github.com/iamgadgetman/jarvis/releases); every
 release carries the Paper, Fabric and NeoForge files together.
 
-Minecraft 26.3, NeoForge 26.3.0.x. Drop the jar in `mods/`. On first start it
+Minecraft 26.3, NeoForge 26.3.0.x, by default. The same source also builds
+for **26.2** (NeoForge 26.2.0.x) and **26.1.2** (NeoForge 26.1.2.x); a jar
+is for one game version only, so take the one that matches the server.
+Drop the jar in `mods/`. On first start it
 writes `config/jarvis/config.yml` (the same file the plugin uses) and
 `config/jarvis/databases.yml`; set up your AI from the bell menu (Admin, AI
 setup) or in config.yml.

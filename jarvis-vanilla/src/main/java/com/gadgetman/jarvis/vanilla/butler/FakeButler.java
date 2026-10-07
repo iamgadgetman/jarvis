@@ -9,6 +9,7 @@ import com.gadgetman.jarvis.core.world.BlockPos;
 import com.gadgetman.jarvis.core.world.Item;
 import com.gadgetman.jarvis.core.world.Look;
 import com.gadgetman.jarvis.core.world.Vec3;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import com.gadgetman.jarvis.vanilla.fake.FakePlayer;
 import com.gadgetman.jarvis.vanilla.platform.VanillaEntity;
 import com.gadgetman.jarvis.vanilla.platform.VanillaItems;
@@ -28,7 +29,6 @@ import net.minecraft.world.entity.projectile.arrow.Arrow;
 import net.minecraft.world.entity.projectile.arrow.ThrownTrident;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.component.SwingAnimation;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -125,7 +125,7 @@ public final class FakeButler implements Butler {
         FakePlayer p = p();
         if (p != null) {
             p.setDeltaMovement(VanillaWorlds.mc(velocity));
-            p.syncVelocity = true;
+            McCompat.syncVelocity(p);
         }
     }
 
@@ -150,7 +150,7 @@ public final class FakeButler implements Butler {
     public void setProtected(boolean invulnerable) {
         FakePlayer p = p();
         if (p != null) {
-            p.setPermanentlyInvulnerable(invulnerable);
+            McCompat.setInvulnerable(p, invulnerable);
             p.getAbilities().invulnerable = invulnerable;
         }
     }
@@ -267,13 +267,13 @@ public final class FakeButler implements Butler {
     @Override
     public void swing() {
         FakePlayer p = p();
-        if (p != null) p.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+        if (p != null) McCompat.swing(p, InteractionHand.MAIN_HAND);
     }
 
     @Override
     public void swingOffHand() {
         FakePlayer p = p();
-        if (p != null) p.swing(InteractionHand.OFF_HAND, SwingAnimation.DEFAULT, true);
+        if (p != null) McCompat.swing(p, InteractionHand.OFF_HAND);
     }
 
     @Override
