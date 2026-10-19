@@ -163,6 +163,106 @@ What was deliberately left out, and why:
   distinguishing "a portal frame" from "someone's obsidian wall" is a shape
   problem rather than a block problem.
 
+## Building
+
+Both ideas below are borrowed from [AgentCraft](https://github.com/bytewife/agentcraft),
+a 2021 GDMC settlement generator. That repository carries no licence, so this is
+the idea and not the code.
+
+### He builds where you are standing, not where it fits
+
+Every build starts at the player's feet. `BuildingAssistant` takes
+`player.pos().block()` as the origin, and so do both schematic paths — the
+native paste in `SchematicLibrary` and the WorldEdit one in `SchematicManager`.
+`SiteSurvey` then reports on that one spot, and the only thing it can say is
+whether the spot is enclosed. Whether the ground is level, or the site
+backs onto a pond, or a corner sits on lava, never comes up. Neither does a
+spot ten blocks away that would have been better.
+
+AgentCraft's `check_build_spot` shows the alternative. It checks each
+candidate footprint and rejects it if:
+
+- the ground height across the footprint varies by more than a tolerance;
+- any tile is water or lava;
+- it borders something already built.
+
+It tries about twenty-five random candidates. When it keeps failing, it raises
+the tolerance a step instead of giving up.
+
+The shape for Jarvis is a `SiteDoctrine`, a pure function in the same family as
+`WeaponDoctrine` and `RemarkDoctrine`. It takes a height sample and a footprint
+and returns either a spot or a reason there is none. Sampling stays on the
+server thread with the rest of the survey; the decision does not need to be
+there, and can be pinned by tests against a grid the way `GridTerrain` already
+pins navigation.
+
+Two stages, the first worth doing on its own:
+
+1. **Tell the model.** Add the height range under the footprint to
+   `SiteSurvey` and say it in `siteNote` when it is large enough to matter.
+   "The ground falls six blocks from east to west across this footprint" is
+   something a script can answer with a stepped floor or a terrace, and
+   nothing currently tells it. No movement, no new behaviour, one more line in
+   the site note, and it is logged like the others.
+2. **Move the origin.** When the spot underfoot fails, search outwards for one
+   that passes, and say where he is going ("Not here, sir — the ground is
+   uneven. Ten blocks north will do."). This needs a footprint *before*
+   planning. A schematic has one. A scripted build does not until the script
+   has run. The plan can be run once, its bounding box taken, and the box
+   placed. Or it can be planned at the chosen spot with an assumed footprint
+   and re-checked afterwards.
+
+Open questions:
+
+- **Is moving it rude?** "Build me a house *here*" is sometimes exactly what
+  was meant. The likely answer is that stage 2 suggests and asks rather than
+  silently relocating — the confirmation path already exists — and that an
+  explicit "here" skips it.
+- **The tolerance is not chosen.** AgentCraft began at 4 and relaxed toward 5
+  because its first building took too long to place. Those numbers were fitted
+  to its terrain and its building sizes, not to these. Start with something
+  readable, log the measured range on every build, and fit it later.
+- **Underground.** On an enclosed site the "ground" is a cave floor and the
+  footprint check means something different. The first version can skip the
+  search when `SiteSurvey.enclosed()` is true and keep today's behaviour there.
+
+### Builds on a slope are left floating
+
+Schematic pastes skip air (`schematics.paste-air: false`), and a scripted
+build places only what the script draws. On a hillside, the downhill edge of
+anything with a flat floor ends up over a gap, held up by nothing. That happens
+whenever the ground drops away under part of the build.
+
+AgentCraft's `set_platform` fills each footprint column downwards from the
+floor until it meets the ground. It uses scaffolding over water and dirt over
+roads. For Jarvis that means a foundation pass after placement and before the
+build is reported finished:
+
+- For each column under the build's lowest layer, place a foundation block
+  from the floor down to the first occluding block, with a depth cap. A
+  build cantilevered over a ravine should stay a cantilever rather than
+  growing a forty-block pillar.
+- The block follows the build's own lowest layer (stone under stone,
+  planks under planks), with cobblestone as the fallback.
+- On a scripted build it goes into the same `BuildAction` list as the rest of
+  the build, so `/jarvis undo` takes the foundation with the building.
+  Schematic pastes have no Jarvis undo today: the WorldEdit path points the
+  player at `//undo` and the native paste records nothing. So the
+  foundation under a paste is permanent unless it joins the WorldEdit edit
+  session, and that is a reason to fix paste undo alongside it.
+- It counts toward Construction. That fixes it for one more source of blocks
+  rather than adding a second instance of the schematic-paste gap in
+  *Progression* above.
+
+This should land **with or before** stage 2 of the site search. Moving
+the origin to the best nearby spot means building on more uneven ground than
+a player standing on a flat patch usually picks. Without a foundation, a
+better spot would still come out as a worse-looking build.
+
+Still open: should it be a switch? Some players will want a building to sit in
+the terrain untouched. Probably a config key defaulting on, plus a way to
+say "no foundation" in the request, rather than a model decision.
+
 ## Untested
 
 These are known-unverified rather than known-broken.
