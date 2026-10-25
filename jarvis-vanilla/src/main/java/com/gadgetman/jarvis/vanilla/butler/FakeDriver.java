@@ -12,6 +12,7 @@ import com.gadgetman.jarvis.nav.Controls;
 import com.gadgetman.jarvis.nav.MoveType;
 import com.gadgetman.jarvis.nav.Path;
 import com.gadgetman.jarvis.nav.PathFollower;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import net.minecraft.world.entity.Entity;
 
 /**
@@ -111,7 +112,7 @@ public final class FakeDriver {
     }
 
     private LevelTerrain terrain() {
-        return new LevelTerrain(player.level());
+        return new LevelTerrain(McCompat.level(player));
     }
 
     private Vec3 feet() {

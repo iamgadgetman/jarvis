@@ -57,7 +57,7 @@ public final class VanillaEntity implements Entity {
 
     @Override
     public void damage(double amount) {
-        if (e instanceof LivingEntity le) le.hurtServer(level(), level().damageSources().generic(), (float) amount);
+        if (e instanceof LivingEntity le) McCompat.hurt(le, level(), level().damageSources().generic(), (float) amount);
     }
 
     @Override public int fireTicks() { return e.getRemainingFireTicks(); }

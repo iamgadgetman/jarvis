@@ -7,6 +7,7 @@ import com.gadgetman.jarvis.core.world.Item;
 import com.gadgetman.jarvis.vanilla.fake.FakePlayer;
 import com.gadgetman.jarvis.vanilla.platform.VanillaItems;
 import com.gadgetman.jarvis.vanilla.platform.VanillaWorlds;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
@@ -113,12 +114,12 @@ public final class VanillaActionExecutor implements ActionExecutor {
                     ServerPlayer t = resolve(p.optString("player", ""), requester);
                     double x = p.getDouble("x"), y = p.getDouble("y"), z = p.getDouble("z");
                     String worldName = p.optString("world", "");
-                    ServerLevel level = worldName.isEmpty() ? t.level()
+                    ServerLevel level = worldName.isEmpty() ? McCompat.level(t)
                             : VanillaWorlds.level(server(), new com.gadgetman.jarvis.core.world.WorldId(worldName));
                     if (level == null) yield "Unknown world: " + worldName;
-                    t.teleportTo(level, x, y, z, Set.of(), t.getYRot(), t.getXRot(), true);
+                    McCompat.teleport(t, level, x, y, z, t.getYRot(), t.getXRot());
                     yield "Teleported " + t.getName().getString() + " to " + (int) x + "," + (int) y + "," + (int) z
-                            + " in " + level.dimension().identifier().getPath() + ".";
+                            + " in " + McCompat.path(level.dimension()) + ".";
                 }
                 case "set_time"           -> {
                     String value = p.optString("value", "day");
@@ -137,9 +138,9 @@ public final class VanillaActionExecutor implements ActionExecutor {
                 case "set_weather"        -> {
                     String type = p.optString("type", "clear").toLowerCase(Locale.ROOT);
                     switch (type) {
-                        case "clear" -> server().setWeatherParameters(6000, 0, false, false);
-                        case "rain" -> server().setWeatherParameters(0, 6000, true, false);
-                        case "thunder" -> server().setWeatherParameters(0, 6000, true, true);
+                        case "clear" -> McCompat.setWeather(server(), 6000, 0, false, false);
+                        case "rain" -> McCompat.setWeather(server(), 0, 6000, true, false);
+                        case "thunder" -> McCompat.setWeather(server(), 0, 6000, true, true);
                         default -> { yield "Unknown weather type: " + type; }
                     }
                     yield "Set weather to " + type + ".";
@@ -153,7 +154,7 @@ public final class VanillaActionExecutor implements ActionExecutor {
                     double x = p.optDouble("x", requester.getX());
                     double y = p.optDouble("y", requester.getY());
                     double z = p.optDouble("z", requester.getZ());
-                    String world = p.optString("world", requester.level().dimension().identifier().toString());
+                    String world = p.optString("world", McCompat.id(requester.level().dimension()));
                     console("execute in " + world + " run summon " + entity + " " + x + " " + y + " " + z);
                     yield "Summoned " + entity + " near " + requester.getName().getString() + ".";
                 }
@@ -201,7 +202,7 @@ public final class VanillaActionExecutor implements ActionExecutor {
                 case "clear_mobs"         -> clearMobs(p, requester);
                 case "clear_drops"        -> {
                     int radius = p.optInt("radius", 0);
-                    String world = p.optString("world", requester.level().dimension().identifier().toString());
+                    String world = p.optString("world", McCompat.id(requester.level().dimension()));
                     String selector = radius > 0 ? "@e[type=item,distance=.." + radius + "]" : "@e[type=item]";
                     console("execute in " + world + " run kill " + selector);
                     yield "Cleared ground drops" + (radius > 0 ? " within " + radius + " blocks" : "") + ".";
@@ -301,7 +302,7 @@ public final class VanillaActionExecutor implements ActionExecutor {
     private String clearMobs(JSONObject p, ServerPlayer requester) {
         String type = p.optString("type", "");
         int radius = p.optInt("radius", 0);
-        String world = p.optString("world", requester.level().dimension().identifier().toString());
+        String world = p.optString("world", McCompat.id(requester.level().dimension()));
         String selector;
         if (!type.isEmpty()) {
             String fullType = type.contains(":") ? type : "minecraft:" + type;

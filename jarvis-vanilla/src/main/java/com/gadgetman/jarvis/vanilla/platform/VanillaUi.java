@@ -5,6 +5,7 @@ import com.gadgetman.jarvis.core.platform.Ui;
 import com.gadgetman.jarvis.core.ui.Menu;
 import com.gadgetman.jarvis.core.ui.MenuItem;
 import com.gadgetman.jarvis.vanilla.fake.FakePlayer;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerBossEvent;
@@ -60,7 +61,7 @@ public final class VanillaUi implements Ui {
         ServerPlayer p = player(viewer);
         if (p == null) return;
         ServerBossEvent bar = bars.computeIfAbsent(viewer.id(), k -> {
-            ServerBossEvent b = new ServerBossEvent(UUID.randomUUID(), Component.literal(title),
+            ServerBossEvent b = McCompat.bossBar(Component.literal(title),
                     BossEvent.BossBarColor.BLUE, BossEvent.BossBarOverlay.NOTCHED_10);
             b.addPlayer(p);
             return b;

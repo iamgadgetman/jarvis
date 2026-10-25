@@ -2,27 +2,24 @@ package com.gadgetman.jarvis.vanilla.platform;
 
 import com.gadgetman.jarvis.core.platform.Items;
 import com.gadgetman.jarvis.core.world.Item;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.util.Unit;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.ItemLore;
-import net.minecraft.world.item.component.TooltipDisplay;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -40,8 +37,7 @@ public final class VanillaItems implements Items {
     }
 
     public static net.minecraft.world.item.Item item(String id) {
-        Identifier key = Identifier.tryParse(id.contains(":") ? id : "minecraft:" + id);
-        return key == null ? null : BuiltInRegistries.ITEM.getValue(key);
+        return McCompat.lookup(BuiltInRegistries.ITEM, id.contains(":") ? id : "minecraft:" + id);
     }
 
     public static String id(net.minecraft.world.item.Item item) {
@@ -67,7 +63,7 @@ public final class VanillaItems implements Items {
         boolean unbreakable = stack.has(DataComponents.UNBREAKABLE);
         String marker = null;
         CustomData data = stack.get(DataComponents.CUSTOM_DATA);
-        if (data != null) marker = data.copyTag().getStringOr(MARKER_KEY, null);
+        if (data != null) marker = McCompat.string(data.copyTag(), MARKER_KEY);
         return new Item(id(stack.getItem()), stack.getCount(), enchants, name, lore, marker, unbreakable);
     }
 
@@ -85,7 +81,7 @@ public final class VanillaItems implements Items {
             // A blank name means "say nothing": menu filler. Without this the
             // client draws an empty tooltip box that follows the cursor.
             if (item.displayName().isBlank()) {
-                stack.set(DataComponents.TOOLTIP_DISPLAY, new TooltipDisplay(true, new LinkedHashSet<>()));
+                McCompat.hideTooltip(stack);
             }
         }
         if (!item.lore().isEmpty()) {
@@ -93,7 +89,7 @@ public final class VanillaItems implements Items {
             for (String line : item.lore()) lines.add(Component.literal(line));
             stack.set(DataComponents.LORE, new ItemLore(lines));
         }
-        if (item.unbreakable()) stack.set(DataComponents.UNBREAKABLE, Unit.INSTANCE);
+        if (item.unbreakable()) McCompat.setUnbreakable(stack);
         if (item.marker() != null) {
             CompoundTag tag = new CompoundTag();
             tag.putString(MARKER_KEY, item.marker());
@@ -103,9 +99,10 @@ public final class VanillaItems implements Items {
             var registry = server.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
             EnchantmentHelper.updateEnchantments(stack, mutable -> {
                 for (Map.Entry<String, Integer> e : item.enchants().entrySet()) {
-                    Identifier key = Identifier.tryParse(e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey());
+                    ResourceKey<Enchantment> key = McCompat.key(Registries.ENCHANTMENT,
+                            e.getKey().contains(":") ? e.getKey() : "minecraft:" + e.getKey());
                     if (key == null) continue;
-                    Optional<Holder.Reference<Enchantment>> holder = registry.get(ResourceKey.create(Registries.ENCHANTMENT, key));
+                    Optional<Holder.Reference<Enchantment>> holder = registry.get(key);
                     holder.ifPresent(h -> mutable.set(h, e.getValue()));
                 }
             });
@@ -137,8 +134,8 @@ public final class VanillaItems implements Items {
     public Optional<String> resolve(String name) {
         if (name == null || name.isBlank()) return Optional.empty();
         String s = name.trim().toLowerCase(java.util.Locale.ROOT).replace(' ', '_');
-        Identifier key = Identifier.tryParse(s.contains(":") ? s : "minecraft:" + s);
-        if (key == null || !BuiltInRegistries.ITEM.containsKey(key)) return Optional.empty();
-        return Optional.of(key.toString());
+        String full = s.contains(":") ? s : "minecraft:" + s;
+        if (!McCompat.contains(BuiltInRegistries.ITEM, full)) return Optional.empty();
+        return Optional.of(full);
     }
 }

@@ -26,7 +26,8 @@ repositories {
     }
 }
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+// 25 for Minecraft 26.x; 21 for 1.21.1, whose servers and launchers run Java 21.
+java.toolchain.languageVersion = JavaLanguageVersion.of((project.findProperty("java_version") ?: "25") as int)
 
 neoForge {
     version = project.neo_version
@@ -77,6 +78,21 @@ dependencies {
     compileOnly "de.maxhenkel.voicechat:voicechat-api:${project.voicechat_api_version}"
 }
 
+// jarvis-vanilla's main sources, less any class the chosen game version
+// replaces outright: a file in src/mc<compat>/java at the same path as one in
+// src/main/java is that version's copy of it. Only 1.21.1 has any, for the
+// classes whose overridden signatures differ too far for McCompat to bridge.
+def compatDir = file("../jarvis-vanilla/src/mc${project.mc_compat}/java")
+def vanillaSources = tasks.register('vanillaSources', Sync) {
+    from('../jarvis-vanilla/src/main/java') {
+        exclude { details ->
+            !details.directory && new File(compatDir, details.relativePath.pathString).exists()
+        }
+    }
+    into layout.buildDirectory.dir('generated/vanilla-sources')
+    inputs.dir(compatDir)
+}
+
 // The bundled default config.yml is the plugin's; one file for every adapter.
 def defaultConfig = tasks.register('defaultConfig', Sync) {
     from('../jarvis-paper/src/main/resources') {
@@ -103,9 +119,11 @@ sourceSets {
         java {
             srcDir '../jarvis-core/src/main/java'
             srcDir '../jarvis-nav/src/main/java'
-            srcDir '../jarvis-vanilla/src/main/java'
-            // The handful of game calls renamed between versions; see McCompat.
+            srcDir vanillaSources
+            // The game calls renamed between versions; see McCompat.
             srcDir "../jarvis-vanilla/src/mc${project.mc_compat}/java"
+            // The same for NeoForge's own API, which only moved for 1.21.1.
+            srcDir(project.mc_compat == '1.21.1' ? 'src/neo21.1/java' : 'src/neo26/java')
             srcDir '../jarvis-voice/src/main/java'
         }
         resources {

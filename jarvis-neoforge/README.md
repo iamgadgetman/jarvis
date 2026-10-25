@@ -34,6 +34,27 @@ gradle build -Pminecraft_version=26.1.2 '-Pminecraft_version_range=[26.1.2]' \
   -Pneo_version=26.1.2.109 '-Pneo_version_range=[26.1.2,26.1.3)' -Pmc_compat=26.1
 ```
 
+Or the `mc1.21.1` shim, for Minecraft 1.21.1 and NeoForge 21.1.x, which is
+what All the Mods 10 runs on. 1.21.1 is on Java 21:
+
+```
+gradle build -Pminecraft_version=1.21.1 '-Pminecraft_version_range=[1.21.1]' \
+  -Pneo_version=21.1.259 '-Pneo_version_range=[21.1.200,21.2)' -Pmc_compat=1.21.1 \
+  -Pjava_version=21
+```
+
+1.21.1 is older than every 26.x and differs from them in more than a few
+names, so its shim does two things. Single calls that changed (Identifier vs
+ResourceLocation, `level()` vs `serverLevel()`, `hurtServer` vs `hurt`, and
+so on) go through `McCompat`, like the 26.x ones. A class whose overridden
+signatures changed, and so cannot go through `McCompat` (the fake player, its
+connection and packet listener, the two chest menus, the `PlayerList` mixin
+and the skin lookup), has a whole 1.21.1 copy in
+`jarvis-vanilla/src/mc1.21.1/java` at the same path, and the build uses that
+copy in place of the one in `src/main/java`. Each copy says so at the top;
+when the main file changes, change its copy too. NeoForge's own API moved
+once, for the damage event: `src/neo21.1` and `src/neo26` here.
+
 The jar keeps the name `jarvis-neoforge-<version>.jar` whatever it was built
 for; the game version it accepts is in its `neoforge.mods.toml`.
 
@@ -44,8 +65,9 @@ Players take `jarvis-neoforge-<version>.jar` from the
 release carries the Paper, Fabric and NeoForge files together.
 
 Minecraft 26.3, NeoForge 26.3.0.x, by default. The same source also builds
-for **26.2** (NeoForge 26.2.0.x) and **26.1.2** (NeoForge 26.1.2.x); a jar
-is for one game version only, so take the one that matches the server.
+for **26.2** (NeoForge 26.2.0.x), **26.1.2** (NeoForge 26.1.2.x) and
+**1.21.1** (NeoForge 21.1.x, Java 21: All the Mods 10); a jar is for one game
+version only, so take the one that matches the server.
 Drop the jar in `mods/`. On first start it
 writes `config/jarvis/config.yml` (the same file the plugin uses) and
 `config/jarvis/databases.yml`; set up your AI from the bell menu (Admin, AI

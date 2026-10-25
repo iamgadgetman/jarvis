@@ -18,6 +18,7 @@ import com.gadgetman.jarvis.core.world.Ids;
 import com.gadgetman.jarvis.core.world.Item;
 import com.gadgetman.jarvis.vanilla.fake.FakePlayer;
 import com.gadgetman.jarvis.ui.ControllerBell;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -180,7 +181,7 @@ public final class VanillaEvents implements Events {
     /** A right-click on a block: a placed bell rung, or a marked item used on something. */
     public InteractionResult onUseBlock(ServerPlayer p, InteractionHand hand, BlockHitResult hit) {
         if (!real(p) || hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
-        ServerLevel level = p.level();
+        ServerLevel level = McCompat.level(p);
         if (level.getBlockState(hit.getBlockPos()).getBlock() instanceof BellBlock
                 && bells.isPlaced(level, hit.getBlockPos()) && wanted(ItemUseEvent.class)) {
             return raiseItemUse(p, Item.of(Ids.BELL).marked(ControllerBell.MARKER));

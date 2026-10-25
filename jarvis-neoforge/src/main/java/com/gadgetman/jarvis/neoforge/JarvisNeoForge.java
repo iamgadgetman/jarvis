@@ -130,7 +130,7 @@ public final class JarvisNeoForge implements JarvisMod {
     @SubscribeEvent
     public void onDamaged(LivingDamageEvent.Post event) {
         if (event.getEntity().level().isClientSide()) return;
-        events(e -> e.onDamaged(event.getEntity(), event.getSource(), event.getInflictedDamage()));
+        events(e -> e.onDamaged(event.getEntity(), event.getSource(), NeoCompat.damageDealt(event)));
     }
 
     @SubscribeEvent

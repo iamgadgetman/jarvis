@@ -11,10 +11,10 @@ import com.gadgetman.jarvis.core.world.WorldId;
 import com.gadgetman.jarvis.vanilla.fake.FakePlayer;
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -55,18 +55,18 @@ public final class VanillaWorlds {
     }
 
     public static WorldId id(Level level) {
-        return new WorldId(level.dimension().identifier().toString());
+        return new WorldId(McCompat.id(level.dimension()));
     }
 
     /** The level for an id, matching the dimension key first and its path second. */
     public static ServerLevel level(MinecraftServer server, WorldId id) {
-        Identifier key = Identifier.tryParse(id.id());
+        ResourceKey<Level> key = McCompat.key(Registries.DIMENSION, id.id());
         if (key != null) {
-            ServerLevel l = server.getLevel(ResourceKey.create(Registries.DIMENSION, key));
+            ServerLevel l = server.getLevel(key);
             if (l != null) return l;
         }
         for (ServerLevel l : server.getAllLevels()) {
-            if (l.dimension().identifier().getPath().equals(id.id())) return l;
+            if (McCompat.path(l.dimension()).equals(id.id())) return l;
         }
         return null;
     }

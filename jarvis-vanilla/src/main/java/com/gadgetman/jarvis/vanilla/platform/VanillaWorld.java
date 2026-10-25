@@ -12,11 +12,11 @@ import com.gadgetman.jarvis.core.world.Item;
 import com.gadgetman.jarvis.core.world.Tag;
 import com.gadgetman.jarvis.core.world.Vec3;
 import com.gadgetman.jarvis.core.world.WorldId;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import net.minecraft.core.particles.ParticleType;
 import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvent;
@@ -60,19 +60,19 @@ public final class VanillaWorld implements World {
     }
 
     @Override public WorldId id() { return VanillaWorlds.id(level); }
-    @Override public String name() { return level.dimension().identifier().getPath(); }
+    @Override public String name() { return McCompat.path(level.dimension()); }
     @Override public Environment environment() { return VanillaWorlds.env(level); }
-    @Override public long time() { return level.getOverworldClockTime() % 24000L; }
+    @Override public long time() { return McCompat.dayTime(level) % 24000L; }
     @Override public long fullTime() { return level.getGameTime(); }
     @Override public boolean isRaining() { return level.isRaining(); }
     @Override public boolean isThundering() { return level.isThundering(); }
-    @Override public int minY() { return level.getMinY(); }
-    @Override public int maxY() { return level.getMaxY(); }
+    @Override public int minY() { return McCompat.minY(level); }
+    @Override public int maxY() { return McCompat.maxY(level); }
     @Override public boolean isChunkLoaded(int chunkX, int chunkZ) { return level.hasChunk(chunkX, chunkZ); }
 
     @Override
     public Vec3 spawn() {
-        net.minecraft.core.BlockPos p = level.getRespawnData().pos();
+        net.minecraft.core.BlockPos p = McCompat.spawnPos(level);
         return new Vec3(p.getX() + 0.5, p.getY(), p.getZ() + 0.5);
     }
 
@@ -92,8 +92,8 @@ public final class VanillaWorld implements World {
 
     @Override
     public boolean is(BlockPos pos, Tag tag) {
-        Identifier key = Identifier.tryParse(tag.id());
-        return key != null && at(pos).is(TagKey.create(Registries.BLOCK, key));
+        TagKey<Block> key = McCompat.tag(Registries.BLOCK, tag.id());
+        return key != null && at(pos).is(key);
     }
 
     @Override public int highestY(int x, int z) { return level.getHeight(Heightmap.Types.MOTION_BLOCKING, x, z) - 1; }
@@ -177,15 +177,13 @@ public final class VanillaWorld implements World {
     }
 
     static SoundEvent sound(String id) {
-        Identifier key = Identifier.tryParse(id.contains(":") ? id : "minecraft:" + id);
-        return key == null ? null : BuiltInRegistries.SOUND_EVENT.getValue(key);
+        return McCompat.lookup(BuiltInRegistries.SOUND_EVENT, id.contains(":") ? id : "minecraft:" + id);
     }
 
     @Override
     public void particle(Vec3 at, String particleId, int count, double spread) {
-        Identifier key = Identifier.tryParse(particleId.contains(":") ? particleId : "minecraft:" + particleId);
-        if (key == null) return;
-        ParticleType<?> type = BuiltInRegistries.PARTICLE_TYPE.getValue(key);
+        ParticleType<?> type = McCompat.lookup(BuiltInRegistries.PARTICLE_TYPE,
+                particleId.contains(":") ? particleId : "minecraft:" + particleId);
         if (type instanceof SimpleParticleType simple) {
             level.sendParticles(simple, at.x(), at.y(), at.z(), count, spread, spread, spread, 0.0);
         }

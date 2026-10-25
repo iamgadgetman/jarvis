@@ -9,16 +9,15 @@ import com.gadgetman.jarvis.core.world.Look;
 import com.gadgetman.jarvis.core.world.Vec3;
 import com.gadgetman.jarvis.core.world.WorldId;
 import com.gadgetman.jarvis.vanilla.fake.FakePlayer;
-import net.minecraft.network.chat.ClickEvent;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
+import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.protocol.game.ClientboundSetActionBarTextPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.server.players.NameAndId;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -30,7 +29,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -63,7 +61,7 @@ public final class VanillaOwner implements Owner {
     public String name() {
         ServerPlayer p = p();
         if (p != null) return p.getName().getString();
-        return server.services().nameToIdCache().get(id).map(NameAndId::name).orElse(id.toString());
+        return McCompat.cachedName(server, id).orElse(id.toString());
     }
 
     @Override public boolean isOnline() { return p() != null; }
@@ -71,7 +69,7 @@ public final class VanillaOwner implements Owner {
     @Override
     public boolean isOp() {
         ServerPlayer p = p();
-        return p != null && server.getPlayerList().isOp(p.nameAndId());
+        return p != null && McCompat.isOp(server, p);
     }
 
     /** Neither loader has permission nodes: admin nodes need op, everything else is open. */
@@ -192,12 +190,12 @@ public final class VanillaOwner implements Owner {
     @Override
     public Site respawnPlace() {
         ServerPlayer p = p();
-        ServerLevel level = p == null ? server.overworld() : p.level();
-        if (p != null && p.getRespawnConfig() != null) {
-            var data = p.getRespawnConfig().respawnData();
-            ServerLevel home = server.getLevel(data.dimension());
+        ServerLevel level = p == null ? server.overworld() : McCompat.level(p);
+        Optional<GlobalPos> point = p == null ? Optional.empty() : McCompat.respawnPoint(p);
+        if (point.isPresent()) {
+            ServerLevel home = server.getLevel(point.get().dimension());
             if (home != null) {
-                net.minecraft.core.BlockPos bed = data.pos();
+                net.minecraft.core.BlockPos bed = point.get().pos();
                 return new Site(new VanillaWorld(home), new Vec3(bed.getX() + 0.5, bed.getY(), bed.getZ() + 0.5));
             }
         }
@@ -209,7 +207,7 @@ public final class VanillaOwner implements Owner {
         ServerPlayer p = p();
         ServerLevel level = VanillaWorlds.level(server, world);
         if (p == null || level == null) return;
-        p.teleportTo(level, pos.x(), pos.y(), pos.z(), Set.of(), look.yaw(), look.pitch(), true);
+        McCompat.teleport(p, level, pos.x(), pos.y(), pos.z(), look.yaw(), look.pitch());
     }
 
     @Override
@@ -225,8 +223,8 @@ public final class VanillaOwner implements Owner {
         MutableComponent out = Component.empty();
         for (RichLine.Part part : line.parts()) {
             Style style = Style.EMPTY;
-            if (part.command() != null) style = style.withClickEvent(new ClickEvent.RunCommand(part.command()));
-            if (part.hover() != null) style = style.withHoverEvent(new HoverEvent.ShowText(Component.literal(part.hover())));
+            if (part.command() != null) style = style.withClickEvent(McCompat.runCommand(part.command()));
+            if (part.hover() != null) style = style.withHoverEvent(McCompat.showText(Component.literal(part.hover())));
             out = out.append(Component.literal(part.text()).withStyle(style));
         }
         p.sendSystemMessage(out);

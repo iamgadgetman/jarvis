@@ -4,6 +4,25 @@
 
 ### Added
 
+- **NeoForge for Minecraft 1.21.1, for All the Mods 10.** NeoForge 21.1.200
+  and later, on Java 21. 1.21.1 predates the renames of 1.21.2 to 1.21.11 as
+  well as 26.x's, so more differs than for 26.1: `ResourceLocation` for
+  `Identifier`, `serverLevel()` for a `ServerLevel`-typed `level()`, build
+  heights for `getMin/MaxY` (whose top is one lower), `hurt` for
+  `hurtServer`, an `InteractionResult` that is still an enum, the old
+  profile cache, weather on the overworld rather than the server. Those
+  calls go through `McCompat`, which grew a copy in `src/mc1.21.1`; every
+  call site in `jarvis-vanilla` now uses it, on 26.x too, with the 26.x
+  bodies unchanged. Seven classes whose overridden signatures differ (the
+  fake player, its connection and listener, the two chest menus, the
+  `PlayerList` mixin, whose injection point does not exist on 1.21.1, and
+  the skin lookup) have whole 1.21.1 copies that replace the main file in
+  that build only. Tested on a NeoForge 21.1.215 server end to end with a
+  bot client (summon, briefing, follow, dismiss), and inside the All the
+  Mods 10 8.3 server pack (NeoForge 21.1.259, 470 other mods): the butler
+  spawns with every mod's login hooks firing, walks, breaks a block and is
+  dismissed cleanly. The NeoForge CI job builds and boots it as a fourth
+  version.
 - **NeoForge for Minecraft 26.1.2 and 26.2.** The same mod, built for the
   older games: NeoForge 26.1.2.x and 26.2.0.x. 26.3 renamed four things the
   butler uses (`hurtMarked`, `setInvulnerable`, `SwingSource.SERVER`, and

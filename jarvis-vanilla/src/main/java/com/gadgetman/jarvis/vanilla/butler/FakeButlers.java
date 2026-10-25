@@ -7,6 +7,7 @@ import com.gadgetman.jarvis.core.world.Vec3;
 import com.gadgetman.jarvis.vanilla.fake.FakePlayer;
 import com.gadgetman.jarvis.vanilla.platform.VanillaPlatform;
 import com.mojang.authlib.GameProfile;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -93,11 +94,11 @@ public final class FakeButlers implements Butlers {
     void spawn(UUID ownerId, ServerLevel level, Vec3 at, String name) {
         if (player(ownerId) != null) return;
         GameProfile profile = skins.profile(name);
-        ServerPlayer clash = platform.server().getPlayerList().getPlayer(profile.id());
+        ServerPlayer clash = platform.server().getPlayerList().getPlayer(McCompat.profileId(profile));
         if (clash != null) {
             // Someone with that id is already here (a second butler of the same
             // name, say): same name and skin, a fresh id.
-            profile = new GameProfile(UUID.randomUUID(), name, profile.properties());
+            profile = McCompat.withFreshId(profile, name);
         }
         // Arrive facing the owner, if they are about.
         float yaw = 0f;

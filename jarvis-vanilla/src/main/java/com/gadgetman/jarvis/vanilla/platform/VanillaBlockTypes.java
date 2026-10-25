@@ -2,11 +2,10 @@ package com.gadgetman.jarvis.vanilla.platform;
 
 import com.gadgetman.jarvis.core.platform.BlockTypes;
 import com.gadgetman.jarvis.core.world.BlockState;
+import com.gadgetman.jarvis.vanilla.compat.McCompat;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 
-import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
@@ -28,8 +27,6 @@ public final class VanillaBlockTypes implements BlockTypes {
 
     @Override
     public Set<String> placeableIds() {
-        Set<String> out = new HashSet<>();
-        for (Identifier key : BuiltInRegistries.BLOCK.keySet()) out.add(key.getPath());
-        return out;
+        return McCompat.paths(BuiltInRegistries.BLOCK);
     }
 }

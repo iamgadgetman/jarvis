@@ -24,9 +24,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
-import net.minecraft.world.entity.projectile.arrow.Arrow;
-import net.minecraft.world.entity.projectile.arrow.ThrownTrident;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
@@ -87,7 +85,7 @@ public final class FakeButler implements Butler {
     @Override
     public Optional<World> world() {
         FakePlayer p = p();
-        return p == null ? Optional.empty() : Optional.of(new VanillaWorld(p.level()));
+        return p == null ? Optional.empty() : Optional.of(new VanillaWorld(McCompat.level(p)));
     }
 
     @Override
@@ -137,13 +135,13 @@ public final class FakeButler implements Butler {
     @Override
     public void teleport(Vec3 pos, Look look) {
         FakePlayer p = p();
-        if (p != null) p.teleportTo(p.level(), pos.x(), pos.y(), pos.z(), Set.of(), look.yaw(), look.pitch(), true);
+        if (p != null) McCompat.teleport(p, McCompat.level(p), pos.x(), pos.y(), pos.z(), look.yaw(), look.pitch());
     }
 
     @Override
     public void teleport(World world, Vec3 pos, Look look) {
         FakePlayer p = p();
-        if (p != null) p.teleportTo(((VanillaWorld) world).handle(), pos.x(), pos.y(), pos.z(), Set.of(), look.yaw(), look.pitch(), true);
+        if (p != null) McCompat.teleport(p, ((VanillaWorld) world).handle(), pos.x(), pos.y(), pos.z(), look.yaw(), look.pitch());
     }
 
     @Override
@@ -242,7 +240,7 @@ public final class FakeButler implements Butler {
     public void setHeldItem(Item item) {
         FakePlayer p = p();
         if (p == null) return;
-        p.getInventory().setSelectedSlot(0);
+        McCompat.selectSlot(p, 0);
         p.getInventory().setItem(0, stack(item));
     }
 
@@ -304,8 +302,8 @@ public final class FakeButler implements Butler {
     public void attack(Entity target, double damage) {
         FakePlayer p = p();
         if (p == null || !(target instanceof VanillaEntity fe)) return;
-        ServerLevel level = p.level();
-        fe.handle().hurtServer(level, level.damageSources().playerAttack(p), (float) damage);
+        ServerLevel level = McCompat.level(p);
+        McCompat.hurt(fe.handle(), level, level.damageSources().playerAttack(p), (float) damage);
         swing();
     }
 
@@ -313,14 +311,10 @@ public final class FakeButler implements Butler {
     public void shootArrow(Vec3 from, Vec3 direction, double speed, double damage, int knockback, boolean flame) {
         FakePlayer p = p();
         if (p == null) return;
-        ServerLevel level = p.level();
-        Arrow arrow = new Arrow(level, p, new ItemStack(Items.ARROW), null);
+        ServerLevel level = McCompat.level(p);
+        Projectile arrow = McCompat.arrow(level, p, damage, flame);
         arrow.setPos(from.x(), from.y(), from.z());
         arrow.shoot(direction.x(), direction.y(), direction.z(), (float) speed, 0f);
-        arrow.setBaseDamage(damage);
-        arrow.setCritArrow(true);
-        arrow.pickup = AbstractArrow.Pickup.DISALLOWED;
-        if (flame) arrow.igniteForSeconds(5);
         level.addFreshEntity(arrow);
         level.playSound(null, from.x(), from.y(), from.z(), SoundEvents.ARROW_SHOOT, SoundSource.PLAYERS, 1f, 1f);
         removeLater(arrow);
@@ -330,12 +324,10 @@ public final class FakeButler implements Butler {
     public void throwTrident(Vec3 from, Vec3 direction, double speed, double damage) {
         FakePlayer p = p();
         if (p == null) return;
-        ServerLevel level = p.level();
-        ThrownTrident spear = new ThrownTrident(level, p, new ItemStack(Items.TRIDENT));
+        ServerLevel level = McCompat.level(p);
+        Projectile spear = McCompat.trident(level, p, damage);
         spear.setPos(from.x(), from.y(), from.z());
         spear.shoot(direction.x(), direction.y(), direction.z(), (float) speed, 0f);
-        spear.setBaseDamage(damage);
-        spear.pickup = AbstractArrow.Pickup.DISALLOWED;
         level.addFreshEntity(spear);
         level.playSound(null, from.x(), from.y(), from.z(), SoundEvents.TRIDENT_THROW, SoundSource.PLAYERS, 1f, 1f);
         removeLater(spear);
@@ -367,7 +359,7 @@ public final class FakeButler implements Butler {
             Item item = i < items.size() ? items.get(i) : Item.EMPTY;
             p.getInventory().setItem(i, stack(item));
         }
-        p.getInventory().setSelectedSlot(0);
+        McCompat.selectSlot(p, 0);
     }
 
     @Override

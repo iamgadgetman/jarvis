@@ -37,7 +37,7 @@ public final class BlockBreaker {
 
     public void start(BlockPos target, double speedModifier, Consumer<Boolean> done) {
         cancel();
-        ServerLevel level = player.level();
+        ServerLevel level = McCompat.level(player);
         if (level.getBlockState(target).isAir()) {
             done.accept(true);
             return;
@@ -61,7 +61,7 @@ public final class BlockBreaker {
     /** Called from the fake player's tick. */
     public void tick() {
         if (pos == null) return;
-        ServerLevel level = player.level();
+        ServerLevel level = McCompat.level(player);
         BlockState state = level.getBlockState(pos);
         if (state.isAir()) {
             finish(true);
