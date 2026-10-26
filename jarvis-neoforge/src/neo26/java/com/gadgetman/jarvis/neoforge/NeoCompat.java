@@ -12,4 +12,8 @@ final class NeoCompat {
     static float damageDealt(LivingDamageEvent.Post event) {
         return event.getInflictedDamage();
     }
+
+    /** 26.x replaced item handlers with a new transfer API; mods' storage is not reached there yet. */
+    static void registerStorage() {
+    }
 }

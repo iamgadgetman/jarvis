@@ -84,6 +84,14 @@ public interface World {
      */
     void breakNaturally(BlockPos pos, Item tool);
 
+    /**
+     * Whether breaking this block with the tool yields its drops: false for
+     * an ore the tool's tier is too low for, as a modded ore often is.
+     */
+    default boolean canHarvest(BlockPos pos, Item tool) {
+        return true;
+    }
+
     Entity dropItem(Vec3 at, Item item);
 
     Optional<Container> container(BlockPos pos);

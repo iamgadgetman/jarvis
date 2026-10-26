@@ -252,13 +252,7 @@ public class ButlerService implements ButlerHost {
     public void mine(Owner owner, String[] args) {
         Set<String> oreFilter = null;
         if (args != null && args.length > 0) {
-            String keyword = String.join(" ", args).toLowerCase().trim();
-            for (Map.Entry<String, Set<String>> entry : Blocks.ORE_KEYWORDS.entrySet()) {
-                if (keyword.contains(entry.getKey())) {
-                    oreFilter = entry.getValue();
-                    break;
-                }
-            }
+            oreFilter = Blocks.oresNamed(String.join(" ", args), platform().blockTypes().ids());
         }
         mine(owner, oreFilter);
     }

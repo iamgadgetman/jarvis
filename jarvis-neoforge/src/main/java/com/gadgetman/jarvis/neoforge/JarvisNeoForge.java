@@ -182,6 +182,7 @@ public final class JarvisNeoForge implements JarvisMod {
         try {
             Path dataDir = FMLPaths.CONFIGDIR.get().resolve("jarvis");
             platform = new VanillaPlatform(server, dataDir, new VanillaLog(LOG), "neoforge", loaderDescription());
+            NeoCompat.registerStorage();
             butlers = new FakeButlers(platform);
             platform.vanillaEvents().butlerResolver(butlers::ownerOf);
             core = new JarvisCore(platform, version, butlers, new VanillaActionExecutor(this));

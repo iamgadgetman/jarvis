@@ -104,6 +104,12 @@ public final class PaperWorld implements World {
     }
 
     @Override
+    public boolean canHarvest(BlockPos pos, Item tool) {
+        org.bukkit.block.Block b = at(pos);
+        return !b.getBlockData().requiresCorrectToolForDrops() || b.isPreferredTool(PaperItems.toStack(tool));
+    }
+
+    @Override
     public Entity dropItem(Vec3 at, Item item) {
         return new PaperEntity(w.dropItemNaturally(loc(at), PaperItems.toStack(item)));
     }

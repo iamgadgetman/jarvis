@@ -77,6 +77,7 @@ class OreMiner {
     private int advanceTicks = 0;
 
     private final Set<Long> unreachable = new HashSet<>();
+    private final Set<String> unharvestable = new HashSet<>(); // ore types his pickaxe cannot take
 
     OreMiner(ButlerService host, Owner player, Set<String> requestedOreTypes) {
         this.host = host;
@@ -179,17 +180,26 @@ class OreMiner {
             if (stopped) return;
 
             if (best == null) {
-                String suffix = requestedOreTypes != null
-                        ? " None of that variety remain nearby." : "";
+                String suffix = requestedOreTypes == null ? ""
+                        : unharvestable.containsAll(requestedOreTypes) ? " My pickaxe is not equal to that variety."
+                        : " None of that variety remain nearby.";
                 host.say(player, "The seam appears exhausted, sir." + suffix
                         + " Final tally: " + oresMined + " ores.");
                 host.stopTask(player);
                 return;
             }
 
+            String type = world.block(best).id();
+            if (!world.canHarvest(best, butler.heldItem())) {
+                if (unharvestable.add(type)) {
+                    host.sayQuiet(player, "My pickaxe is not equal to " + Blocks.formatOre(type) + ", sir. I shall leave it be.");
+                }
+                return; // the next tick scans again, now passing over it
+            }
+
             clearTarget();
             targetOre = best;
-            targetOreType = world.block(best).id();
+            targetOreType = type;
             host.sayQuiet(player, "Located " + Blocks.formatOre(targetOreType) + ".");
             host.debug("Found ore: " + targetOreType + " at " + best);
 
@@ -529,6 +539,7 @@ class OreMiner {
         BlockScan scan = world.snapshot(new BlockPos(cx - r, minY, cz - r), new BlockPos(cx + r, maxY, cz + r));
         Set<Long> unreachableCopy = new HashSet<>(unreachable);
         Set<String> filter = requestedOreTypes;
+        Set<String> skipped = new HashSet<>(unharvestable);
 
         host.platform().scheduler().async(() -> {
             int bestX = 0, bestY = 0, bestZ = 0;
@@ -549,7 +560,7 @@ class OreMiner {
                             continue;
                         }
 
-                        if (unreachableCopy.contains(at.packed())) continue;
+                        if (skipped.contains(type) || unreachableCopy.contains(at.packed())) continue;
 
                         int priority = Blocks.ORE_PRIORITY.indexOf(type);
                         if (priority < 0) priority = 999;

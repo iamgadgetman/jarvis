@@ -24,4 +24,11 @@ public interface BlockTypes {
 
     /** Every placeable block id, without namespace, for validating scripts off-thread. */
     Set<String> placeableIds();
+
+    /** Every block id, namespaced, modded ones included: for naming ores. */
+    default Set<String> ids() {
+        Set<String> out = new java.util.HashSet<>();
+        for (String key : placeableIds()) out.add("minecraft:" + key);
+        return out;
+    }
 }

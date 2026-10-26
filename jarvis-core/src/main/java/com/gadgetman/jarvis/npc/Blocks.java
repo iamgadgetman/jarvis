@@ -64,6 +64,38 @@ public final class Blocks {
         ORE_KEYWORDS.put("coal",           Set.of(Ids.COAL_ORE, Ids.DEEPSLATE_COAL_ORE));
     }
 
+    /**
+     * The ores a request such as "mine tin" names, or null when it names
+     * none (then he takes any ore). The vanilla keywords come first; after
+     * them a word names every ore whose id holds it, so a mod's "tin" finds
+     * alltheores:tin_ore and its deepslate twin.
+     */
+    public static Set<String> oresNamed(String request, java.util.Collection<String> blockIds) {
+        String text = request.toLowerCase(java.util.Locale.ROOT).trim();
+        for (java.util.Map.Entry<String, Set<String>> entry : ORE_KEYWORDS.entrySet()) {
+            if (text.contains(entry.getKey())) return entry.getValue();
+        }
+        for (String word : text.split("[^a-z0-9]+")) {
+            if (word.length() < 3 || ORE_FILLER.contains(word)) continue;
+            Set<String> found = oresWithWord(word, blockIds);
+            if (found.isEmpty() && word.endsWith("s")) found = oresWithWord(word.substring(0, word.length() - 1), blockIds);
+            if (!found.isEmpty()) return found;
+        }
+        return null;
+    }
+
+    /** Words in ore ids that name no ore of their own. */
+    private static final Set<String> ORE_FILLER = Set.of(
+            "ore", "ores", "deepslate", "nether", "end", "raw", "stone", "dense", "poor", "rich");
+
+    private static Set<String> oresWithWord(String word, java.util.Collection<String> blockIds) {
+        Set<String> out = new java.util.HashSet<>();
+        for (String id : blockIds) {
+            if (isOre(id) && java.util.Arrays.asList(Ids.key(id).split("_")).contains(word)) out.add(id);
+        }
+        return out;
+    }
+
     /** Ground he will not stand on. */
     public static final Set<String> HAZARDOUS_FOOTING = Set.of(
             Ids.LAVA, Ids.FIRE, Ids.MAGMA_BLOCK, Ids.CACTUS);

@@ -23,6 +23,26 @@
   spawns with every mod's login hooks firing, walks, breaks a block and is
   dismissed cleanly. The NeoForge CI job builds and boots it as a fourth
   version.
+- **Modded ores by name.** "Mine tin" or "mine allthemodium" now finds
+  every ore whose id holds that word (`alltheores:tin_ore` and its
+  deepslate twin), read from the block registry. The vanilla keywords are
+  unchanged and still come first. `World.canHarvest` and
+  `BlockTypes.ids` are new on every platform.
+- **He leaves ores his pickaxe cannot take.** The ore seeker says so once
+  and passes them over, and branch mining no longer queues them, so a
+  modded ore above his tier no longer costs a slow break for no drop.
+- **Mods' storage as a deposit chest (NeoForge 1.21.1).** `/jarvis chest`
+  accepts anything that offers NeoForge's item handler, as a hopper sees
+  it: Sophisticated Storage, drawers, a storage network's interface.
+  26.x replaced item handlers, so it is not reached there yet.
+- **FTB Chunks judges the butler as his owner (NeoForge).** In a team's
+  claims he may do what his owner may and nothing more. An optional mixin,
+  skipped when FTB Chunks is absent. Allying him instead would have left a
+  stale ally behind each summon, since he joins under a fresh id.
+- **The butler's login skips NeoForge's datapack sync (1.21.1).** It only
+  sends data to a client, which he lacks. In All the Mods 10 the first
+  summon held the server for 14 s; it now holds it for 1.5 s, and the
+  structure searches it set off no longer hang the server's shutdown.
 - **NeoForge for Minecraft 26.1.2 and 26.2.** The same mod, built for the
   older games: NeoForge 26.1.2.x and 26.2.0.x. 26.3 renamed four things the
   butler uses (`hurtMarked`, `setInvulnerable`, `SwingSource.SERVER`, and

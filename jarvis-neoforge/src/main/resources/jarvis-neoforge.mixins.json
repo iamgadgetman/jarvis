@@ -1,0 +1,11 @@
+{
+  "required": false,
+  "package": "com.gadgetman.jarvis.neoforge.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "FtbChunksMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

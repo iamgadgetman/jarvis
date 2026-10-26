@@ -511,7 +511,7 @@ class BranchMiner {
         if (harvestQueue.size() >= 12) return;
         for (Facing face : Facing.values()) {
             BlockPos neighbor = cleared.side(face);
-            if (Blocks.isOre(world.block(neighbor).id())) {
+            if (Blocks.isOre(world.block(neighbor).id()) && world.canHarvest(neighbor, butler.heldItem())) {
                 if (!harvestQueue.contains(neighbor)) {
                     harvestQueue.add(neighbor);
                 }

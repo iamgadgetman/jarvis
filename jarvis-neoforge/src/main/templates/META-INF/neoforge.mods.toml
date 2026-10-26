@@ -12,6 +12,10 @@ description = '''An AI butler: summon him, talk to him, and he mines, farms, bui
 [[mixins]]
 config = "jarvis.mixins.json"
 
+# Hooks into other mods; each is skipped when its mod is absent.
+[[mixins]]
+config = "jarvis-neoforge.mixins.json"
+
 [[dependencies.jarvis]]
 modId = "neoforge"
 type = "required"

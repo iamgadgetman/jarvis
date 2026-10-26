@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiFunction;
 
 /** Core's {@link World} over a server level. Cheap to make; equal when the levels are. */
 public final class VanillaWorld implements World {
@@ -117,6 +118,12 @@ public final class VanillaWorld implements World {
     }
 
     @Override
+    public boolean canHarvest(BlockPos pos, Item tool) {
+        net.minecraft.world.level.block.state.BlockState s = level.getBlockState(VanillaWorlds.mc(pos));
+        return !s.requiresCorrectToolForDrops() || VanillaItems.toStack(server(), tool).isCorrectToolForDrops(s);
+    }
+
+    @Override
     public Entity dropItem(Vec3 at, Item item) {
         ItemEntity drop = new ItemEntity(level, at.x(), at.y(), at.z(), VanillaItems.toStack(server(), item));
         drop.setDefaultPickUpDelay();
@@ -126,10 +133,18 @@ public final class VanillaWorld implements World {
 
     @Override
     public Optional<Container> container(BlockPos pos) {
-        return level.getBlockEntity(VanillaWorlds.mc(pos)) instanceof net.minecraft.world.Container c
+        net.minecraft.core.BlockPos p = VanillaWorlds.mc(pos);
+        return level.getBlockEntity(p) instanceof net.minecraft.world.Container c
                 ? Optional.of(new VanillaContainer(server(), c))
-                : Optional.empty();
+                : otherStorage.apply(level, p);
     }
+
+    /**
+     * Storage that is not a vanilla Container, asked after it: a loader sets
+     * this to reach mods' inventories (NeoForge's item handlers).
+     */
+    public static volatile BiFunction<ServerLevel, net.minecraft.core.BlockPos, Optional<Container>> otherStorage =
+            (level, pos) -> Optional.empty();
 
     @Override
     public List<Entity> nearby(Vec3 center, double radius) {
