@@ -1,6 +1,6 @@
 # Jarvis Changelog
 
-## Unreleased
+## v0.17.1 (unreleased — local test build)
 
 ### Added
 
