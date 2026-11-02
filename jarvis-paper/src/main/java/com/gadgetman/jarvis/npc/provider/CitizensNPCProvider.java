@@ -10,6 +10,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -55,9 +56,27 @@ public class CitizensNPCProvider {
         if (existing != null && existing.isSpawned()) return;
 
         NPC npc = CitizensAPI.getNPCRegistry().createNPC(EntityType.PLAYER, name);
+        playerNPCs.put(ownerId, npc);   // before spawn, so onNpcSpawned knows it is ours
         npc.spawn(at);
         npc.getOrAddTrait(Inventory.class);
-        playerNPCs.put(ownerId, npc);
+    }
+
+    /**
+     * Every time one of our NPCs comes into the world (the first spawn, and
+     * each respawn Citizens does on a world change or chunk reload), mark
+     * the entity as not needing to sleep. A Citizens player NPC sits in the
+     * level's player list, which is what vanilla counts for skipping the
+     * night; a sleep-ignored player is counted as already asleep, so the
+     * owner alone in bed is enough. Run a tick later, once Citizens has the
+     * entity in place.
+     */
+    public void onNpcSpawned(NPC npc) {
+        if (!playerNPCs.containsValue(npc)) return;
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (npc.isSpawned() && npc.getEntity() instanceof Player p) {
+                p.setSleepingIgnored(true);
+            }
+        });
     }
 
     /** Destroy this owner's NPC and forget it. Drops nothing. */

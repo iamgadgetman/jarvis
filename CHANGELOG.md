@@ -13,6 +13,26 @@
   `-Pmc_compat`; see `jarvis-neoforge/gradle.properties`. The NeoForge CI
   job builds and boots a server for all three versions.
 
+### Fixed
+
+- **The night skips with Jarvis summoned.** On Fabric and NeoForge the butler
+  is a fake player that joins through the real player list, so the game
+  waited for him to go to bed too: the owner alone in bed was "1/2 players
+  sleeping" and the night never passed. A mixin on `SleepStatus` now leaves
+  fake players out of both counts, which also fixes that message. The
+  `playersSleepingPercentage` rule is unchanged.
+- **He is not listed as a player on the mods.** For the same reason he was in
+  the tab list, in `/list`, and in the player count and name sample the
+  multiplayer server list shows. He is out of all three now. His tab-list
+  entry is still sent, unlisted, because a client needs it to draw him in
+  his skin.
+- **Paper: the same guarantee, made explicit.** A Citizens player NPC is in
+  the level's player list, which is what the night-skip check reads, so
+  rather than rely on Citizens' internals the butler is now marked
+  sleep-ignored every time Citizens spawns his entity (first spawn, world
+  change, chunk reload). The game counts a sleep-ignored player as asleep.
+  Citizens already keeps him out of the tab list and `/list`.
+
 ## v0.17.0 (2026-09-20) — the same butler on Fabric and NeoForge
 
 One release, three files: `jarvis-paper-0.17.0.jar` for Paper and Purpur,

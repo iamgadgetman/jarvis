@@ -4,8 +4,12 @@
   "compatibilityLevel": "JAVA_17",
   "mixins": [
     "ConnectionAccessor",
+    "ListPlayersCommandMixin",
+    "MinecraftServerMixin",
+    "PlayerInfoUpdatePacketMixin",
     "PlayerListMixin",
-    "ServerPlayerMixin"
+    "ServerPlayerMixin",
+    "SleepStatusMixin"
   ],
   "injectors": {
     "defaultRequire": 1
