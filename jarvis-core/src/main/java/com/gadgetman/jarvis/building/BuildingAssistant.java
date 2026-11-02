@@ -24,12 +24,10 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
 import java.util.Iterator;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -60,14 +58,13 @@ public class BuildingAssistant {
     private final ExperienceMemory memory;
     private final DatabaseManager database;
     private final ProgressionManager progression;
+    private final UndoService undo;
 
     private final Map<UUID, BuildState> activeBuilds = new ConcurrentHashMap<>();
-    private final Map<UUID, Deque<UndoEntry>> undoHistory = new ConcurrentHashMap<>();
 
     // Configuration
     private int blocksPerTick = 50;
     private int progressUpdateInterval = 100;
-    private boolean enableUndo = true;
     private int maxAiBlocks = 5000;
 
     // Script planner
@@ -79,10 +76,11 @@ public class BuildingAssistant {
 
     /**
      * @param progression may be null when the service ladder is off
+     * @param undo where every build is recorded, so one undo covers it
      */
     public BuildingAssistant(Platform platform, ButlerService butlers, AIConnector ai,
                              ExperienceMemory memory, DatabaseManager database,
-                             ProgressionManager progression) {
+                             ProgressionManager progression, UndoService undo) {
         this.platform = platform;
         this.log = platform.log();
         this.butlers = butlers;
@@ -90,6 +88,7 @@ public class BuildingAssistant {
         this.memory = memory;
         this.database = database;
         this.progression = progression;
+        this.undo = undo;
         loadConfig();
         log.info("Building assistant initialized");
     }
@@ -98,7 +97,6 @@ public class BuildingAssistant {
         Config cfg = platform.config();
         blocksPerTick = cfg.getInt("build.blocks-per-tick", 50);
         progressUpdateInterval = cfg.getInt("build.progress-update-interval", 100);
-        enableUndo = cfg.getBoolean("build.enable-undo", true);
         maxAiBlocks = cfg.getInt("build.max-ai-blocks", 5000);
 
         planner = cfg.getString("build.planner", "script").toLowerCase(Locale.ROOT);
@@ -157,7 +155,8 @@ public class BuildingAssistant {
         int placedBlocks;
         Task task;
         final long startTime = System.currentTimeMillis();
-        final List<BuildAction> actions = new ArrayList<>(); // For undo
+        /** What this build has replaced, for undo. Set when the build starts. */
+        UndoService.Recorder undo;
 
         /**
          * Blocks whose look depends on their neighbours -- glass panes, iron
@@ -199,37 +198,6 @@ public class BuildingAssistant {
             this.spec = spec;
         }
     }
-
-    /**
-     * One undoable batch. Carries whether the build was AI-planned so undoing a
-     * hand-built shape cannot demote an unrelated AI build in memory.
-     */
-    private static class UndoEntry {
-        final World world;
-        final List<BuildAction> actions;
-        final boolean aiGenerated;
-        /**
-         * The experience this batch produced, so undo demotes the row it
-         * actually reverted. Held by reference: the id is filled in by the
-         * async insert, and this sees it. Null for hand-built shapes and for
-         * builds that never got recorded.
-         */
-        final BuildExperience experience;
-
-        UndoEntry(World world, List<BuildAction> actions, boolean aiGenerated, BuildExperience experience) {
-            this.world = world;
-            this.actions = actions;
-            this.aiGenerated = aiGenerated;
-            this.experience = experience;
-        }
-    }
-
-    /**
-     * What a placement replaced, states and all. Restoring only the id would
-     * turn a staircase the build covered into a stack of default-facing stairs
-     * on undo.
-     */
-    private record BuildAction(BlockPos pos, BlockState original, String newId) { }
 
     // ==================== BUILD COMMANDS ====================
 
@@ -589,6 +557,7 @@ public class BuildingAssistant {
         state.queue.addAll(placements);
         state.totalBlocks = placements.size();
         state.aiGenerated = aiGenerated;
+        state.undo = undo.begin(player, world, (aiGenerated ? "AI build: " : "build: ") + description, aiGenerated);
 
         activeBuilds.put(player.id(), state);
 
@@ -620,9 +589,7 @@ public class BuildingAssistant {
                     }
 
                     // Record for undo
-                    if (enableUndo) {
-                        state.actions.add(new BuildAction(placement.pos, original, placement.state.id()));
-                    }
+                    state.undo.record(placement.pos, original, placement.state.id());
 
                     // Place the block, keeping states when the plan supplied them.
                     world.setBlock(placement.pos, placement.state, false);
@@ -808,9 +775,7 @@ public class BuildingAssistant {
         if (reason != null) player.message(Colors.GRAY + "  (" + reason + ")");
 
         // Whatever did get placed still needs to be revertible.
-        if (enableUndo && !state.actions.isEmpty()) {
-            history(player).addLast(new UndoEntry(state.world, state.actions, state.aiGenerated, null));
-        }
+        undo.commit(state.undo);
 
         if (state.aiGenerated && memory != null) {
             memory.record(BuildExperience.now(
@@ -822,10 +787,6 @@ public class BuildingAssistant {
                 BuildExperience.Outcome.FAILED,
                 state.provider));
         }
-    }
-
-    private Deque<UndoEntry> history(Owner player) {
-        return undoHistory.computeIfAbsent(player.id(), k -> new ArrayDeque<>());
     }
 
     /** Complete a build. */
@@ -849,15 +810,8 @@ public class BuildingAssistant {
 
         // Save to undo history, carrying the experience so a later undo demotes
         // this build rather than whichever success happens to be newest.
-        if (enableUndo && !state.actions.isEmpty()) {
-            Deque<UndoEntry> history = history(player);
-
-            // Limit undo history size
-            while (history.size() >= 10) {
-                history.removeFirst();
-            }
-            history.addLast(new UndoEntry(state.world, state.actions, state.aiGenerated, experience));
-        }
+        state.undo.setExperience(experience);
+        undo.commit(state.undo);
 
         // Building is a discipline like any other — credit it, or the service
         // record shows a permanent zero for blocks laid while the score that
@@ -886,8 +840,8 @@ public class BuildingAssistant {
         player.message(Colors.GREEN + "========================================");
         player.message(Colors.WHITE + "  Blocks placed: " + state.placedBlocks);
         player.message(Colors.WHITE + "  Time: " + duration + " seconds");
-        if (enableUndo) {
-            player.message(Colors.GRAY + "  Use /jarvis build undo to revert");
+        if (undo.isEnabled()) {
+            player.message(Colors.GRAY + "  Use /jarvis undo to revert");
         }
         player.message(Colors.GREEN + "========================================");
 
@@ -920,9 +874,7 @@ public class BuildingAssistant {
         player.message(Colors.GRAY + "Placed " + state.placedBlocks + " of " + state.totalBlocks + " blocks.");
 
         // Still allow undo of partial build
-        if (enableUndo && !state.actions.isEmpty()) {
-            history(player).addLast(new UndoEntry(state.world, state.actions, state.aiGenerated, null));
-        }
+        undo.commit(state.undo);
 
         if (playerInitiated && state.aiGenerated && memory != null) {
             memory.record(BuildExperience.now(
@@ -936,47 +888,9 @@ public class BuildingAssistant {
         }
     }
 
-    /** Undo the last build. */
+    /** Undo the last thing Jarvis built. The same as {@code /jarvis undo}. */
     public void undoLastBuild(Owner player) {
-        if (!enableUndo) {
-            player.message(Colors.RED + "Undo is disabled in config.");
-            return;
-        }
-
-        Deque<UndoEntry> history = undoHistory.get(player.id());
-        if (history == null || history.isEmpty()) {
-            player.message(Colors.GRAY + "No builds to undo.");
-            return;
-        }
-
-        UndoEntry entry = history.removeLast();
-        List<BuildAction> actions = entry.actions;
-        player.message(Colors.YELLOW + "Undoing " + actions.size() + " blocks...");
-
-        // Undo in reverse order
-        int undone = 0;
-        for (int i = actions.size() - 1; i >= 0; i--) {
-            BuildAction action = actions.get(i);
-
-            // Only undo if block hasn't been modified by someone else
-            if (entry.world.block(action.pos()).id().equals(action.newId())) {
-                entry.world.setBlock(action.pos(), action.original(), false);
-                undone++;
-            }
-        }
-
-        player.message(Colors.GREEN + "Reverted " + undone + " blocks.");
-
-        // Reverting an AI build shortly after it finished is the clearest
-        // "that plan was wrong" signal there is. Hand-built shapes share this
-        // undo stack, so the flag matters.
-        if (entry.aiGenerated && undone > 0 && memory != null) {
-            if (entry.experience != null) {
-                memory.markUndone(entry.experience);
-            } else {
-                memory.markRecentBuildUndone(player.id());
-            }
-        }
+        undo.undo(player, 1);
     }
 
     /** Build a simple shape without AI. */

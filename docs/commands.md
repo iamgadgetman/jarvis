@@ -49,7 +49,9 @@
 | `/jarvis debug` | Provider, model, memory and subsystem status | `jarvis.admin` |
 | `/jarvis export-dataset` | Dump intent and build pairs as JSONL | `jarvis.admin` |
 | `/jarvis build <description>` | Build it — pastes a matching schematic, or has the AI design one | `jarvis.use` |
-| `/jarvis build undo` | Revert the last build | `jarvis.use` |
+| `/jarvis undo [n]` | Undo the last thing he built or pasted, or the last n (alias: `/jarvis build undo`) | `jarvis.use` |
+| `/jarvis undo list` | What he can undo, newest first, with labels and ages | `jarvis.use` |
+| `/jarvis redo` | Put back what the last undo took down (one level) | `jarvis.use` |
 | `/jarvis build cancel` | Stop the build in progress | `jarvis.use` |
 | `/jarvis build wall\|floor\|pillar\|cube [size]` | Simple shapes, no AI | `jarvis.use` |
 | `/jarvis paste <name>` | Paste a schematic by name, no AI | `jarvis.use` |

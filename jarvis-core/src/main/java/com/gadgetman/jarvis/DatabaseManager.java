@@ -146,6 +146,27 @@ public class DatabaseManager {
             ps.executeUpdate();
         }
 
+        // Undo history (v0.18.0) — see building.UndoService. One row per job;
+        // the placements are a gzipped text list, decoded only on undo.
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS undo_batches (" +
+                "batch_key VARCHAR(36) PRIMARY KEY, " +
+                "player_id VARCHAR(36) NOT NULL, " +
+                "world VARCHAR(100) NOT NULL, " +
+                "label TEXT NOT NULL, " +
+                "created_at BIGINT NOT NULL, " +
+                "ai_generated INTEGER NOT NULL, " +
+                "experience_id BIGINT, " +
+                "block_count INTEGER NOT NULL, " +
+                "actions BLOB NOT NULL)")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE INDEX IF NOT EXISTS idx_undo_player " +
+                "ON undo_batches (player_id, created_at)")) {
+            ps.executeUpdate();
+        }
+
         log.info("Database tables initialized successfully");
     }
 

@@ -65,7 +65,11 @@ help` prints this list in game.
 | Command | What it does |
 |---|---|
 | `/jarvis build <description>` | Design and build it |
-| `/jarvis build undo` | Revert the last build |
+| `/jarvis undo` | Undo the last thing he built or pasted — AI builds, shapes and schematics alike |
+| `/jarvis undo <n>` | Undo the last n of them, newest first |
+| `/jarvis undo list` | What can be undone, with labels and ages |
+| `/jarvis redo` | Put back what the last undo took down (one level) |
+| `/jarvis build undo` | The same as `/jarvis undo`, kept for old habits |
 | `/jarvis build cancel` / `/jarvis cancelbuild` | Stop the build in progress |
 | `/jarvis build wall\|floor\|pillar\|cube [size]` | Simple shapes, no AI |
 | `/jarvis paste <name>` | Paste a schematic by name, no AI |

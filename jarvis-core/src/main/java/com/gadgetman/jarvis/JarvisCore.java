@@ -3,6 +3,7 @@ package com.gadgetman.jarvis;
 import com.gadgetman.jarvis.ai.AIConnector;
 import com.gadgetman.jarvis.ai.AiSettings;
 import com.gadgetman.jarvis.building.BuildingAssistant;
+import com.gadgetman.jarvis.building.UndoService;
 import com.gadgetman.jarvis.commands.ActionExecutor;
 import com.gadgetman.jarvis.commands.CommandService;
 import com.gadgetman.jarvis.commands.CommandSink;
@@ -64,6 +65,7 @@ public final class JarvisCore {
     private ButlerService butlers;
     private ProgressionManager progression;
     private BuildingAssistant building;
+    private UndoService undo;
     private SchematicLibrary schematics;
     private SchematicExtras schematicExtras = SchematicExtras.NONE;
     private VoiceStatus voiceStatus = VoiceStatus.NONE;
@@ -118,8 +120,10 @@ public final class JarvisCore {
         progression.attach(butlers);
         butlers.setProgression(progression);
 
-        building = new BuildingAssistant(platform, butlers, ai, memory, database, progression);
-        schematics = new SchematicLibrary(platform, butlers);
+        // One undo for everything he builds; the builders all record into it.
+        undo = new UndoService(platform, database, memory);
+        building = new BuildingAssistant(platform, butlers, ai, memory, database, progression, undo);
+        schematics = new SchematicLibrary(platform, butlers, undo);
         requestDecomposer = new RequestDecomposer(config, log, ai, database);
         confirmations = new ConfirmationManager(config.getLong("confirmation-timeout-seconds", 30));
         requests = new PlayerRequestManager();
@@ -199,6 +203,7 @@ public final class JarvisCore {
             butlers.dismissAll();
         }
         if (building != null) building.shutdown();
+        if (undo != null) undo.flush();   // its queued writes, before the database goes
         if (database != null) database.closeDatabases();
         log.info("Jarvis AI Companion v" + version + " disabled.");
     }
@@ -242,6 +247,7 @@ public final class JarvisCore {
     public ButlerService butlers() { return butlers; }
     public ProgressionManager progression() { return progression; }
     public BuildingAssistant building() { return building; }
+    public UndoService undo() { return undo; }
     public SchematicLibrary schematics() { return schematics; }
     public RequestDecomposer requestDecomposer() { return requestDecomposer; }
     public ActionExecutor actions() { return actions; }

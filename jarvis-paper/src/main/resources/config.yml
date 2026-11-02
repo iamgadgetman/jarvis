@@ -308,9 +308,11 @@ build:
   progress-update-interval: 100  # Show progress every N blocks
   
   # Features
-  enable-undo: true              # Allow build undo (NEW in 0.0.6)
-  undo-timeout: 300              # Seconds before undo expires
-  max-undo-size: 10000           # Max blocks that can be undone
+  enable-undo: true              # /jarvis undo for everything he builds: AI builds,
+                                 # shapes and schematic pastes (WorldEdit ones too)
+  undo-history: 10               # Jobs kept per player, newest first. Saved in the
+                                 # database, so undo survives a restart. Mining is not
+                                 # undoable, and chest contents are not restored.
   
   # Materials
   # A plan naming something that is not a block (a painting, an item frame,

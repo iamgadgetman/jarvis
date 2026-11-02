@@ -413,6 +413,18 @@ public class Menus {
                 c -> run(p, "schematic", "scan"));
         m.put(12, item(Ids.BARRIER, Colors.RED + "Cancel build", Colors.GRAY + "Stop the build in progress"),
                 c -> run(p, "cancelbuild"));
+        var undo = core.undo();
+        int undoable = undo == null ? 0 : undo.historySize(p);
+        if (undo != null && undo.isEnabled() && undoable > 0) {
+            var last = undo.historyOf(p).get(0);
+            m.put(14, item(Ids.CLOCK, Colors.YELLOW + "Undo last build",
+                    Colors.GRAY + "Put back " + last.label(),
+                    Colors.DARK_GRAY + last.size() + " blocks; " + undoable + " in the history"),
+                    c -> run(p, "undo"));
+        } else {
+            m.label(14, unavailable("Undo last build",
+                    undo != null && !undo.isEnabled() ? "Undo is off in config" : "Nothing he built to undo"));
+        }
         m.put(13, item(Ids.WRITABLE_BOOK, Colors.GREEN + "Custom build",
                 Colors.GRAY + "Describe it in chat and he plans it", Colors.DARK_GRAY + "Same as /jarvis build <description>"),
                 c -> askInChat(p, "What shall I build, sir? Describe it in a line.", description -> {

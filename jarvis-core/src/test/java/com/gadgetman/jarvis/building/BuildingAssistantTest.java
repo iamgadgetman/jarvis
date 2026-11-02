@@ -44,9 +44,10 @@ class BuildingAssistantTest {
         assertEquals(9, f.core.progression().recordOf(p).blocksPlaced());
 
         f.core.building().undoLastBuild(p);
+        f.tick(5);   // undo puts blocks back a few per tick, as building does
 
         assertEquals(0, f.world.count(Ids.STONE_BRICKS));
-        assertTrue(p.wasTold("Reverted 9 blocks"));
+        assertTrue(p.wasTold("Restored 9 blocks"), String.join("\n", p.plainMessages()));
     }
 
     @Test
@@ -57,9 +58,10 @@ class BuildingAssistantTest {
         f.world.set(new BlockPos(2, 65, 0), BlockState.of(Ids.DIRT));   // the player swapped one
 
         f.core.building().undoLastBuild(p);
+        f.tick(5);
 
         assertEquals(Ids.DIRT, f.world.block(new BlockPos(2, 65, 0)).id());
-        assertTrue(p.wasTold("Reverted 1 blocks"));
+        assertTrue(p.wasTold("Restored 1 block. Skipped 1 changed since"), String.join("\n", p.plainMessages()));
     }
 
     @Test
@@ -97,6 +99,7 @@ class BuildingAssistantTest {
         int placed = f.world.count(Ids.STONE_BRICKS);
         assertTrue(placed > 0 && placed < 8 * 8 * 8, "part of it went up: " + placed);
         f.core.building().undoLastBuild(p);
+        f.tick(20);
         assertEquals(0, f.world.count(Ids.STONE_BRICKS));
     }
 }

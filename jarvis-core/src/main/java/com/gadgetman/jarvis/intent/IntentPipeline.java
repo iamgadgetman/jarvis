@@ -274,6 +274,8 @@ public class IntentPipeline {
                     parameters != null ? parameters.optString("type", null) : null,
                     parameters != null ? parameters.optInt("spacing", -1) : -1);
             case "clearloot" -> npc.clearInventory(player);
+            case "undo" -> core.undo().undo(player, 1);
+            case "redo" -> core.undo().redo(player);
             case "chat", "talk" -> {
                 // AI response already delivered above — nothing else needed
             }
@@ -366,6 +368,14 @@ public class IntentPipeline {
         player.message(Colors.GRAY + "Expires in " + core.confirmations().getTimeoutSeconds() + "s.");
     }
 
+    /** "undo that", "put it back", "take that down": a request to undo the last build. */
+    public static boolean isUndo(String message) {
+        String m = message.toLowerCase(Locale.ROOT);
+        return m.contains("undo") || m.contains("put it back") || m.contains("put that back")
+                || m.contains("put everything back") || m.contains("take it down")
+                || m.contains("take that down");
+    }
+
     /** Keyword fallback for when the AI is unreachable or returns nonsense. */
     public void executeFallbackAction(Owner player, String message) {
         executeFallbackAction(player, message, CHAT_RESPONDER);
@@ -381,7 +391,10 @@ public class IntentPipeline {
      */
     public void executeFallbackAction(Owner player, String message, Responder sink) {
         ButlerService npc = core.butlers();
-        if (message.contains("summon") || message.contains("come"))     npc.summon(player);
+        // Before "back" and "come": "put it back" is an undo, not a recall.
+        if (isUndo(message)) core.undo().undo(player, 1);
+        else if (message.contains("redo")) core.undo().redo(player);
+        else if (message.contains("summon") || message.contains("come"))     npc.summon(player);
         else if (message.contains("dismiss") || message.contains("away")) npc.dismiss(player);
         else if (message.contains("mine") || message.contains("dig"))   npc.mine(player);
         else if (message.contains("attack") || message.contains("fight")) npc.guard(player, "aggressive");

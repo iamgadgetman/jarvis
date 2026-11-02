@@ -72,7 +72,7 @@ public class Jarvis extends JavaPlugin {
 
         // WorldEdit, when present, accelerates JSON pastes and adds clipboard
         // saves and rotated pastes.
-        schematicManager = new SchematicManager(this, core.schematics());
+        schematicManager = new SchematicManager(this, core.schematics(), core.undo());
         core.setSchematicExtras(schematicManager);
 
         // Bukkit registration

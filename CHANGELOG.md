@@ -4,6 +4,33 @@
 
 ### Added
 
+- **One undo for everything he builds.** `/jarvis undo` takes down the last
+  job, whatever it was: an AI build, a simple shape, or a schematic paste,
+  WorldEdit's included. `/jarvis undo <n>` takes the last n, `/jarvis undo
+  list` shows the history with labels and ages, and `/jarvis redo` puts the
+  last undo back (one level). `/jarvis build undo` still works. "Jarvis, undo
+  that" or "put it back" in chat or voice does the same, and the bell menu's
+  Building page has **Undo last build**. Before, only AI builds could be undone,
+  and pastes told you to use WorldEdit's `//undo`, which the mods do not have.
+  - Undo moved out of the building assistant into `UndoService`, which every
+    placement path records into. A job is one batch: each block's position,
+    its full original state (so stairs and facing come back right) and the
+    block placed there, plus the world, a label and a timestamp.
+  - History is per player, newest first, `build.undo-history` deep (default
+    10), and saved to Jarvis's database, so it survives a restart. A row is
+    deleted only once its undo finishes, so a restart in the middle of one
+    loses nothing.
+  - Undo restores a few blocks per tick, as building does, and reports
+    "Restored 1,240 blocks". A block a player changed since is left alone and
+    counted as skipped.
+  - WorldEdit pastes now run on the server thread rather than off it, so the
+    region can be read before and after and the difference recorded. Regions
+    over a million blocks are pasted but not recorded, and say so.
+  - Not undone: mining, the blocks the mining jobs set down while they work
+    (undoing a lava plug would reopen the lava), and container contents.
+- **config.yml:** `build.undo-history` replaces `build.undo-timeout` and
+  `build.max-undo-size`, which were never read.
+
 - **NeoForge for Minecraft 26.1.2 and 26.2.** The same mod, built for the
   older games: NeoForge 26.1.2.x and 26.2.0.x. 26.3 renamed four things the
   butler uses (`hurtMarked`, `setInvulnerable`, `SwingSource.SERVER`, and

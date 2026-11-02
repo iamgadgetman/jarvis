@@ -28,7 +28,7 @@ The rest of the page opens the sub-pages:
 | **Mining** | Ores, branch mines, shafts |
 | **Combat & Guard** | Stances, night watch, patrol |
 | **Groundskeeping** | Farm, chop, fish, light the place |
-| **Building** | Custom build, and the schematic library |
+| **Building** | Custom build, the schematic library, and **Undo last build** |
 | **Household** | Home, escort, death drops |
 | **Steward** | Briefing, standing duties, AI status, version |
 | **Service record** | His rank, what he has earned, what is next. Shown only while progression is on |

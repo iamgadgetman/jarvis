@@ -438,7 +438,11 @@ public class AIConnector {
             Map.entry("dance", "dance"), Map.entry("patrol", "patrol"),
             Map.entry("report", "report"), Map.entry("recover", "recover"),
             Map.entry("take me home", "take_home"), Map.entry("set home", "set_home"),
-            Map.entry("light", "light"), Map.entry("light the area", "light"));
+            Map.entry("light", "light"), Map.entry("light the area", "light"),
+            Map.entry("undo", "undo"), Map.entry("undo that", "undo"),
+            Map.entry("put it back", "undo"), Map.entry("put that back", "undo"),
+            Map.entry("put everything back", "undo"), Map.entry("undo the build", "undo"),
+            Map.entry("redo", "redo"), Map.entry("redo that", "redo"));
 
     private static final Set<String> FAST_ORES = Set.of(
             "diamond", "emerald", "gold", "iron", "copper", "redstone",
@@ -471,7 +475,9 @@ public class AIConnector {
             Map.entry("recover",    new String[]{"Retrieving your things. Again.", "Off to the scene of your misfortune."}),
             Map.entry("take_home",  new String[]{"Homeward. Do keep up.", "Leading you home, sir."}),
             Map.entry("set_home",   new String[]{"Noted as home.", "This spot is now home. Ambitious."}),
-            Map.entry("light",      new String[]{"Let there be light. Grudgingly.", "Lighting the place up."}));
+            Map.entry("light",      new String[]{"Let there be light. Grudgingly.", "Lighting the place up."}),
+            Map.entry("undo",       new String[]{"Putting it all back, sir.", "As though it never happened."}),
+            Map.entry("redo",       new String[]{"Up it goes again.", "Back as it was, sir."}));
 
     /** Token usage from the last provider call, for ai.log-usage. */
     private volatile String lastUsage;
@@ -817,7 +823,10 @@ public class AIConnector {
                 "  patrol - walk the saved patrol circuit as a guard\n" +
                 "  light - place lights on a grid to spawn-proof the area, params: {radius (optional, blocks), type (optional): torch|end_rod|lantern, spacing (optional, blocks)}\n" +
                 "  clearloot - drop all collected items\n" +
-                "  build - build a structure, params: {description: string}\n\n" +
+                "  build - build a structure, params: {description: string}\n" +
+                "  undo - take down the last thing Jarvis built or pasted and put back what was there.\n" +
+                "         Use for \"undo that\", \"put it back\", \"wrong place, take it down\".\n" +
+                "  redo - put back up what the last undo took down\n\n" +
                 "WORLD ACTIONS (directly affect the game world):\n" +
                 "  give_item - give items to player, params: {player, item (minecraft:xxx), amount}\n" +
                 "  enchant - enchant held item, params: {player, enchantment, level}\n" +

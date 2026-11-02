@@ -53,7 +53,7 @@ Mistakes are repaired rather than reported:
 Underground requests carve their own space first.
 
 ```
-/jarvis build undo       revert the last build
+/jarvis undo             take down the last thing he built
 /jarvis build cancel     stop the one in progress
 /jarvis build wall|floor|pillar|cube [size]    simple shapes, no AI
 ```
@@ -93,6 +93,43 @@ Litematica files convert in place:
 
 "jarvis, build me a house" picks the best match from the library when one
 fits, which is also the path a local-only server uses for large builds.
+
+---
+
+## Undo
+
+If he builds in the wrong place, one command puts it all back:
+
+```
+/jarvis undo             the last job
+/jarvis undo 3           the last three, newest first
+/jarvis undo list        what can be undone, with labels and ages
+/jarvis redo             put back what the last undo took down
+```
+
+"Jarvis, undo that" and "put it back" in chat or by voice do the same, and the
+bell menu's **Building** page has **Undo last build**.
+
+Undo covers everything he puts down for you as a job: AI builds, the simple
+shapes, and schematic pastes, including WorldEdit's on Paper. Each job comes
+back exactly as it was before — the grass and flowers a paste replaced, and
+stairs and logs facing the way they faced. A large undo goes back a few blocks
+per tick, as the build did, and ends with a count: "Restored 1,240 blocks."
+
+- **Your changes are kept.** A block someone changed after he placed it is left
+  alone and counted: "Skipped 1 changed since."
+- **History survives a restart.** The last `build.undo-history` jobs (10 by
+  default) are kept per player in Jarvis's database.
+- **Redo is one level** and lasts until the restart or your next build.
+- **Not undone:** mining, and the blocks the mining jobs set down as they go
+  (floor patches, plugs over lava and water, ladders and torches) — putting
+  those back would reopen the hazards in a mine he dug. Chest and other
+  container contents are not recorded either.
+- Undoing an AI build soon after it finished tells his experience memory that
+  plan was wrong, as before.
+
+WorldEdit's own `//undo` is not needed and is not what Jarvis points you at;
+it does not exist on Fabric or NeoForge.
 
 ---
 

@@ -176,6 +176,24 @@ public class ExperienceMemory {
         });
     }
 
+    /**
+     * Demote an experience known only by its stored id: undo history carried
+     * over a restart holds the id, not the object.
+     */
+    public void markUndone(long id, UUID playerId) {
+        if (!enabled || id <= 0) return;
+        scheduler.async(() -> {
+            if (updateOutcome(id, BuildExperience.Outcome.UNDONE)) {
+                cache.removeIf(e -> e.getId() == id);
+                if (playerId != null) {
+                    long[] recent = lastSuccess.get(playerId);
+                    if (recent != null && recent[0] == id) lastSuccess.remove(playerId);
+                }
+                log.fine("Experience " + id + " demoted to UNDONE.");
+            }
+        });
+    }
+
     private boolean updateOutcome(long id, BuildExperience.Outcome outcome) {
         try (Connection c = database.getConnection();
              PreparedStatement ps = c.prepareStatement(

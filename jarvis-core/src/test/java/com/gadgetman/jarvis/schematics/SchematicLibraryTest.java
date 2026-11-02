@@ -3,6 +3,7 @@ package com.gadgetman.jarvis.schematics;
 import com.gadgetman.jarvis.core.testing.FakeOwner;
 import com.gadgetman.jarvis.core.testing.Fixture;
 import com.gadgetman.jarvis.core.world.BlockPos;
+import com.gadgetman.jarvis.core.world.BlockState;
 import com.gadgetman.jarvis.core.world.Ids;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,6 +76,35 @@ class SchematicLibraryTest {
         assertEquals("storage_shed", f.core.schematics().bestMatchName("a shed for storage"));
         assertTrue(f.core.schematics().bestMatchScore("a shed for storage") >= 50);
         assertNull(f.core.schematics().bestMatchName("a diamond sword"));
+    }
+
+    @Test
+    @DisplayName("/jarvis undo after a paste puts back exactly what was there, flowers and stair facing included")
+    void undoesAPaste() throws IOException {
+        writeHut("barn");
+        f.core.schematics().scanFolder();
+        BlockPos at = p.pos.block();
+        BlockState poppy = BlockState.of("minecraft:poppy");
+        BlockState grass = BlockState.of("minecraft:short_grass");
+        BlockState stairs = BlockState.of("minecraft:oak_stairs").with("facing", "east").with("half", "top");
+        f.world.set(at, poppy);
+        f.world.set(at.offset(1, 0, 0), grass);
+        f.world.set(at.offset(0, 1, 0), stairs);
+
+        f.core.schematics().pasteSchematic(p, "barn");
+        f.tick(5);
+        assertEquals(Ids.STONE_BRICKS, f.world.block(at).id());
+        assertTrue(p.wasTold("/jarvis undo"), "the paste points at Jarvis's undo, not WorldEdit's");
+        assertTrue(f.core.undo().historyOf(p).get(0).label().equals("schematic: barn"));
+
+        f.core.commands().jarvis(p, java.util.Optional.of(p), java.util.List.of("undo"), false);
+        f.tick(5);
+
+        assertEquals(poppy, f.world.block(at));
+        assertEquals(grass, f.world.block(at.offset(1, 0, 0)));
+        assertEquals(stairs, f.world.block(at.offset(0, 1, 0)));
+        assertTrue(f.world.block(at.offset(1, 1, 0)).isAir());
+        assertTrue(p.wasTold("Restored 4 blocks."), String.join("\n", p.plainMessages()));
     }
 
     @Test

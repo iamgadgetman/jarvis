@@ -7,6 +7,7 @@ import com.gadgetman.jarvis.ai.AIConnector;
 import com.gadgetman.jarvis.ai.AiSettings;
 import com.gadgetman.jarvis.voice.VoiceConfig;
 import com.gadgetman.jarvis.building.BuildingAssistant;
+import com.gadgetman.jarvis.building.UndoService;
 import com.gadgetman.jarvis.building.ScriptEngineProbe;
 import com.gadgetman.jarvis.core.platform.Audience;
 import com.gadgetman.jarvis.core.platform.Owner;
@@ -102,6 +103,8 @@ public class CommandService implements CommandSink {
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("engine") ? VoiceConfig.ENGINES
                         : args.size() == 3 && (args.get(1).equalsIgnoreCase("threads") || args.get(1).equalsIgnoreCase("bench")) ? List.of("0", "2", "4", "8")
                         : List.of();
+            } else if (args.get(0).equalsIgnoreCase("undo") && args.size() == 2) {
+                pool = List.of("list", "2", "3", "5");
             } else {
                 return List.of();
             }
@@ -259,6 +262,10 @@ public class CommandService implements CommandSink {
             // Building commands - the library first, the AI builder after
             case "build", "paste" -> handleBuild(player, sub, args);
 
+            // One undo for everything he builds: AI builds, shapes, schematics
+            case "undo" -> handleUndo(player, args);
+            case "redo" -> core.undo().redo(player);
+
             case "cancelbuild" -> {
                 if (core.building() == null) {
                     player.message(Colors.RED + "Building assistant not available");
@@ -384,7 +391,7 @@ public class CommandService implements CommandSink {
             player.message(Colors.RED + "Usage: /jarvis build <what you want>");
             player.message(Colors.GRAY + "Examples: /jarvis build castle");
             player.message(Colors.GRAY + "          /jarvis build a small oak cottage");
-            player.message(Colors.GRAY + "          /jarvis build undo  |  /jarvis build cancel");
+            player.message(Colors.GRAY + "          /jarvis undo  |  /jarvis build cancel");
             player.message(Colors.GRAY + "Use /jarvis schematic list to see available schematics");
             return;
         }
@@ -393,14 +400,19 @@ public class CommandService implements CommandSink {
         boolean isBuild = sub.equals("build");
         BuildingAssistant assistant = core.building();
 
-        // /jarvis build undo | cancel
-        if (isBuild && (first.equals("undo") || first.equals("cancel"))) {
+        // /jarvis build undo [n|list] — kept as an alias of /jarvis undo
+        if (isBuild && first.equals("undo")) {
+            handleUndo(player, args.subList(1, args.size()));
+            return;
+        }
+
+        // /jarvis build cancel
+        if (isBuild && first.equals("cancel")) {
             if (assistant == null) {
                 player.message(Colors.RED + "Building assistant not available");
                 return;
             }
-            if (first.equals("undo")) assistant.undoLastBuild(player);
-            else assistant.cancelBuild(player);
+            assistant.cancelBuild(player);
             return;
         }
 
@@ -453,6 +465,29 @@ public class CommandService implements CommandSink {
         } else {
             player.message(Colors.RED + "Building assistant not available");
         }
+    }
+
+    /**
+     * /jarvis undo — the last job; /jarvis undo &lt;n&gt; — the last n;
+     * /jarvis undo list — what can be undone. {@code args[0]} is "undo".
+     */
+    private void handleUndo(Owner player, List<String> args) {
+        UndoService undo = core.undo();
+        if (args.size() < 2) {
+            undo.undo(player, 1);
+            return;
+        }
+        String what = args.get(1).toLowerCase(Locale.ROOT);
+        if (what.equals("list") || what.equals("history")) {
+            undo.list(player);
+            return;
+        }
+        Optional<Integer> n = intArg(args, 1);
+        if (n.isEmpty() || n.get() < 1) {
+            player.message(Colors.RED + "Usage: /jarvis undo [n|list]");
+            return;
+        }
+        undo.undo(player, n.get());
     }
 
     private void handleSchematic(Owner player, List<String> args) {
@@ -991,17 +1026,17 @@ public class CommandService implements CommandSink {
             "duty", "enchant", "farm", "feed", "fight", "fish", "folder", "follow", "give_item", "guard",
             "heal", "help", "home", "inventory", "light", "light_area", "list", "litematic", "litematics",
             "load", "loot", "lp_group_add", "lp_group_remove", "lumber", "mine", "mine_here", "mining",
-            "paste", "paste_schematic", "patrol", "potion_effect", "protect", "recover", "reload", "remove",
+            "paste", "paste_schematic", "patrol", "potion_effect", "protect", "recover", "redo", "reload", "remove",
             "report", "requests", "return", "rotate", "save", "scan", "schematic", "schematics", "sentry",
             "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather",
-            "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "ver", "version", "voice",
+            "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "undo", "ver", "version", "voice",
             "warp", "watch");
 
     /** The top-level words worth offering on tab. */
     private static final List<String> COMPLETIONS = List.of(
             "summon", "dismiss", "return", "follow", "stop", "attack", "guard", "watch", "mine", "dig",
             "tunnel", "farm", "tend", "chop", "fish", "dance", "light", "patrol", "chest", "deposit", "loot",
-            "clearloot", "bell", "build", "paste", "cancelbuild", "schematic", "ask", "ai", "report", "duties",
+            "clearloot", "bell", "build", "paste", "undo", "redo", "cancelbuild", "schematic", "ask", "ai", "report", "duties",
             "duty", "recover", "home", "confirm", "cancel", "requests", "approve", "deny", "portal", "portals",
             "quiet", "rank", "queue", "version", "voice", "help", "reload", "debug", "export-dataset");
 
@@ -1250,6 +1285,9 @@ public class CommandService implements CommandSink {
             player.message(Colors.WHITE + "  /jarvis schematic rotate <name> <deg>" + Colors.GRAY + " - Paste rotated");
             player.message(Colors.WHITE + "  /jarvis schematic scan" + Colors.GRAY + " - Rescan schematic folder");
             player.message(Colors.WHITE + "  /jarvis build <name>" + Colors.GRAY + " - Quick paste (alias)");
+            player.message(Colors.WHITE + "  /jarvis undo [n]" + Colors.GRAY + " - Undo his last build or paste (or the last n)");
+            player.message(Colors.WHITE + "  /jarvis undo list" + Colors.GRAY + " - What he can undo");
+            player.message(Colors.WHITE + "  /jarvis redo" + Colors.GRAY + " - Put back what was last undone");
             player.message(Colors.YELLOW + "Litematic Conversion:");
             player.message(Colors.WHITE + "  /jarvis schematic litematic" + Colors.GRAY + " - List .litematic files");
             player.message(Colors.WHITE + "  /jarvis schematic convert <name>" + Colors.GRAY + " - Convert to .schem");

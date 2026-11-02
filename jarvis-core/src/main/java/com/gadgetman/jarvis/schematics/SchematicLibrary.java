@@ -1,5 +1,6 @@
 package com.gadgetman.jarvis.schematics;
 
+import com.gadgetman.jarvis.building.UndoService;
 import com.gadgetman.jarvis.core.platform.Log;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
@@ -45,16 +46,18 @@ public class SchematicLibrary {
     private final Platform platform;
     private final Log log;
     private final ButlerService butlers;
+    private final UndoService undo;
     private final Path schematicFolder;
     private final Map<String, SchematicInfo> availableSchematics = new HashMap<>();
     private final LitematicConverter litematicConverter;
     private final SchemReader schemReader;
     private Accelerator accelerator;
 
-    public SchematicLibrary(Platform platform, ButlerService butlers) {
+    public SchematicLibrary(Platform platform, ButlerService butlers, UndoService undo) {
         this.platform = platform;
         this.log = platform.log();
         this.butlers = butlers;
+        this.undo = undo;
         this.schematicFolder = platform.dataDir().resolve("schematics");
         initializeFolder();
         this.litematicConverter = new LitematicConverter(log, platform.scheduler(), schematicFolder, this::scanFolder);
@@ -394,7 +397,7 @@ public class SchematicLibrary {
         // Use native reader for .schem and .schematic files
         if (info.format() == Format.WORLDEDIT_SCHEM || info.format() == Format.WORLDEDIT_SCHEMATIC) {
             player.message(Colors.YELLOW + "Jarvis: Pasting schematic: " + Colors.WHITE + info.name());
-            pasteNative(player, info.file());
+            pasteNative(player, info);
             return;
         }
 
@@ -414,13 +417,14 @@ public class SchematicLibrary {
     }
 
     /** Load a .schem off-thread, then place it where the player stands, a few blocks per tick. */
-    private void pasteNative(Owner player, Path schematicFile) {
+    private void pasteNative(Owner player, SchematicInfo info) {
+        Path schematicFile = info.file();
         player.message(Colors.YELLOW + "Jarvis: Loading schematic: " + schematicFile.getFileName());
 
         platform.scheduler().async(() -> {
             try {
                 SchemReader.SchematicData data = schemReader.read(schematicFile);
-                platform.scheduler().sync(() -> placeSchematic(player, data));
+                platform.scheduler().sync(() -> placeSchematic(player, info.name(), data));
             } catch (Exception e) {
                 log.error("Failed to load schematic: " + e.getMessage(), e);
                 platform.scheduler().sync(() ->
@@ -430,9 +434,10 @@ public class SchematicLibrary {
     }
 
     /** Place schematic blocks in the world. Server thread. */
-    private void placeSchematic(Owner player, SchemReader.SchematicData data) {
+    private void placeSchematic(Owner player, String name, SchemReader.SchematicData data) {
         World world = platform.world(player.world()).orElse(null);
         if (world == null) return;
+        UndoService.Recorder record = undo.begin(player, world, "schematic: " + name, false);
         BlockPos origin = player.pos().block();
         int blocksPerTick = platform.config().getInt("build.blocks-per-tick", 50);
 
@@ -452,6 +457,7 @@ public class SchematicLibrary {
 
         platform.scheduler().every(1L, 1L, self -> {
             if (!player.isOnline()) {
+                undo.commit(record);   // what went down before they left is still undoable
                 self.cancel();
                 return;
             }
@@ -471,8 +477,10 @@ public class SchematicLibrary {
                     BlockState state = palette[paletteIndex];
                     if (state != null && !state.isAir()) {
                         try {
-                            world.setBlock(origin.offset(x + data.offsetX, y + data.offsetY, z + data.offsetZ),
-                                    state, false);
+                            BlockPos at = origin.offset(x + data.offsetX, y + data.offsetY, z + data.offsetZ);
+                            BlockState was = world.block(at);
+                            if (!was.equals(state)) record.record(at, was, state.id());
+                            world.setBlock(at, state, false);
                             placed[0]++;
                         } catch (Exception e) {
                             // Skip invalid blocks
@@ -500,8 +508,12 @@ public class SchematicLibrary {
                 player.message(Colors.WHITE + "  File: " + data.fileName);
                 player.message(Colors.WHITE + "  Blocks placed: " + placed[0]);
                 player.message(Colors.WHITE + "  Time: " + duration + " seconds");
+                if (undo.isEnabled()) {
+                    player.message(Colors.GRAY + "  Use /jarvis undo to revert");
+                }
                 player.message(Colors.GREEN + "========================================");
                 player.sound(Ids.SOUND_ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+                undo.commit(record);
                 self.cancel();
             }
         });
