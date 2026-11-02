@@ -74,9 +74,10 @@ public class RecoveryService {
     // ==================== RECOVERY RUN ====================
 
     public void recover(Owner player) {
+        if (!host.ensurePresent(player)) return;
         Butler butler = host.butler(player);
         if (!butler.isSpawned()) {
-            host.say(player, "Summon me first, sir — /jarvis summon.");
+            host.say(player, "I'm out of reach just now, sir — /jarvis summon.");
             return;
         }
 

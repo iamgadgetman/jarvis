@@ -209,11 +209,8 @@ public class BuildingAssistant {
             return;
         }
 
-        // Check if NPC is summoned
-        if (!butlers.isSpawned(player)) {
-            player.message(Colors.RED + "Summon Jarvis first with /jarvis summon");
-            return;
-        }
+        // Bring him if he is not out (butler.auto-summon)
+        if (!butlers.ensurePresent(player)) return;
 
         World world = platform.world(player.world()).orElse(null);
         if (world == null) return;
@@ -895,10 +892,7 @@ public class BuildingAssistant {
 
     /** Build a simple shape without AI. */
     public void buildSimpleStructure(Owner player, String type, int size) {
-        if (!butlers.isSpawned(player)) {
-            player.message(Colors.RED + "Summon Jarvis first!");
-            return;
-        }
+        if (!butlers.ensurePresent(player)) return;
         World world = platform.world(player.world()).orElse(null);
         if (world == null) return;
 

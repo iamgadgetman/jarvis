@@ -241,7 +241,8 @@ public class Menus {
         // Row 5 — status, and it is clickable when there is something to stop
         String task = npc.describeCurrentTask(p.id());
         if (!summoned) {
-            m.label(40, item(Ids.GRAY_DYE, Colors.GRAY + "Not summoned", Colors.DARK_GRAY + "Summon him to begin"));
+            m.label(40, item(Ids.GRAY_DYE, Colors.GRAY + "Not summoned", Colors.DARK_GRAY
+                    + (npc.autoSummon() ? "Pick a task and he'll come" : "Summon him to begin")));
         } else if (task != null) {
             m.put(40, item(Ids.LIME_DYE, Colors.GREEN + task, Colors.GRAY + "Click to stop"),
                     c -> { if (npc.describeCurrentTask(p.id()) != null) { npc.stop(p); close(p); } });

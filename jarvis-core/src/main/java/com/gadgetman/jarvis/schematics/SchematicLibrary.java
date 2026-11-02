@@ -388,11 +388,8 @@ public class SchematicLibrary {
             return;
         }
 
-        // Check if NPC is summoned
-        if (!butlers.exists(player)) {
-            player.message(Colors.RED + "Summon Jarvis first with /jarvis summon");
-            return;
-        }
+        // Bring him if he is not out (butler.auto-summon)
+        if (!butlers.ensurePresent(player)) return;
 
         // Use native reader for .schem and .schematic files
         if (info.format() == Format.WORLDEDIT_SCHEM || info.format() == Format.WORLDEDIT_SCHEMATIC) {

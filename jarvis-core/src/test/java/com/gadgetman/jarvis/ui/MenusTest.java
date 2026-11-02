@@ -71,6 +71,22 @@ class MenusTest {
     }
 
     @Test
+    @DisplayName("with him dismissed, a department button brings him and starts the job")
+    void menuButtonSummonsHim() {
+        ringBell();
+        assertTrue(f.platform.ui().slotNamed(p, "Not summoned") >= 0);
+        assertTrue(f.platform.ui().menuFor(p).slots().get(40).icon().lore().stream()
+                .anyMatch(l -> l.contains("Pick a task and he'll come")));
+
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Mining"), false);
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Branch mine"), false);
+
+        assertTrue(f.core.butlers().isSpawned(p), "he came for it");
+        assertTrue(p.wasTold("On my way, sir."));
+        assertTrue(f.core.butlers().describeCurrentTask(p) != null);
+    }
+
+    @Test
     @DisplayName("the mining department opens and its torch toggle writes config")
     void miningMenuTogglesConfig() {
         ringBell();

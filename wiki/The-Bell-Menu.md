@@ -13,7 +13,7 @@ The top rows are the things you do constantly:
 
 | | |
 |---|---|
-| **Summon** / **Dismiss** | Bring him out, send him away. Dismissing keeps his items |
+| **Summon** / **Dismiss** | Bring him out, send him away. Dismissing keeps his items. Summoning first is optional: any task button brings him |
 | **Come here** | Recall him to you |
 | **Follow** | Stay close and carry loot |
 | **Stop** | Halt whatever he is doing |

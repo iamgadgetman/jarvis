@@ -10,7 +10,7 @@ help` prints this list in game.
 
 | Command | What it does |
 |---|---|
-| `/jarvis summon` | Bring Jarvis to you |
+| `/jarvis summon` | Bring Jarvis to you. Not needed before a job: any order brings him (`butler.auto-summon`) |
 | `/jarvis dismiss` | Send Jarvis away; he keeps issued gear, hands back the rest |
 | `/jarvis return` | Recall him to your side |
 | `/jarvis follow` | Follow you and carry loot |

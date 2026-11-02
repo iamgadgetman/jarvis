@@ -21,6 +21,7 @@ the bell menu and the console, and writes from there keep the file's comments.
 | `self-explain` | What he says when a task fails |
 | `mining` | Search radius, block breaking, branch-mine, shaft and tunnel layout — see [Mining System](Mining-System) |
 | `build` | The planner (`script` or `json`), its limits, and undo (`enable-undo`, `undo-history`: jobs kept per player, default 10) — see [Building System](Building-System) |
+| `butler` | `auto-summon` (default `true`): an order with nobody summoned brings him and starts the job; `false` brings back "Summon me first" |
 | `progression` | The service ladder — see [Progression](Progression) |
 | `ui` | The task bar and the order queue (`task-bar`, `task-queue`) |
 | `voice` | Listening and speaking — see [Voice](Voice) |

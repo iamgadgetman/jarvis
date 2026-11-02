@@ -548,6 +548,15 @@ dev:
   test-mode: false               # Skip some validations
   log-api-calls: false           # Log all API calls
 
+# ========== BUTLER (v0.18.0) ==========
+butler:
+  # An order with nobody summoned brings him: /jarvis mine, "Jarvis, chop
+  # some trees", a schematic paste or a bell-menu button just works. He
+  # appears beside you, says "On my way, sir." and starts the job; if he is
+  # out in another world he comes over first. false: jobs answer "Summon me
+  # first" until you /jarvis summon, as before 0.18.0.
+  auto-summon: true
+
 # ========== DEFENDER (v0.4.0) ==========
 defender:
   engage-radius: 12.0            # How far from the anchor Jarvis engages hostiles

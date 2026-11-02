@@ -28,6 +28,22 @@
     over a million blocks are pasted but not recorded, and say so.
   - Not undone: mining, the blocks the mining jobs set down while they work
     (undoing a lava plug would reopen the lava), and container contents.
+- **Jobs work without a summons.** `/jarvis mine`, `attack`, `guard`, `farm`,
+  `chop`, `fish`, `build`, a schematic paste, escorting you home, the death-drop
+  run, the lamplighter, or the same said in chat or by voice, now bring him if
+  he is not out: he appears beside you, says "On my way, sir." and starts. Bell
+  menu buttons do the same, and the status row reads "Pick a task and he'll
+  come". If he is out in another world he is moved to you first, and
+  `/jarvis summon` now does that too rather than answering "I'm already
+  here". `butler.auto-summon: false` restores "Summon me first".
+  - One `ButlerService.ensurePresent` replaces the "summon first" checks in
+    `ButlerService`, `BuildingAssistant`, `SchematicLibrary`, `EscortService`
+    and `RecoveryService`; spawning moved into the one helper `summon` uses.
+  - An adapter record with no body (Citizens keeps one while his chunk is
+    unloaded) still counts as present, as before: re-summoning would destroy
+    that NPC and its inventory.
+  - Depositing still needs him out; a butler fetched only to empty bags he
+    does not have would be no use.
 - **config.yml:** `build.undo-history` replaces `build.undo-timeout` and
   `build.max-undo-size`, which were never read.
 

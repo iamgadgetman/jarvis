@@ -70,9 +70,10 @@ public class EscortService {
      */
     public void escortTo(Owner player, Site destination, String departure,
                          String arrival, String wrongWorld) {
+        if (!host.ensurePresent(player)) return;
         Butler butler = host.butler(player);
         if (!butler.isSpawned()) {
-            host.say(player, "Summon me first, sir — /jarvis summon.");
+            host.say(player, "I'm out of reach just now, sir — /jarvis summon.");
             return;
         }
         World world = butler.world().orElse(null);

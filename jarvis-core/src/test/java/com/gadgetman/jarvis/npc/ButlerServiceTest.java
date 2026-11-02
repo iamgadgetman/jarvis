@@ -89,14 +89,55 @@ class ButlerServiceTest {
     }
 
     @Test
-    @DisplayName("tasks need him summoned first")
-    void tasksNeedHimSummoned() {
+    @DisplayName("a task with nobody summoned brings him, with one line instead of the greeting")
+    void tasksSummonHim() {
+        FakeOwner p = f.player("alice");
+
+        f.core.butlers().guard(p, null);
+
+        assertTrue(f.core.butlers().isSpawned(p), "he came for the job");
+        assertTrue(p.wasTold("On my way, sir."), String.join("\n", p.plainMessages()));
+        assertFalse(p.wasTold("At your service"), "the summons greeting is not repeated");
+        assertFalse(p.wasTold("Summon me first"));
+        assertTrue(f.core.butlers().describeCurrentTask(p) != null, "and the job started");
+    }
+
+    @Test
+    @DisplayName("a chat order with nobody summoned brings him too")
+    void chatOrderSummonsHim() {
+        FakeOwner p = f.player("alice");
+
+        f.core.intents().executeFallbackAction(p, "jarvis, chop some trees");
+
+        assertTrue(f.core.butlers().isSpawned(p));
+        assertTrue(p.wasTold("On my way, sir."));
+    }
+
+    @Test
+    @DisplayName("with butler.auto-summon off, a task still needs him summoned first")
+    void autoSummonOff() throws java.io.IOException {
+        f.close();
+        f = new Fixture(Fixture.DEFAULT_CONFIG.replace("butler:\n", "butler:\n  auto-summon: false\n"));
         FakeOwner p = f.player("alice");
 
         f.core.butlers().chop(p, 3);
 
         assertTrue(p.wasTold("Summon me first"));
+        assertFalse(f.core.butlers().exists(p));
         assertEquals(0, f.core.butlers().getActiveTaskCount());
+    }
+
+    @Test
+    @DisplayName("summon moves him over when he is in another world")
+    void summonCrossesWorlds() {
+        FakeOwner p = f.summoned("alice");
+        f.platform.addWorld(new com.gadgetman.jarvis.core.testing.FakeWorld(com.gadgetman.jarvis.core.world.WorldId.NETHER, "world_nether", com.gadgetman.jarvis.core.world.Environment.NETHER).flatFloor(40));
+        p.world = com.gadgetman.jarvis.core.world.WorldId.NETHER;
+
+        f.core.butlers().mine(p);
+
+        assertEquals(com.gadgetman.jarvis.core.world.WorldId.NETHER,
+                f.core.butlers().butler(p).world().orElseThrow().id());
     }
 
     @Test

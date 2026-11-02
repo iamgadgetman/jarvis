@@ -6,7 +6,7 @@
 
 | Command | Description | Permission |
 |---|---|---|
-| `/jarvis summon` | Summon your Jarvis NPC | `jarvis.use` |
+| `/jarvis summon` | Summon your Jarvis NPC. Optional: any job brings him if he is not out (`butler.auto-summon`) | `jarvis.use` |
 | `/jarvis dismiss` | Dismiss him; he keeps issued gear, hands back the rest | `jarvis.use` |
 | `/jarvis return` | Recall him to your side | `jarvis.use` |
 | `/jarvis follow` | Follow you and carry loot | `jarvis.use` |
