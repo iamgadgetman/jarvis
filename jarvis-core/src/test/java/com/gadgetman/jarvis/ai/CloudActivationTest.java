@@ -75,6 +75,9 @@ class CloudActivationTest {
              "verification_url":"https://api.gadgetcraft.cloud/activate?code=K7QX-M2PA",
              "expires_at":"%s"}""";
 
+    /** The fixture points Jarvis Cloud at a dead port, so no test can reach the real service. */
+    private static final String BASE = "http://127.0.0.1:1";
+
     private Fixture f;
     private ScriptedApi api;
     private CloudActivation cloud;
@@ -106,7 +109,7 @@ class CloudActivationTest {
                 .then(200, "{\"status\":\"ready\",\"key\":\"gc_abc\",\"plan\":\"trial\",\"expires_at\":\"2026-11-20T00:00:00Z\"}");
 
         cloud.activate(who, "Bobs SMP");
-        assertEquals("POST https://api.gadgetcraft.cloud/v1/activate/start", api.calls.get(0));
+        assertEquals("POST " + BASE + "/v1/activate/start", api.calls.get(0));
         JSONObject sent = api.bodies.get(0);
         assertEquals("11111111-1111-4111-8111-111111111111", sent.getString("server_id"));
         assertEquals("server", sent.getString("kind"));
@@ -121,7 +124,7 @@ class CloudActivationTest {
         f.tick(99);
         assertEquals(1, api.calls.size(), "no poll before the first interval");
         f.tick(1);
-        assertEquals("POST https://api.gadgetcraft.cloud/v1/activate/poll", api.calls.get(1));
+        assertEquals("POST " + BASE + "/v1/activate/poll", api.calls.get(1));
         assertEquals("dev123", api.bodies.get(1).getString("device_code"));
         assertFalse(cloud.isActive());
 
@@ -129,7 +132,7 @@ class CloudActivationTest {
         assertTrue(cloud.isActive());
         assertFalse(cloud.isWaiting());
         assertEquals("gc_abc", f.platform.config().getString("ai.claude.api-key", ""));
-        assertEquals("https://api.gadgetcraft.cloud/v1/messages", f.platform.config().getString("ai.claude.endpoint", ""));
+        assertEquals(BASE + "/v1/messages", f.platform.config().getString("ai.claude.endpoint", ""));
         assertEquals("claude", f.core.aiSettings().enabled().get(0));
         assertTrue(f.core.aiSettings().hasKey("claude"), "the connector re-read config");
         assertTrue(who.all().contains("14-day trial"));
@@ -238,13 +241,22 @@ class CloudActivationTest {
                 {"plan":"trial","requests_used":12,"requests_quota":300,
                  "resets_at":"2026-12-01T00:00:00.000Z","trial_expires_at":"2026-11-20T03:11:20.832Z"}""");
         cloud.status(who);
-        assertEquals("GET https://api.gadgetcraft.cloud/v1/usage", api.calls.get(0));
+        assertEquals("GET " + BASE + "/v1/usage", api.calls.get(0));
         assertEquals("gc_live", api.headers.get(0).get("x-api-key"));
         assertEquals("11111111-1111-4111-8111-111111111111", api.headers.get(0).get("x-jarvis-server"));
         String out = who.all();
         assertTrue(out.contains("12 of 300"));
         assertTrue(out.contains("2026-12-01"));
         assertTrue(out.contains("Trial ends 2026-11-20"));
+    }
+
+    @Test
+    @DisplayName("no cloud.url means the real service; the fixture never uses it")
+    void defaultUrl() throws IOException {
+        var bare = new com.gadgetman.jarvis.core.testing.FakePlatform("", Files.createTempDirectory("jarvis-url"));
+        assertEquals("https://api.gadgetcraft.cloud", new CloudActivation(bare, f.core.aiSettings(), "x", api).baseUrl());
+        assertEquals(BASE, f.core.cloud().baseUrl(), "core's own client in tests must not point at production");
+        assertTrue(api.calls.isEmpty());
     }
 
     @Test
