@@ -211,6 +211,72 @@ class MenusTest {
         assertTrue(f.platform.ui().isOpen(p), "back on the voice page");
     }
 
+    private void openCloudFromSteward() {
+        ringBell();
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Steward"), false);
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Jarvis Cloud"), false);
+        assertEquals("Jarvis — Cloud", f.platform.ui().menuFor(p).title());
+    }
+
+    @Test
+    @DisplayName("single-player, no cheats: the Steward page reaches Jarvis Cloud and Activate runs the command")
+    void cloudActivateFromSteward() {
+        f.platform.singleplayer = true;
+        openCloudFromSteward();
+        assertTrue(f.platform.ui().slotNamed(p, "not active") >= 0);
+
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Activate"), false);
+
+        assertFalse(f.platform.ui().isOpen(p), "the menu closes so the link can be clicked in chat");
+        assertTrue(p.wasTold("Asking Jarvis Cloud"), String.join("\n", p.plainMessages()));
+    }
+
+    @Test
+    @DisplayName("Activate with a name asks in chat and passes the name on")
+    void cloudActivateWithName() {
+        f.platform.singleplayer = true;
+        openCloudFromSteward();
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Activate with a name"), false);
+        assertTrue(f.core.prompts().isWaiting(p));
+
+        AtomicBoolean cancelled = new AtomicBoolean();
+        f.platform.events().publish(new com.gadgetman.jarvis.core.platform.events.ChatEvent(p, "Base camp", cancelled::set));
+        assertTrue(cancelled.get(), "the name is an answer, not a chat line");
+        assertTrue(p.wasTold("Asking Jarvis Cloud"), String.join("\n", p.plainMessages()));
+    }
+
+    @Test
+    @DisplayName("on a server, a non-admin sees Jarvis Cloud but cannot activate; Back returns to Steward")
+    void cloudActivateNeedsAdminOnAServer() {
+        openCloudFromSteward();
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Activate"), false);
+        assertTrue(f.platform.ui().isOpen(p), "a greyed button does nothing");
+        assertFalse(p.wasTold("Asking Jarvis Cloud"));
+
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Back"), false);
+        assertEquals("Jarvis — Steward", f.platform.ui().menuFor(p).title());
+    }
+
+    @Test
+    @DisplayName("with a gc_ key set the page says active and offers no activation; AI setup links here too")
+    void cloudActiveFromAiSetup() {
+        p.op = true;
+        f.platform.config().set("ai.claude.api-key", "gc_test");
+        ringBell();
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Admin"), false);
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "AI setup"), false);
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Jarvis Cloud"), false);
+        assertEquals("Jarvis — Cloud", f.platform.ui().menuFor(p).title());
+        assertTrue(f.platform.ui().slotNamed(p, "is active") >= 0);
+        assertTrue(f.platform.ui().slotNamed(p, "Test Claude") >= 0);
+
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Activate"), false);
+        assertFalse(p.wasTold("Asking Jarvis Cloud"));
+
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Back"), false);
+        assertEquals("Jarvis — AI providers", f.platform.ui().menuFor(p).title());
+    }
+
     @Test
     @DisplayName("a player without admin rights never sees the AI page")
     void aiSetupNeedsAdmin() {

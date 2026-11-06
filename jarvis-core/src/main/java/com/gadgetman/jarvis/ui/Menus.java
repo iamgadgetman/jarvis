@@ -531,6 +531,7 @@ public class Menus {
                 c -> run(p, "ai"));
         m.put(14, item(Ids.NAME_TAG, Colors.WHITE + "Version", Colors.GRAY + "What is actually running"),
                 c -> run(p, "version"));
+        m.put(15, cloudButton(), c -> open(p, cloud(p, who -> open(who, steward(who)))));
 
         m.put(31, back(), c -> open(p, main(p)));
         return m.build();
@@ -770,6 +771,7 @@ public class Menus {
                 }
             });
         }
+        m.put(15, cloudButton(), c -> open(p, cloud(p, who -> open(who, aiSetup(who)))));
         m.put(16, item(Ids.BOOK, Colors.WHITE + "Routing status", Colors.GRAY + "Light and heavy routes, in chat"),
                 c -> run(p, "ai"));
         m.put(22, backTo("the admin page"), c -> open(p, admin(p)));
@@ -844,6 +846,75 @@ public class Menus {
                 });
 
         m.put(22, backTo("the providers"), c -> open(p, aiSetup(p)));
+        return m.build();
+    }
+
+    // ==================== JARVIS CLOUD ====================
+
+    /**
+     * Jarvis Cloud: where it stands, and the two commands. Reached from the
+     * Steward page as well as AI setup, because in single-player the owner
+     * may not have cheats on and so never sees the admin page.
+     *
+     * <p>{@code back} is the page it was opened from.
+     */
+    private Item cloudButton() {
+        boolean active = core.cloud() != null && core.cloud().isActive();
+        return item(Ids.BEACON, Colors.AQUA + "Jarvis Cloud",
+                Colors.GRAY + (active ? "Active: plan and usage" : "Hosted AI: activate with a link"));
+    }
+
+    private Menu cloud(Owner p, Consumer<Owner> back) {
+        Builder m = new Builder("Jarvis — Cloud", 3);
+        var cloud = core.cloud();
+        boolean active = cloud.isActive();
+        boolean waiting = cloud.isWaiting();
+        boolean mayActivate = p.hasPermission("jarvis.admin") || platform.singleplayer();
+
+        if (active) {
+            m.label(4, item(Ids.BEACON, Colors.GREEN + "Jarvis Cloud is active",
+                    Colors.GRAY + "Claude, through Jarvis Cloud", Colors.DARK_GRAY + cloud.baseUrl()));
+        } else if (waiting) {
+            m.label(4, item(Ids.CLOCK, Colors.YELLOW + "Waiting for approval",
+                    Colors.GRAY + "Click the link in chat to finish", Colors.DARK_GRAY + "It lasts 15 minutes"));
+        } else {
+            m.label(4, item(Ids.GRAY_DYE, Colors.GRAY + "Jarvis Cloud is not active",
+                    Colors.GRAY + "Hosted AI with no key to copy", Colors.DARK_GRAY + cloud.baseUrl()));
+        }
+
+        if (active) {
+            m.label(11, unavailable("Activate", "Already active here"));
+            m.label(12, unavailable("Activate with a name", "Already active here"));
+        } else if (waiting) {
+            m.label(11, unavailable("Activate", "A link is already waiting in chat"));
+            m.label(12, unavailable("Activate with a name", "A link is already waiting in chat"));
+        } else if (!mayActivate) {
+            m.label(11, unavailable("Activate", "Only an admin can turn it on"));
+            m.label(12, unavailable("Activate with a name", "Only an admin can turn it on"));
+        } else {
+            m.put(11, item(Ids.NETHER_STAR, Colors.GREEN + "Activate",
+                            Colors.GRAY + "Jarvis posts a link in chat;", Colors.GRAY + "approve it in your browser"),
+                    c -> run(p, "cloud", "activate"));
+            m.put(12, item(Ids.NAME_TAG, Colors.AQUA + "Activate with a name",
+                            Colors.GRAY + "Label this server first,", Colors.GRAY + "so you know it on the approval page"),
+                    c -> askInChat(p, "What shall I call this server on the approval page?",
+                            name -> run(p, "cloud", "activate", name)));
+        }
+        m.put(14, item(Ids.BOOK, Colors.WHITE + "Plan & usage",
+                        Colors.GRAY + "Plan, requests this month, trial end"),
+                c -> run(p, "cloud", "status"));
+        if (active && p.hasPermission("jarvis.admin")) {
+            m.put(15, item(Ids.AMETHYST_SHARD, Colors.LIGHT_PURPLE + "Test Claude",
+                            Colors.GRAY + "One small request through Jarvis Cloud"),
+                    c -> {
+                        AiSettings s = core.aiSettings();
+                        p.message(Colors.GRAY + "Jarvis: Trying Claude through Jarvis Cloud...");
+                        s.test("claude", verdict -> p.message(
+                                (verdict.startsWith("failed") ? Colors.RED : Colors.GREEN) + "Jarvis: Claude " + verdict));
+                    });
+        }
+
+        m.put(22, backTo("the previous page"), c -> back.accept(p));
         return m.build();
     }
 

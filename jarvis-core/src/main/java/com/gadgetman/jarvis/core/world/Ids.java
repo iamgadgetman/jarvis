@@ -49,6 +49,7 @@ public final class Ids {
     public static final String BARREL = "minecraft:barrel";
     public static final String BARRIER = "minecraft:barrier";
     public static final String BASALT = "minecraft:basalt";
+    public static final String BEACON = "minecraft:beacon";
     public static final String BEETROOTS = "minecraft:beetroots";
     public static final String BEETROOT_SEEDS = "minecraft:beetroot_seeds";
     public static final String BELL = "minecraft:bell";
@@ -154,6 +155,7 @@ public final class Ids {
     public static final String NETHERITE_SWORD = "minecraft:netherite_sword";
     public static final String NETHERRACK = "minecraft:netherrack";
     public static final String NETHER_GOLD_ORE = "minecraft:nether_gold_ore";
+    public static final String NETHER_STAR = "minecraft:nether_star";
     public static final String NETHER_PORTAL = "minecraft:nether_portal";
     public static final String NETHER_QUARTZ_ORE = "minecraft:nether_quartz_ore";
     public static final String NETHER_WART = "minecraft:nether_wart";
