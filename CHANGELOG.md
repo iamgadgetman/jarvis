@@ -4,6 +4,22 @@
 
 ### Added
 
+- **Jarvis Cloud activation: AI without your own API key.** `/jarvis cloud
+  activate [name]` puts a clickable link in chat. Open it, press **Activate**
+  (an email is optional), and within a few seconds Jarvis writes the key and
+  endpoint into config.yml himself and puts Claude-via-Jarvis-Cloud first in
+  the provider list. Nothing to copy or paste. `/jarvis cloud status` shows the
+  plan, requests used this month and when a trial ends.
+  - Works from the console, for anyone with `jarvis.admin`, and for the player
+    in a single-player game even with cheats off. The link lasts 15 minutes.
+  - Each install now has a random ID in `install-id` beside config.yml. Jarvis
+    Cloud binds a key to it and Jarvis sends it as `x-jarvis-server`, only to
+    Jarvis Cloud (`gc_` keys), never to other providers. It identifies nothing
+    about the owner or the machine.
+  - Chat lines can now carry links that open a web page (`RichLine.url`), on
+    Paper, Fabric and NeoForge.
+  - `cloud.url` in config.yml points at a different Jarvis Cloud, for testing.
+
 - **One undo for everything he builds.** `/jarvis undo` takes down the last
   job, whatever it was: an AI build, a simple shape, or a schematic paste,
   WorldEdit's included. `/jarvis undo <n>` takes the last n, `/jarvis undo

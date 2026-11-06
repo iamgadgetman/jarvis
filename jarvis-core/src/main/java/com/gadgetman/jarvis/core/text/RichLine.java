@@ -12,10 +12,15 @@ public final class RichLine {
 
     /**
      * One run of text. {@code command} is run as the viewer when clicked, as
-     * typed with its leading slash; null for plain text. {@code hover} is
-     * shown on mouse-over, or null.
+     * typed with its leading slash; null for plain text. {@code url} opens a
+     * web page instead (the client asks first); null for none. {@code hover}
+     * is shown on mouse-over, or null.
      */
-    public record Part(String text, String command, String hover) { }
+    public record Part(String text, String command, String hover, String url) {
+        public Part(String text, String command, String hover) {
+            this(text, command, hover, null);
+        }
+    }
 
     private final List<Part> parts = new ArrayList<>();
 
@@ -26,6 +31,12 @@ public final class RichLine {
 
     public RichLine link(String text, String command, String hover) {
         parts.add(new Part(text, command, hover));
+        return this;
+    }
+
+    /** A part that opens {@code url} in the viewer's browser when clicked. */
+    public RichLine url(String text, String url, String hover) {
+        parts.add(new Part(text, null, hover, url));
         return this;
     }
 

@@ -39,6 +39,8 @@ public final class FakePlatform implements Platform {
     private final Map<WorldId, FakeWorld> worlds = new LinkedHashMap<>();
     public final List<String> logLines = new ArrayList<>();
     public double tps = 20.0;
+    /** Pretend to be an integrated (single-player) server. */
+    public boolean singleplayer = false;
 
     private final Log log = new Log() {
         @Override public void info(String msg) { logLines.add("INFO " + msg); }
@@ -58,6 +60,7 @@ public final class FakePlatform implements Platform {
     }
 
     @Override public String name() { return "fake"; }
+    @Override public boolean singleplayer() { return singleplayer; }
     @Override public Config config() { return config; }
     @Override public Log log() { return log; }
     @Override public FakeScheduler scheduler() { return scheduler; }

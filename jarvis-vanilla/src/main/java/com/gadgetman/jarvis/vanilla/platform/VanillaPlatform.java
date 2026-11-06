@@ -115,6 +115,7 @@ public final class VanillaPlatform implements Platform {
     @Override public Log log() { return log; }
     @Override public Scheduler scheduler() { return scheduler; }
     @Override public Path dataDir() { return dataDir; }
+    @Override public boolean singleplayer() { return !server.isDedicatedServer(); }
     @Override public Players players() { return players; }
     @Override public Events events() { return events; }
     @Override public Items items() { return items; }

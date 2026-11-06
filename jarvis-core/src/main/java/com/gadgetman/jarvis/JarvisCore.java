@@ -2,6 +2,8 @@ package com.gadgetman.jarvis;
 
 import com.gadgetman.jarvis.ai.AIConnector;
 import com.gadgetman.jarvis.ai.AiSettings;
+import com.gadgetman.jarvis.ai.CloudActivation;
+import com.gadgetman.jarvis.ai.InstallId;
 import com.gadgetman.jarvis.building.BuildingAssistant;
 import com.gadgetman.jarvis.building.UndoService;
 import com.gadgetman.jarvis.commands.ActionExecutor;
@@ -80,6 +82,8 @@ public final class JarvisCore {
     private IntentPipeline intents;
     private Prompts prompts;
     private AiSettings aiSettings;
+    private String installId;
+    private CloudActivation cloud;
     private ChatTrigger chatTrigger;
     private Courtesies courtesies;
     private TaskMonitor taskMonitor;
@@ -105,6 +109,8 @@ public final class JarvisCore {
         Config config = platform.config();
 
         ai = new AIConnector(config, log);
+        installId = InstallId.load(platform.dataDir(), log);
+        ai.setInstallId(installId);
 
         database = new DatabaseManager(config, log, platform.dataDir());
         database.initializeDatabaseConnections();
@@ -145,6 +151,7 @@ public final class JarvisCore {
         intents = new IntentPipeline(this);
         prompts = new Prompts(platform);
         aiSettings = new AiSettings(platform, ai);
+        cloud = new CloudActivation(platform, aiSettings, installId, new CloudActivation.HttpApi());
         chatTrigger = new ChatTrigger(platform, intents, prompts);
         chatTrigger.start();
         courtesies = new Courtesies(platform, ai);
@@ -186,6 +193,7 @@ public final class JarvisCore {
 
     /** Stop everything, in the reverse of the order it started. */
     public void shutdown() {
+        if (cloud != null) cloud.stop();
         tasks.forEach(Task::cancel);
         tasks.clear();
         subscriptions.forEach(Subscription::cancel);
@@ -262,6 +270,10 @@ public final class JarvisCore {
     public Prompts prompts() { return prompts; }
     /** The AI providers as an operator sets them up. */
     public AiSettings aiSettings() { return aiSettings; }
+    /** Jarvis Cloud activation and status ({@code /jarvis cloud}). */
+    public CloudActivation cloud() { return cloud; }
+    /** This install's random ID (see {@link InstallId}). */
+    public String installId() { return installId; }
     public TaskMonitor taskMonitor() { return taskMonitor; }
     public Menus menus() { return menus; }
     public CommandSink commands() { return commands; }

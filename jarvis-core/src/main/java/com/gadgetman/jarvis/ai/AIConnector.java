@@ -60,6 +60,10 @@ public class AIConnector {
     private String model;
     private String endpoint;
 
+    // Sent as x-jarvis-server to Jarvis Cloud (gc_ keys only), which binds a
+    // license to one install. Null until core hands it over.
+    private volatile String installId;
+
     // Auto-switching configuration
     private boolean autoMode = false;
     private List<String> providerPriority = new ArrayList<>();
@@ -1203,6 +1207,7 @@ public class AIConnector {
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("x-api-key", config.apiKey);
         conn.setRequestProperty("anthropic-version", "2023-06-01");
+        if (installId != null && config.apiKey.startsWith("gc_")) conn.setRequestProperty("x-jarvis-server", installId);
         conn.setConnectTimeout(5000);
         conn.setReadTimeout(readTimeoutMs);
         conn.setDoOutput(true);
@@ -1457,6 +1462,11 @@ public class AIConnector {
         ProviderHealth health = providerHealth.get(providerName);
         if (health != null) health.recordSuccess();
         return reply == null ? "" : reply.trim();
+    }
+
+    /** This install's ID, sent only to Jarvis Cloud. */
+    public void setInstallId(String id) {
+        this.installId = id;
     }
 
     public String getProvider() {
