@@ -91,7 +91,9 @@ public class CommandService implements CommandSink {
     private List<String> complete(List<String> args) {
         if (args.size() > 1) {
             List<String> pool;
-            if (args.get(0).equalsIgnoreCase("ai")) {
+            if (args.get(0).equalsIgnoreCase("cloud")) {
+                pool = args.size() == 2 ? List.of("activate", "status") : List.of();
+            } else if (args.get(0).equalsIgnoreCase("ai")) {
                 pool = args.size() == 2 ? AI_SUBCOMMANDS
                         : args.size() == 3 && !args.get(1).equalsIgnoreCase("status") ? AiSettings.PROVIDERS
                         : List.of();
@@ -155,6 +157,26 @@ public class CommandService implements CommandSink {
                 }
                 if (!isAdmin(sender, asPlayer)) { sender.message(Colors.RED + "You don't have permission."); return; }
                 handleAiSetup(sender, args);
+                return;
+            }
+            // Jarvis Cloud. The console, an admin, or the player in a
+            // single-player game (who may not have cheats on) can set it up.
+            case "cloud" -> {
+                String what = args.size() > 1 ? args.get(1).toLowerCase(Locale.ROOT) : "status";
+                if (what.equals("status")) {
+                    core.cloud().status(sender);
+                    return;
+                }
+                if (!isAdmin(sender, asPlayer) && !platform.singleplayer()) {
+                    sender.message(Colors.RED + "You don't have permission.");
+                    return;
+                }
+                if (what.equals("activate")) {
+                    core.cloud().activate(sender, args.size() > 2 ? rest(args, 2) : null);
+                } else {
+                    sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "/jarvis cloud activate [name]"
+                            + Colors.GRAY + " turns on Jarvis Cloud AI; " + Colors.WHITE + "/jarvis cloud status" + Colors.GRAY + " shows the plan.");
+                }
                 return;
             }
             // Console-friendly like reload and debug: an admin dumping training data
@@ -1001,7 +1023,7 @@ public class CommandService implements CommandSink {
     private static final List<String> COMPLETIONS = List.of(
             "summon", "dismiss", "return", "follow", "stop", "attack", "guard", "watch", "mine", "dig",
             "tunnel", "farm", "tend", "chop", "fish", "dance", "light", "patrol", "chest", "deposit", "loot",
-            "clearloot", "bell", "build", "paste", "cancelbuild", "schematic", "ask", "ai", "report", "duties",
+            "clearloot", "bell", "build", "paste", "cancelbuild", "schematic", "ask", "ai", "cloud", "report", "duties",
             "duty", "recover", "home", "confirm", "cancel", "requests", "approve", "deny", "portal", "portals",
             "quiet", "rank", "queue", "version", "voice", "help", "reload", "debug", "export-dataset");
 
@@ -1255,6 +1277,10 @@ public class CommandService implements CommandSink {
             player.message(Colors.WHITE + "  /jarvis schematic convert <name>" + Colors.GRAY + " - Convert to .schem");
             player.message(Colors.WHITE + "  /jarvis schematic convertall" + Colors.GRAY + " - Convert all litematics");
         }
+
+        player.message(Colors.YELLOW + "Jarvis Cloud (AI without your own API key):");
+        player.message(Colors.WHITE + "  /jarvis cloud activate [name]" + Colors.GRAY + " - Get a link, click it, done");
+        player.message(Colors.WHITE + "  /jarvis cloud status" + Colors.GRAY + " - Plan and requests used this month");
 
         player.message(Colors.YELLOW + "Natural Language (just type it):");
         player.message(Colors.GRAY + "  Chat: 'jarvis kill all creepers'");

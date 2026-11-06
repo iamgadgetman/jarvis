@@ -44,6 +44,11 @@ public interface Platform {
     /** Loaded worlds. */
     Collection<World> worlds();
 
+    /** True in a single-player (integrated) game; false on a dedicated server. */
+    default boolean singleplayer() {
+        return false;
+    }
+
     /** Ticks per second over the last minute, at most 20. */
     double tps();
 

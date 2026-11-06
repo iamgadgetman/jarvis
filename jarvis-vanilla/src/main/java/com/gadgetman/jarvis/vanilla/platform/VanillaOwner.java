@@ -224,6 +224,7 @@ public final class VanillaOwner implements Owner {
         for (RichLine.Part part : line.parts()) {
             Style style = Style.EMPTY;
             if (part.command() != null) style = style.withClickEvent(McCompat.runCommand(part.command()));
+            else if (part.url() != null) style = style.withClickEvent(McCompat.openUrl(part.url()));
             if (part.hover() != null) style = style.withHoverEvent(McCompat.showText(Component.literal(part.hover())));
             out = out.append(Component.literal(part.text()).withStyle(style));
         }

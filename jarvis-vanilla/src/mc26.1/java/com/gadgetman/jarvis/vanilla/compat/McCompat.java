@@ -203,6 +203,10 @@ public final class McCompat {
         return new ClickEvent.RunCommand(command);
     }
 
+    public static ClickEvent openUrl(String url) {
+        return new ClickEvent.OpenUrl(java.net.URI.create(url));
+    }
+
     public static HoverEvent showText(Component text) {
         return new HoverEvent.ShowText(text);
     }
