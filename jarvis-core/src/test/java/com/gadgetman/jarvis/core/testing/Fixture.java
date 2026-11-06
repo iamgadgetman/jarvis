@@ -19,8 +19,8 @@ import java.util.Set;
  *
  * <p>One overworld with a flat stone floor at y=63, an sqlite database in a
  * temp folder so the service record and build history have somewhere to go,
- * and a config that keeps every network-facing feature quiet: the AI points
- * at a port nothing listens on, memory and remarks are off.
+ * and a config that keeps every network-facing feature quiet: the AI and
+ * Jarvis Cloud point at a port nothing listens on, memory and remarks are off.
  */
 public final class Fixture implements AutoCloseable {
 
@@ -32,6 +32,8 @@ public final class Fixture implements AutoCloseable {
                 model: test
               light-timeout-seconds: 1
               heavy-timeout-seconds: 1
+            cloud:
+              url: http://127.0.0.1:1
             memory:
               enabled: false
             natural-language:
