@@ -1,6 +1,6 @@
 # Jarvis Changelog
 
-## v0.17.1 (unreleased — local test build)
+## v0.18.0 (unreleased — local test build)
 
 ### Added
 
@@ -19,6 +19,13 @@
   - Chat lines can now carry links that open a web page (`RichLine.url`), on
     Paper, Fabric and NeoForge.
   - `cloud.url` in config.yml points at a different Jarvis Cloud, for testing.
+  - **Plans and billing.** `/jarvis cloud upgrade` (or `plans`) gives an admin
+    a link to the plans page, good for 30 minutes, where they can buy a plan or
+    manage the one they have. Before activating, anyone gets a link to the
+    public plans page instead.
+  - **A Jarvis Cloud page in the bell menu**, from Steward and from Admin → AI
+    setup: status, Activate, Activate with a name, See the plans / Plans &
+    upgrade, Plan & usage, and Test Claude.
 
 - **One undo for everything he builds.** `/jarvis undo` takes down the last
   job, whatever it was: an AI build, a simple shape, or a schematic paste,
