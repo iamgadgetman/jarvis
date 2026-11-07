@@ -218,6 +218,43 @@ public final class CloudActivation {
         });
     }
 
+    // ==================== upgrade ====================
+
+    /** The public price list, for anyone without an active key. */
+    public String plansUrl() {
+        return baseUrl() + "/plans";
+    }
+
+    /**
+     * {@code /jarvis cloud upgrade}: a link to the plans page that already
+     * knows this license, so buying needs no key on the website. Without an
+     * active key it points at the public price list instead.
+     */
+    public void upgrade(Audience who) {
+        if (!isActive()) {
+            who.rich(new RichLine()
+                    .text(Colors.GOLD + "Jarvis: ")
+                    .url(Colors.AQUA + "[See the Jarvis Cloud plans]", plansUrl(), "Opens " + plansUrl()));
+            who.message(Colors.GRAY + "Activate first with /jarvis cloud activate; then /jarvis cloud upgrade opens a page for this server.");
+            return;
+        }
+        String key = platform.config().getString("ai.claude.api-key", "").trim();
+        Map<String, String> headers = Map.of("x-api-key", key, "x-jarvis-server", installId);
+        who.message(Colors.GRAY + "Jarvis: Fetching your plans page, sir...");
+        platform.scheduler().async(() -> attempt(() -> api.post(baseUrl() + "/v1/upgrade/start", new JSONObject(), headers)), r -> {
+            String url = r.status() == 200 ? r.body().optString("url", "") : "";
+            if (url.isEmpty()) {
+                who.message(Colors.RED + "Jarvis: Jarvis Cloud couldn't make a plans link (" + (r.status() == -1 ? r.errorMessage() : r.status()
+                        + (r.errorMessage().isEmpty() ? "" : ": " + r.errorMessage())) + "), sir.");
+                return;
+            }
+            who.rich(new RichLine()
+                    .text(Colors.GOLD + "Jarvis: ")
+                    .url(Colors.GREEN + "[Click here for plans and billing]", url, "Opens the Jarvis Cloud plans page for this server"));
+            who.message(Colors.GRAY + "The link lasts 30 minutes. A new plan applies to the same key; nothing to change here.");
+        });
+    }
+
     // ==================== plumbing ====================
 
     private static Reply attempt(Callable<Reply> call) {

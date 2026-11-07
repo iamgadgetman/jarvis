@@ -101,6 +101,7 @@ public final class Ids {
     public static final String DIORITE = "minecraft:diorite";
     public static final String DIRT = "minecraft:dirt";
     public static final String DRIPSTONE_BLOCK = "minecraft:dripstone_block";
+    public static final String EMERALD = "minecraft:emerald";
     public static final String EMERALD_ORE = "minecraft:emerald_ore";
     public static final String ENDER_CHEST = "minecraft:ender_chest";
     public static final String ENDER_EYE = "minecraft:ender_eye";

@@ -93,7 +93,7 @@ public class CommandService implements CommandSink {
         if (args.size() > 1) {
             List<String> pool;
             if (args.get(0).equalsIgnoreCase("cloud")) {
-                pool = args.size() == 2 ? List.of("activate", "status") : List.of();
+                pool = args.size() == 2 ? List.of("activate", "status", "upgrade") : List.of();
             } else if (args.get(0).equalsIgnoreCase("ai")) {
                 pool = args.size() == 2 ? AI_SUBCOMMANDS
                         : args.size() == 3 && !args.get(1).equalsIgnoreCase("status") ? AiSettings.PROVIDERS
@@ -170,7 +170,14 @@ public class CommandService implements CommandSink {
                     core.cloud().status(sender);
                     return;
                 }
-                if (!isAdmin(sender, asPlayer) && !platform.singleplayer()) {
+                boolean mayManage = isAdmin(sender, asPlayer) || platform.singleplayer();
+                // Anyone may see the public price list; a buying link for this
+                // server's license is for whoever may manage it.
+                if ((what.equals("upgrade") || what.equals("plans")) && (mayManage || !core.cloud().isActive())) {
+                    core.cloud().upgrade(sender);
+                    return;
+                }
+                if (!mayManage) {
                     sender.message(Colors.RED + "You don't have permission.");
                     return;
                 }
@@ -178,7 +185,8 @@ public class CommandService implements CommandSink {
                     core.cloud().activate(sender, args.size() > 2 ? rest(args, 2) : null);
                 } else {
                     sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "/jarvis cloud activate [name]"
-                            + Colors.GRAY + " turns on Jarvis Cloud AI; " + Colors.WHITE + "/jarvis cloud status" + Colors.GRAY + " shows the plan.");
+                            + Colors.GRAY + " turns on Jarvis Cloud AI; " + Colors.WHITE + "/jarvis cloud status" + Colors.GRAY + " shows the plan; "
+                            + Colors.WHITE + "/jarvis cloud upgrade" + Colors.GRAY + " opens plans and billing.");
                 }
                 return;
             }
@@ -1319,6 +1327,7 @@ public class CommandService implements CommandSink {
         player.message(Colors.YELLOW + "Jarvis Cloud (AI without your own API key):");
         player.message(Colors.WHITE + "  /jarvis cloud activate [name]" + Colors.GRAY + " - Get a link, click it, done");
         player.message(Colors.WHITE + "  /jarvis cloud status" + Colors.GRAY + " - Plan and requests used this month");
+        player.message(Colors.WHITE + "  /jarvis cloud upgrade" + Colors.GRAY + " - Plans, buying, and billing");
 
         player.message(Colors.YELLOW + "Natural Language (just type it):");
         player.message(Colors.GRAY + "  Chat: 'jarvis kill all creepers'");

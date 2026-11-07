@@ -97,6 +97,10 @@ class CloudActivationTest {
         f.close();
     }
 
+    private static String urlOf(RichLine line) {
+        return line.parts().stream().map(RichLine.Part::url).filter(u -> u != null).findFirst().orElse("");
+    }
+
     private static String inMinutes(int m) {
         return Instant.now().plusSeconds(m * 60L).toString();
     }
@@ -251,6 +255,41 @@ class CloudActivationTest {
     }
 
     @Test
+    @DisplayName("upgrade: not active shows the public plans page and calls nothing")
+    void upgradeWhenInactive() {
+        cloud.upgrade(who);
+        assertTrue(api.calls.isEmpty());
+        assertEquals(BASE + "/plans", urlOf(who.rich.get(0)));
+        assertTrue(who.all().contains("Activate first"));
+    }
+
+    @Test
+    @DisplayName("upgrade: active asks for a signed link with the key and install ID, and shows it")
+    void upgradeWhenActive() {
+        f.core.aiSettings().setKey("claude", "gc_live");
+        api.then(200, """
+                {"url":"https://api.gadgetcraft.cloud/plans?t=abc","expires_at":"2026-11-06T06:00:00Z"}""");
+        cloud.upgrade(who);
+        assertEquals("POST " + BASE + "/v1/upgrade/start", api.calls.get(0));
+        assertEquals("gc_live", api.headers.get(0).get("x-api-key"));
+        assertEquals("11111111-1111-4111-8111-111111111111", api.headers.get(0).get("x-jarvis-server"));
+        assertEquals("https://api.gadgetcraft.cloud/plans?t=abc", urlOf(who.rich.get(0)));
+        assertTrue(who.all().contains("30 minutes"));
+    }
+
+    @Test
+    @DisplayName("upgrade: a refusal or an unreachable service is reported")
+    void upgradeErrors() {
+        f.core.aiSettings().setKey("claude", "gc_live");
+        api.then(401, """
+                {"type":"error","error":{"type":"authentication_error","message":"Jarvis Cloud: license key not found or inactive"}}""");
+        cloud.upgrade(who);
+        assertTrue(who.all().contains("couldn't make a plans link (401: license key not found"), who.all());
+        cloud.upgrade(who);   // no reply scripted: the fake throws, as a dead network would
+        assertTrue(who.all().contains("no scripted reply"), who.all());
+    }
+
+    @Test
     @DisplayName("no cloud.url means the real service; the fixture never uses it")
     void defaultUrl() throws IOException {
         var bare = new com.gadgetman.jarvis.core.testing.FakePlatform("", Files.createTempDirectory("jarvis-url"));
@@ -289,6 +328,16 @@ class CloudActivationTest {
         f.core.commands().jarvis(steve, java.util.Optional.of(steve), List.of("cloud"), false);
         assertTrue(steve.messages.stream().anyMatch(m -> m.contains("isn't active")));
         assertEquals(List.of("activate"), f.core.commands().jarvis(steve, java.util.Optional.of(steve), List.of("cloud", "ac"), true));
+        assertEquals(List.of("upgrade"), f.core.commands().jarvis(steve, java.util.Optional.of(steve), List.of("cloud", "up"), true));
+
+        // Anyone sees the public price list; only a manager gets this server's buying link.
+        steve.messages.clear();
+        f.core.commands().jarvis(steve, java.util.Optional.of(steve), List.of("cloud", "upgrade"), false);
+        assertTrue(steve.messages.stream().anyMatch(m -> m.contains("Activate first")), String.join("\n", steve.messages));
+        f.core.aiSettings().setKey("claude", "gc_live");
+        steve.messages.clear();
+        f.core.commands().jarvis(steve, java.util.Optional.of(steve), List.of("cloud", "upgrade"), false);
+        assertTrue(steve.messages.stream().anyMatch(m -> m.contains("permission")), String.join("\n", steve.messages));
         assertTrue(f.core.commands().jarvis(steve, java.util.Optional.of(steve), List.of("clo"), true).contains("cloud"));
     }
 }

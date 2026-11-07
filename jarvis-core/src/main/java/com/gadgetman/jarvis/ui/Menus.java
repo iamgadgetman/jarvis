@@ -900,6 +900,17 @@ public class Menus {
                     c -> askInChat(p, "What shall I call this server on the approval page?",
                             name -> run(p, "cloud", "activate", name)));
         }
+        if (!active) {
+            m.put(13, item(Ids.EMERALD, Colors.GREEN + "See the plans",
+                            Colors.GRAY + "Prices and limits, in your browser"),
+                    c -> run(p, "cloud", "upgrade"));
+        } else if (mayActivate) {
+            m.put(13, item(Ids.EMERALD, Colors.GREEN + "Plans & upgrade",
+                            Colors.GRAY + "Buy a plan or manage billing,", Colors.GRAY + "for this server, in your browser"),
+                    c -> run(p, "cloud", "upgrade"));
+        } else {
+            m.label(13, unavailable("Plans & upgrade", "Only an admin can buy a plan"));
+        }
         m.put(14, item(Ids.BOOK, Colors.WHITE + "Plan & usage",
                         Colors.GRAY + "Plan, requests this month, trial end"),
                 c -> run(p, "cloud", "status"));

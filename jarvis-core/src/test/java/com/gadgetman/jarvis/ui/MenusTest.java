@@ -211,6 +211,15 @@ class MenusTest {
         assertTrue(f.platform.ui().isOpen(p), "back on the voice page");
     }
 
+    /** The slot whose icon name is exactly this, colours aside; -1 if none. */
+    private int slotExactly(String name) {
+        for (var e : f.platform.ui().menuFor(p).slots().entrySet()) {
+            String n = e.getValue().icon().displayName();
+            if (n != null && com.gadgetman.jarvis.core.text.Colors.strip(n).equals(name)) return e.getKey();
+        }
+        return -1;
+    }
+
     private void openCloudFromSteward() {
         ringBell();
         f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Steward"), false);
@@ -225,7 +234,7 @@ class MenusTest {
         openCloudFromSteward();
         assertTrue(f.platform.ui().slotNamed(p, "not active") >= 0);
 
-        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Activate"), false);
+        f.platform.ui().click(p, slotExactly("Activate"), false);
 
         assertFalse(f.platform.ui().isOpen(p), "the menu closes so the link can be clicked in chat");
         assertTrue(p.wasTold("Asking Jarvis Cloud"), String.join("\n", p.plainMessages()));
@@ -249,7 +258,7 @@ class MenusTest {
     @DisplayName("on a server, a non-admin sees Jarvis Cloud but cannot activate; Back returns to Steward")
     void cloudActivateNeedsAdminOnAServer() {
         openCloudFromSteward();
-        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Activate"), false);
+        f.platform.ui().click(p, slotExactly("Activate"), false);
         assertTrue(f.platform.ui().isOpen(p), "a greyed button does nothing");
         assertFalse(p.wasTold("Asking Jarvis Cloud"));
 
@@ -270,11 +279,33 @@ class MenusTest {
         assertTrue(f.platform.ui().slotNamed(p, "is active") >= 0);
         assertTrue(f.platform.ui().slotNamed(p, "Test Claude") >= 0);
 
-        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Activate"), false);
+        f.platform.ui().click(p, slotExactly("Activate"), false);
         assertFalse(p.wasTold("Asking Jarvis Cloud"));
 
         f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Back"), false);
         assertEquals("Jarvis — AI providers", f.platform.ui().menuFor(p).title());
+    }
+
+    @Test
+    @DisplayName("the Cloud page offers the plans: public list when inactive, this server's link for a manager, greyed for others")
+    void cloudPlansButton() {
+        openCloudFromSteward();
+        assertTrue(f.platform.ui().slotNamed(p, "See the plans") >= 0);
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "See the plans"), false);
+        assertFalse(f.platform.ui().isOpen(p));
+        assertTrue(p.wasTold("Activate first"), String.join("\n", p.plainMessages()));
+
+        f.platform.config().set("ai.claude.api-key", "gc_test");
+        openCloudFromSteward();
+        int plans = f.platform.ui().slotNamed(p, "Plans & upgrade");
+        f.platform.ui().click(p, plans, false);
+        assertTrue(f.platform.ui().isOpen(p), "a non-admin on a server can't fetch the buying link");
+
+        f.platform.singleplayer = true;
+        openCloudFromSteward();
+        f.platform.ui().click(p, f.platform.ui().slotNamed(p, "Plans & upgrade"), false);
+        assertFalse(f.platform.ui().isOpen(p));
+        assertTrue(p.wasTold("Fetching your plans page"), String.join("\n", p.plainMessages()));
     }
 
     @Test
