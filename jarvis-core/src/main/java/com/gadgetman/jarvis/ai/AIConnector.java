@@ -775,6 +775,29 @@ public class AIConnector {
         return fn >= 0 ? response.substring(fn).strip() : null;
     }
 
+    /**
+     * Thrown when Jarvis Cloud cut a build reply off at the plan's output cap.
+     * Retrying cannot help -- the next reply hits the same cap -- so it goes
+     * straight to the player instead of through the repair loop or a fallback.
+     */
+    public static class PlanLimitException extends RuntimeException {
+        public PlanLimitException(String message) { super(message); }
+    }
+
+    /**
+     * The message for a build reply Jarvis Cloud truncated, or null if it was not.
+     * Only build-sized requests count: a chat reply cut short is still usable.
+     */
+    static String planLimitMessage(JSONObject json, String apiKey, int maxTokens) {
+        if (maxTokens < BUILD_SCRIPT_MAX_TOKENS || apiKey == null || !apiKey.startsWith("gc_")) return null;
+        if (!"max_tokens".equals(json.optString("stop_reason"))) return null;
+        JSONObject usage = json.optJSONObject("usage");
+        int out = usage == null ? 0 : usage.optInt("output_tokens");
+        if (out <= 0 || out >= maxTokens) return null;
+        return "This build is too big for your Jarvis Cloud plan (replies stop at about " + out
+                + " tokens). Try a smaller build, or upgrade with /jarvis cloud upgrade.";
+    }
+
     /** Thrown when a capability is unavailable in Ollama-only reduced mode. */
     public static class ReducedModeException extends Exception {
         public ReducedModeException(String message) { super(message); }
@@ -1111,6 +1134,8 @@ public class AIConnector {
                     this.apiKey = config.apiKey;
                 }
                 return result;
+            } catch (PlanLimitException e) {
+                throw e; // the provider is fine; the plan is the limit
             } catch (Exception e) {
                 health.recordFailure(e.getMessage());
                 lastException = e;
@@ -1250,6 +1275,9 @@ public class AIConnector {
                     usage.optInt("output_tokens"),
                     usage.optInt("cache_creation_input_tokens"),
                     usage.optInt("cache_read_input_tokens"));
+
+            String capped = planLimitMessage(json, config.apiKey, maxTokens);
+            if (capped != null) throw new PlanLimitException(capped);
 
             JSONArray content = json.optJSONArray("content");
 
