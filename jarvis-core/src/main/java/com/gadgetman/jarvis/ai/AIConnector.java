@@ -641,6 +641,13 @@ public class AIConnector {
                 uses facing=north. Point them down-slope instead and the whole roof is
                 inside out.
 
+                The same rule holds for a staircase people walk up: `facing` is the direction
+                you walk to climb. A flight rising toward the east is stairs with facing=east,
+                each step one block higher and one block further east, e.g.
+                for (let i = 0; i < 5; i++) setBlock(x+i, y+i, z, "stone_brick_stairs[facing=east]");
+                Fill the space under the flight if it shows, and clear the floor above the top
+                steps (and two blocks of headroom over every step) so it leads somewhere.
+
                 Each course must be a full-length `fill` along the ridge axis, one block higher
                 and one block inward from the course below. The FIRST course sits directly on
                 top of the wall, at the wall's own line -- not outside it. Starting the roof
