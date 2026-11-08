@@ -420,6 +420,10 @@ public class BuildingAssistant {
                     log.warn("Build script used block ids that do not exist; corrected without a repair call: "
                             + result.substitutions);
                 }
+                if (!result.doorwayClears.isEmpty()) {
+                    log.info("Cleared " + result.doorwayClears.size() + " block(s) out of doorways: "
+                            + String.join(", ", result.doorwayClears));
+                }
 
                 List<BlockPlacement> placements = new ArrayList<>(result.blocks.size());
                 for (ScriptBuildPlanner.PlannedBlock b : result.blocks) {

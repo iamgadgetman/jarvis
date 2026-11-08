@@ -388,6 +388,10 @@ public class AIConnector {
                   of bookshelves. Fences make railings and table legs; stairs make chairs; slabs make
                   tables and counters; trapdoors make shutters. A tower has a way up: ladders or stairs.
                 - Outside: a path of a different block to the door, and a lantern or two by it.
+                - Keep a path two blocks high to every door and through every room; nothing stands or
+                  hangs in a doorway or an aisle, and anything hung from above stays at y+2 or higher.
+                - If the roof leaves more than three blocks above the walls, use it: a loft reached by
+                  stairs or a ladder, or a room open to the rafters with lights hung from the roof.
                 - Keep every op inside a few dozen blocks of the origin. Twenty to sixty ops is normal.
                 """;
 
@@ -711,6 +715,15 @@ public class AIConnector {
                 counters; trapdoors make shutters. A tower has a way up. Outside, a path of a
                 different block leads to the door, with a lantern or two beside it. A bare box with
                 a door is not finished.
+
+                Leave room to move. Keep a path two blocks high from the entrance to every door and
+                through every room: nothing stands or hangs in a doorway or an aisle. Anything hung
+                from above stays at y+2 or higher -- hang it from the ceiling or the roof beams, not
+                from the tops of low walls, where it ends up at chest height.
+
+                Use the height you build. If the roof leaves more than three blocks of space above
+                the walls, give that space a purpose: a loft or upper floor reached by stairs or a
+                ladder, or a room open to the rafters with its lights and plants hung from the roof.
 
                 Rules:
                 - You only ever place blocks; nothing is removed unless you place air. The

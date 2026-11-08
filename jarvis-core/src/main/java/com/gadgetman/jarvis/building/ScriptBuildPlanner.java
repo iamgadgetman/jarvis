@@ -112,10 +112,13 @@ public class ScriptBuildPlanner {
         public final int setBlockCalls;
         /** Wrong block ids corrected in place, wrong -> right, so the caller can say so once. */
         public final Map<String, String> substitutions;
+        /** Furnishings removed from doorways so the doors can be walked through. */
+        public final List<String> doorwayClears;
 
         Result(List<PlannedBlock> blocks, int fillCalls, int setBlockCalls,
-               Map<String, String> substitutions) {
+               Map<String, String> substitutions, List<String> doorwayClears) {
             this.substitutions = substitutions;
+            this.doorwayClears = doorwayClears;
             this.blocks = blocks;
             this.fillCalls = fillCalls;
             this.setBlockCalls = setBlockCalls;
@@ -334,7 +337,16 @@ public class ScriptBuildPlanner {
         if (blocks.isEmpty()) {
             throw new ScriptException("The script ran but placed no blocks.", false);
         }
-        return new Result(new ArrayList<>(blocks.values()), counters[0], counters[1], fixed);
+        // Keep every door walkable; see DoorwayClearer.
+        Map<String, String> byCoord = new LinkedHashMap<>();
+        for (PlannedBlock b : blocks.values()) byCoord.put(b.dx + "," + b.dy + "," + b.dz, b.spec);
+        List<String> doorwayClears = DoorwayClearer.clear(byCoord);
+        List<PlannedBlock> out = new ArrayList<>(byCoord.size());
+        for (Map.Entry<String, String> e : byCoord.entrySet()) {
+            String[] c = e.getKey().split(",");
+            out.add(new PlannedBlock(Integer.parseInt(c[0]), Integer.parseInt(c[1]), Integer.parseInt(c[2]), e.getValue()));
+        }
+        return new Result(out, counters[0], counters[1], fixed, doorwayClears);
     }
 
     /**
