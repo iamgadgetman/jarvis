@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -66,5 +67,103 @@ class IntentPipelineTest {
     void unmatchedOrderIsAnswered() {
         f.core.intents().submit(p, "polish the silverware", IntentPipeline.Source.CONSOLE);
         assertTrue(p.wasTold("couldn't make an order of it"), String.join("\n", p.plainMessages()));
+    }
+
+    // ---- FB-01: fast path ------------------------------------------------
+
+    /**
+     * Every trip into {@code AIConnector}'s provider loop leaves a log line:
+     * a provider that was tried and failed ("AI provider ollama failed ...")
+     * or one skipped while cooling down ("Skipping ollama ..."). The fixture's
+     * AI points at a port nothing listens on, so a call can never succeed
+     * silently. Zero such lines means zero AI invocations.
+     */
+    private static long aiAttempts(Fixture fx) {
+        return fx.platform.logLines.stream()
+                .filter(l -> l.contains("AI provider ") || l.contains("Skipping ")
+                        || l.contains("All AI providers failed") || l.contains("No AI providers configured"))
+                .count();
+    }
+
+    private static String log(Fixture fx) {
+        return String.join("\n", fx.platform.logLines);
+    }
+
+    @Test
+    @DisplayName("control: an order the fast path cannot place does reach the AI")
+    void fastPathMiss_callsAi() {
+        FakeOwner alice = f.summoned("alice");
+        f.platform.logLines.clear();
+
+        f.core.intents().submit(alice, "can you follow me?", IntentPipeline.Source.CONSOLE);
+
+        assertTrue(aiAttempts(f) > 0, "a question goes to the model; if this fails, aiAttempts() "
+                + "no longer sees AI calls and the zero-call tests below prove nothing\n" + log(f));
+    }
+
+    @Test
+    @DisplayName("a fast-path hit from chat runs the order with zero AI invocations")
+    void fastPathHit_makesNoAiCall() {
+        FakeOwner alice = f.summoned("alice");
+        f.platform.logLines.clear();
+        AtomicBoolean cancelled = new AtomicBoolean();
+
+        f.platform.events().publish(new ChatEvent(alice, "Jarvis, follow me", cancelled::set));
+
+        assertAll(
+                () -> assertEquals(0, aiAttempts(f), "fast path must not call the AI\n" + log(f)),
+                () -> assertTrue(cancelled.get(), "the line was for him"),
+                () -> assertEquals(1, f.core.butlers().getActiveTaskCount(), "he is following"),
+                () -> assertFalse(alice.plainMessages().isEmpty(), "a canned acknowledgement was sent"));
+    }
+
+    @Test
+    @DisplayName("a fast-path hit from the console path makes zero AI invocations")
+    void fastPathHit_consoleSource_makesNoAiCall() {
+        FakeOwner alice = f.summoned("alice");
+        f.platform.logLines.clear();
+
+        f.core.intents().submit(alice, "follow me", IntentPipeline.Source.CONSOLE);
+
+        assertEquals(0, aiAttempts(f), log(f));
+        assertEquals(1, f.core.butlers().getActiveTaskCount());
+    }
+
+    @Test
+    @DisplayName("an extra phrase from intent.fast-path.extra-phrases is honoured with zero AI invocations")
+    void extraPhraseFromConfig_makesNoAiCall() throws IOException {
+        try (Fixture fx = new Fixture(Fixture.DEFAULT_CONFIG + """
+                intent:
+                  fast-path:
+                    enabled: true
+                    log-hits: false
+                    extra-phrases:
+                      "heel": follow
+                """)) {
+            FakeOwner bob = fx.summoned("bob");
+            fx.platform.logLines.clear();
+
+            fx.core.intents().submit(bob, "heel", IntentPipeline.Source.CONSOLE);
+
+            assertEquals(0, aiAttempts(fx), log(fx));
+            assertEquals(1, fx.core.butlers().getActiveTaskCount(), "the alias ran follow");
+        }
+    }
+
+    @Test
+    @DisplayName("with intent.fast-path.enabled: false, a simple order goes to the AI")
+    void fastPathDisabled_callsAi() throws IOException {
+        try (Fixture fx = new Fixture(Fixture.DEFAULT_CONFIG + """
+                intent:
+                  fast-path:
+                    enabled: false
+                """)) {
+            FakeOwner bob = fx.summoned("bob");
+            fx.platform.logLines.clear();
+
+            fx.core.intents().submit(bob, "follow me", IntentPipeline.Source.CONSOLE);
+
+            assertTrue(aiAttempts(fx) > 0, "disabled fast path means the AI is asked first\n" + log(fx));
+        }
     }
 }

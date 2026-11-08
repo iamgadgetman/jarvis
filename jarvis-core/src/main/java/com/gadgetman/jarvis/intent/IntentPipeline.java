@@ -15,8 +15,11 @@ import com.gadgetman.jarvis.schematics.SchematicLibrary;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -55,8 +58,11 @@ public class IntentPipeline {
         }
     };
 
-    /** Actions too risky to trust to a small local model's parsing. */
-    private static final Set<String> RESTRICTED_IN_REDUCED_MODE = Set.of(
+    /**
+     * Actions too risky to trust to a small local model's parsing. The fast
+     * path never produces these either.
+     */
+    static final Set<String> RESTRICTED_IN_REDUCED_MODE = Set.of(
             "console_command", "console_commands", "lp_group_add", "lp_group_remove", "set_gamerule");
 
     private final JarvisCore core;
@@ -91,6 +97,8 @@ public class IntentPipeline {
         // Build the world context on the SERVER thread first, then do the
         // slow AI call async.
         scheduler().sync(() -> {
+            // Literal commands are answered locally, before any model is asked.
+            if (tryFastPath(player, utterance, source, sink)) return;
             final String worldContext = buildContext(player);
             scheduler().async(() -> parseAndDispatch(player, utterance, worldContext, source, sink));
         });
@@ -99,6 +107,64 @@ public class IntentPipeline {
     /** Convenience for the chat path, which always answers in chat. */
     public void submit(Owner player, String utterance, Source source) {
         submit(player, utterance, source, CHAT_RESPONDER);
+    }
+
+    // ==================== FAST PATH ====================
+
+    /**
+     * Run a plain command ("follow me", "mine 10 iron") without the AI.
+     * Server thread. Returns false when the parser can't place the sentence,
+     * or the fast path is off, and the model should decide.
+     */
+    private boolean tryFastPath(Owner player, String utterance, Source source, Responder sink) {
+        var cfg = platform.config();
+        if (!cfg.getBoolean("intent.fast-path.enabled", true)) return false;
+
+        Optional<Intent> hit = new FastPathParser(extraPhrases()).parse(utterance);
+        if (hit.isEmpty()) return false;
+        Intent intent = hit.get();
+
+        if (cfg.getBoolean("intent.fast-path.log-hits", false)) {
+            platform.log().info("[fast-path] " + intent.action() + " " + intent.params()
+                    + " <- \"" + trim(utterance, 60) + "\"");
+        }
+        executeAction(player, intent.action(), executorParams(intent),
+                FastPathParser.acknowledge(intent), utterance, source, sink);
+        return true;
+    }
+
+    /** intent.fast-path.extra-phrases, phrase -> action. Re-read each time so a reload takes. */
+    private Map<String, String> extraPhrases() {
+        var section = platform.config().section("intent.fast-path.extra-phrases");
+        Map<String, String> out = new HashMap<>();
+        for (String phrase : section.keys()) {
+            String action = section.getString(phrase, null);
+            if (action != null) out.put(phrase, action);
+        }
+        return out;
+    }
+
+    /**
+     * The parser speaks {@code item}/{@code count}; the actions read their own
+     * names. mine filters by {@code ore} (no count: he mines what he finds),
+     * request_item wants {@code amount}, chop already reads {@code count}.
+     */
+    static JSONObject executorParams(Intent intent) {
+        JSONObject in = intent.params();
+        JSONObject out = new JSONObject(in.toString());
+        switch (intent.action()) {
+            case "mine" -> {
+                out.remove("item");
+                out.remove("count");
+                if (in.has("item")) out.put("ore", in.getString("item"));
+            }
+            case "request_item" -> {
+                out.remove("count");
+                if (in.has("count")) out.put("amount", in.getInt("count"));
+            }
+            default -> { }
+        }
+        return out;
     }
 
     // ==================== PARSE ====================
@@ -212,8 +278,13 @@ public class IntentPipeline {
         ActionExecutor executor = core.actions();
         ButlerService npc = core.butlers();
 
+        // "summon" with no entity is Jarvis himself, not a mob: the adapter's
+        // executor would otherwise offer to spawn a zombie for "come here".
+        boolean npcSummon = "summon".equals(actionType)
+                && (parameters == null || !parameters.has("entity"));
+
         // Server-administration actions belong to the adapter's executor
-        if (executor != null && executor.handles(actionType)) {
+        if (!npcSummon && executor != null && executor.handles(actionType)) {
             if (executor.dangerousActions().contains(actionType)) {
                 queueForConfirmation(player, actionType, parameters, executor);
             } else {
@@ -243,7 +314,11 @@ public class IntentPipeline {
             case "guard", "defend", "protect"-> npc.guard(player, "defensive");
             case "watch", "sentry"         -> npc.watch(player, null);
             case "stand_down"              -> npc.guard(player, "passive");
-            case "mine", "mining"          -> npc.mine(player);
+            case "mine", "mining" -> {
+                String ore = parameters == null ? "" : parameters.optString("ore", "");
+                if (ore.isEmpty()) npc.mine(player);
+                else npc.mine(player, new String[]{ore});
+            }
             case "stop"                    -> npc.stop(player);
             case "loot", "inventory"       -> npc.openInventory(player);
             case "build" -> {

@@ -1,5 +1,14 @@
 # Jarvis Changelog
 
+## v0.18.1 (unreleased)
+
+### Added
+
+- **Fast path for simple commands.** "follow me", "stop", "mine 10 iron" and
+  the like run instantly without an AI call; only sentences the local parser
+  can't place go to the model. `intent.fast-path` in config; add your own
+  aliases under `extra-phrases`.
+
 ## v0.18.0 (unreleased — local test build)
 
 ### Added

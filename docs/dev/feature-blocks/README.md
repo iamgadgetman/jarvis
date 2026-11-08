@@ -16,7 +16,7 @@ says push.
 
 | Block | Name | Lane | Depends on | Size | Status |
 |---|---|---|---|---|---|
-| [FB-01](FB-01-parser-first.md) | Parser-first fast path | A | — | S | planned |
+| [FB-01](FB-01-parser-first.md) | Parser-first fast path | A | — | S | built |
 | [FB-02](FB-02-thinking-feedback.md) | "Thinking" feedback while the model works | A | — | S | planned |
 | [FB-03](FB-03-world-context.md) | Rich world context in every prompt | B | — | S | planned |
 | [FB-04](FB-04-conversation-memory.md) | Per-player conversation memory | C | — | M | planned |
