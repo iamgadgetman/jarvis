@@ -77,7 +77,7 @@ public final class DoorwayClearer {
         return true;
     }
 
-    private static boolean passable(String b) {
+    static boolean passable(String b) {
         return b.equals("air") || b.equals("cave_air")
                 || b.endsWith("_carpet") || b.endsWith("pressure_plate")
                 || b.equals("torch") || b.endsWith("_torch")
@@ -87,7 +87,7 @@ public final class DoorwayClearer {
                 || b.endsWith("_door"); // a second door is someone else's doorway
     }
 
-    private static boolean structural(String b) {
+    static boolean structural(String b) {
         return b.endsWith("_planks") || b.endsWith("bricks") || b.endsWith("_log") || b.endsWith("_wood")
                 || b.endsWith("stone") || b.endsWith("cobblestone") || b.startsWith("deepslate")
                 || b.endsWith("_concrete") || b.endsWith("terracotta") || b.endsWith("glass")
@@ -107,7 +107,7 @@ public final class DoorwayClearer {
         };
     }
 
-    private static String base(String spec) {
+    static String base(String spec) {
         String b = spec.trim().toLowerCase(Locale.ROOT);
         int br = b.indexOf('[');
         if (br >= 0) b = b.substring(0, br);

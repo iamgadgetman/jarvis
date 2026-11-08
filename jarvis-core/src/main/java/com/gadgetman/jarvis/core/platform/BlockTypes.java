@@ -24,4 +24,13 @@ public interface BlockTypes {
 
     /** Every placeable block id, without namespace, for validating scripts off-thread. */
     Set<String> placeableIds();
+
+    /**
+     * Ids that are items but not blocks (cod_bucket, iron_ingot), without
+     * namespace. A build script naming one of these is left without that block
+     * rather than sent back for a paid repair. Empty when a platform cannot say.
+     */
+    default Set<String> itemOnlyIds() {
+        return Set.of();
+    }
 }

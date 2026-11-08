@@ -114,9 +114,29 @@ public class ScriptBuildPlanner {
         public final Map<String, String> substitutions;
         /** Furnishings removed from doorways so the doors can be walked through. */
         public final List<String> doorwayClears;
+        /** Furnishings removed to open a walking path into a closed-off room. */
+        public final List<String> walkwayClears;
+        /** Hanging decorations removed for hanging below head height. */
+        public final List<String> hangingTrims;
+        /** Ladder rungs a later call tried to overwrite, kept so the ladder still climbs. */
+        public final List<String> ladderKeeps;
+        /** Item ids (not blocks) the script used, left out instead of paying for a repair. */
+        public final Set<String> droppedItems;
 
         Result(List<PlannedBlock> blocks, int fillCalls, int setBlockCalls,
                Map<String, String> substitutions, List<String> doorwayClears) {
+            this(blocks, fillCalls, setBlockCalls, substitutions, doorwayClears,
+                    List.of(), List.of(), List.of(), Set.of());
+        }
+
+        Result(List<PlannedBlock> blocks, int fillCalls, int setBlockCalls,
+               Map<String, String> substitutions, List<String> doorwayClears,
+               List<String> walkwayClears, List<String> hangingTrims,
+               List<String> ladderKeeps, Set<String> droppedItems) {
+            this.walkwayClears = walkwayClears;
+            this.hangingTrims = hangingTrims;
+            this.ladderKeeps = ladderKeeps;
+            this.droppedItems = droppedItems;
             this.substitutions = substitutions;
             this.doorwayClears = doorwayClears;
             this.blocks = blocks;
@@ -171,6 +191,15 @@ public class ScriptBuildPlanner {
     private final BlockIdFixer fixer;
 
     /**
+     * Ids that are items but not blocks: {@code cod_bucket}, {@code cod},
+     * {@code iron_ingot}. A model decorating a fish stall reaches for these,
+     * and there is no block to swap in. Sending the script back for repair
+     * costs as much as the build did, so a block asked for as an item is left
+     * out and logged instead. Anything else unknown still goes to repair.
+     */
+    private final Set<String> itemIds;
+
+    /**
      * Shared across builds so each one does not pay engine start-up. Measured
      * at ~1.3s for the first context on a stock JDK; contexts after that are
      * cheap. Created lazily so a server that never runs a script build never
@@ -181,7 +210,14 @@ public class ScriptBuildPlanner {
     public ScriptBuildPlanner(Log log, int maxBlocks, int timeoutMs,
                               int maxHorizontal, int maxVertical, int maxFillVolume,
                               Set<String> validBlocks) {
+        this(log, maxBlocks, timeoutMs, maxHorizontal, maxVertical, maxFillVolume, validBlocks, Set.of());
+    }
+
+    public ScriptBuildPlanner(Log log, int maxBlocks, int timeoutMs,
+                              int maxHorizontal, int maxVertical, int maxFillVolume,
+                              Set<String> validBlocks, Set<String> itemIds) {
         this.log = log;
+        this.itemIds = itemIds == null ? Set.of() : itemIds;
         this.validBlocks = validBlocks;
         this.fixer = new BlockIdFixer(validBlocks);
         this.maxBlocks = maxBlocks;
@@ -260,6 +296,7 @@ public class ScriptBuildPlanner {
         int[] counters = new int[2]; // 0 = fill calls, 1 = setBlock calls
         // Ids corrected without a model round trip; see BlockIdFixer.
         Map<String, String> fixed = new LinkedHashMap<>();
+        Notes notes = new Notes();
 
         ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "Jarvis-script-watchdog");
@@ -290,7 +327,7 @@ public class ScriptBuildPlanner {
                     throw new LimitExceeded("setBlock needs (x, y, z, block)");
                 }
                 counters[1]++;
-                put(blocks, args[0].asInt(), args[1].asInt(), args[2].asInt(), args[3].asString(), bounds, fixed);
+                put(blocks, args[0].asInt(), args[1].asInt(), args[2].asInt(), args[3].asString(), bounds, fixed, notes);
                 return null;
             });
             bindings.putMember("fill", (ProxyExecutable) args -> {
@@ -302,7 +339,7 @@ public class ScriptBuildPlanner {
                 fill(blocks,
                         args[0].asInt(), args[1].asInt(), args[2].asInt(),
                         args[3].asInt(), args[4].asInt(), args[5].asInt(),
-                        args[6].asString(), mode, bounds, fixed);
+                        args[6].asString(), mode, bounds, fixed, notes);
                 return null;
             });
 
@@ -337,16 +374,27 @@ public class ScriptBuildPlanner {
         if (blocks.isEmpty()) {
             throw new ScriptException("The script ran but placed no blocks.", false);
         }
-        // Keep every door walkable; see DoorwayClearer.
+        // Make the result usable on foot. Order matters: low hanging decor
+        // comes out first so it is not mistaken for something blocking a path.
         Map<String, String> byCoord = new LinkedHashMap<>();
         for (PlannedBlock b : blocks.values()) byCoord.put(b.dx + "," + b.dy + "," + b.dz, b.spec);
+        List<String> hangingTrims = HangingTrimmer.trim(byCoord);
         List<String> doorwayClears = DoorwayClearer.clear(byCoord);
+        List<String> walkwayClears;
+        try {
+            walkwayClears = WalkwayClearer.clear(byCoord);
+        } catch (RuntimeException e) {
+            // A check that improves a build must never be what breaks one.
+            log.warn("Walkway check failed, build left as planned: " + e);
+            walkwayClears = List.of();
+        }
         List<PlannedBlock> out = new ArrayList<>(byCoord.size());
         for (Map.Entry<String, String> e : byCoord.entrySet()) {
             String[] c = e.getKey().split(",");
             out.add(new PlannedBlock(Integer.parseInt(c[0]), Integer.parseInt(c[1]), Integer.parseInt(c[2]), e.getValue()));
         }
-        return new Result(out, counters[0], counters[1], fixed, doorwayClears);
+        return new Result(out, counters[0], counters[1], fixed, doorwayClears,
+                walkwayClears, hangingTrims, notes.ladderKeeps, notes.droppedItems);
     }
 
     /**
@@ -376,10 +424,16 @@ public class ScriptBuildPlanner {
         return new ScriptException("The script threw: " + e.getMessage(), false);
     }
 
+    /** What a run changed on its own, reported once at the end. */
+    private static final class Notes {
+        final List<String> ladderKeeps = new ArrayList<>();
+        final Set<String> droppedItems = new java.util.TreeSet<>();
+    }
+
     /** Expands a box into blocks. Modes match the vanilla /fill vocabulary the model already knows. */
     private void fill(Map<Long, PlannedBlock> out, int x1, int y1, int z1,
                       int x2, int y2, int z2, String spec, String mode, WorldBounds bounds,
-                      Map<String, String> fixed) {
+                      Map<String, String> fixed, Notes notes) {
         int minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
         int minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
         int minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
@@ -414,14 +468,14 @@ public class ScriptBuildPlanner {
                         if (z == minZ || z == maxZ) onFace++;
                         if (outline ? onFace < 2 : onFace < 1) continue;
                     }
-                    put(out, x, y, z, spec, bounds, fixed);
+                    put(out, x, y, z, spec, bounds, fixed, notes);
                 }
             }
         }
     }
 
     private void put(Map<Long, PlannedBlock> out, int x, int y, int z, String spec, WorldBounds bounds,
-                     Map<String, String> fixed) {
+                     Map<String, String> fixed, Notes notes) {
         if (Math.abs(x) > maxHorizontal || Math.abs(z) > maxHorizontal) {
             throw new LimitExceeded("Coordinate (" + x + "," + y + "," + z + ") is more than "
                     + maxHorizontal + " blocks from the origin. Keep the build near 0,0,0.");
@@ -456,6 +510,10 @@ public class ScriptBuildPlanner {
                     spec = corrected;
                 }
             }
+            if (!validBlocks.contains(baseName(spec)) && itemIds.contains(base)) {
+                notes.droppedItems.add(base);
+                return;
+            }
             if (!validBlocks.contains(baseName(spec))) {
                 String hint = suggest(base);
                 throw new LimitExceeded("'" + base + "' is not a real Minecraft block id."
@@ -478,6 +536,18 @@ public class ScriptBuildPlanner {
         // meant to hang on now directly behind it.
         Long here = key(x, y, z);
         PlannedBlock existing = out.get(here);
+
+        // A ladder rung is never replaced by air, a torch or a furnishing. A
+        // live fish market lost three of its four rungs this way -- a later
+        // "clear this spot", a wall torch and a loft hatch each landed on the
+        // ladder -- and its loft could not be climbed into. Building blocks
+        // and other ladders may still replace it; those are deliberate.
+        if (existing != null && "ladder".equals(baseName(existing.spec)) && !"ladder".equals(base)
+                && ("air".equals(base) || "cave_air".equals(base) || isAttachment(base)
+                    || DoorwayClearer.obstructs(spec, 1) && !DoorwayClearer.structural(base))) {
+            notes.ladderKeeps.add(base + " at " + x + "," + y + "," + z);
+            return;
+        }
         if (isAttachment(base) && existing != null && !"air".equals(baseName(existing.spec))) {
             int[] dir = facingOf(spec);
             if (dir == null) return; // nowhere sensible to move it; a missing torch beats a hole

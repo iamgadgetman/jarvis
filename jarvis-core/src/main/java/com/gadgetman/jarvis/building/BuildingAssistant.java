@@ -119,7 +119,7 @@ public class BuildingAssistant {
                 try {
                     scriptPlanner = new ScriptBuildPlanner(log, scriptMaxBlocks,
                             scriptTimeoutMs, scriptMaxHorizontal, scriptMaxVertical, scriptMaxFillVolume,
-                            validBlockNames);
+                            validBlockNames, new HashSet<>(platform.blockTypes().itemOnlyIds()));
                 } catch (NoClassDefFoundError e) {
                     log.warn("GraalJS is only partly present (" + e.getMessage() + "); using the JSON planner.");
                     scriptPlanner = null;
@@ -423,6 +423,23 @@ public class BuildingAssistant {
                 if (!result.doorwayClears.isEmpty()) {
                     log.info("Cleared " + result.doorwayClears.size() + " block(s) out of doorways: "
                             + String.join(", ", result.doorwayClears));
+                }
+                if (!result.droppedItems.isEmpty()) {
+                    log.warn("Build script asked for items that are not blocks; left them out without a repair call: "
+                            + result.droppedItems);
+                }
+                if (!result.ladderKeeps.isEmpty()) {
+                    log.info("Kept " + result.ladderKeeps.size() + " ladder rung(s) the script overwrote: "
+                            + String.join(", ", result.ladderKeeps));
+                }
+                if (!result.hangingTrims.isEmpty()) {
+                    log.info("Trimmed " + result.hangingTrims.size() + " hanging block(s) below head height: "
+                            + String.join(", ", result.hangingTrims));
+                }
+                if (!result.walkwayClears.isEmpty()) {
+                    log.info("Opened a walking path into closed-off rooms by removing "
+                            + result.walkwayClears.size() + " block(s): "
+                            + String.join(", ", result.walkwayClears));
                 }
 
                 List<BlockPlacement> placements = new ArrayList<>(result.blocks.size());

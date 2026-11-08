@@ -77,6 +77,15 @@ public final class PaperPlatform implements Platform {
             }
             return out;
         }
+
+        @Override
+        public Set<String> itemOnlyIds() {
+            Set<String> out = new HashSet<>();
+            for (Material m : Material.values()) {
+                if (m.isItem() && !m.isBlock() && !m.isLegacy()) out.add(m.getKey().getKey());
+            }
+            return out;
+        }
     };
 
     public PaperPlatform(JavaPlugin plugin) {
