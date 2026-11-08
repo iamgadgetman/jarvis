@@ -280,8 +280,11 @@ public class BuildingAssistant {
                     return;
                 }
 
-                // Enforce size limit
-                if (placements.size() > maxAiBlocks) {
+                // Enforce size limit. JSON plans only: a script plan already
+                // ran inside the script planner's own budget (build.script
+                // max-blocks), and cutting a sorted-bottom-up list here left
+                // big builds with only their lower half.
+                if (scriptPlanner == null && placements.size() > maxAiBlocks) {
                     placements = placements.subList(0, maxAiBlocks);
                 }
 
