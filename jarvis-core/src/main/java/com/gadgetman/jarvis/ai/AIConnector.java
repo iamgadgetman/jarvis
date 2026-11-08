@@ -792,17 +792,30 @@ public class AIConnector {
     }
 
     /**
-     * The message for a build reply Jarvis Cloud truncated, or null if it was not.
+     * The message for a build reply that was cut off, or null if it finished.
      * Only build-sized requests count: a chat reply cut short is still usable.
+     *
+     * <p>A truncated script is not worth a repair call. The error comes back as
+     * a syntax error at end of file, the repair asks for the complete script
+     * again, and that reply stops at the same ceiling -- the GadgetCraft log has
+     * builds that paid for two truncated replies in a row and built nothing.
      */
     static String planLimitMessage(JSONObject json, String apiKey, int maxTokens) {
-        if (maxTokens < BUILD_SCRIPT_MAX_TOKENS || apiKey == null || !apiKey.startsWith("gc_")) return null;
+        if (maxTokens < BUILD_SCRIPT_MAX_TOKENS) return null;
         if (!"max_tokens".equals(json.optString("stop_reason"))) return null;
         JSONObject usage = json.optJSONObject("usage");
         int out = usage == null ? 0 : usage.optInt("output_tokens");
-        if (out <= 0 || out >= maxTokens) return null;
-        return "This build is too big for your Jarvis Cloud plan (replies stop at about " + out
-                + " tokens). Try a smaller build, or upgrade with /jarvis cloud upgrade.";
+        // Jarvis Cloud lowered the ceiling below what we asked for: the plan is the limit.
+        if (apiKey != null && apiKey.startsWith("gc_") && out > 0 && out < maxTokens) {
+            return "This build is too big for your Jarvis Cloud plan (replies stop at about " + out
+                    + " tokens). Try a smaller build, or upgrade with /jarvis cloud upgrade.";
+        }
+        return truncatedBuildMessage();
+    }
+
+    private static String truncatedBuildMessage() {
+        return "That design was too big to finish in one reply and was cut off. "
+                + "Try a smaller or simpler build.";
     }
 
     /** Thrown when a capability is unavailable in Ollama-only reduced mode. */
@@ -1349,6 +1362,10 @@ public class AIConnector {
             JSONObject firstChoice = choices.optJSONObject(0);
             if (firstChoice == null) {
                 throw new RuntimeException("Invalid choice format in OpenAI response");
+            }
+            // Same rule as the Claude path: a cut-off build is not repaired.
+            if (maxTokens >= BUILD_SCRIPT_MAX_TOKENS && "length".equals(firstChoice.optString("finish_reason"))) {
+                throw new PlanLimitException(truncatedBuildMessage());
             }
 
             JSONObject message = firstChoice.optJSONObject("message");

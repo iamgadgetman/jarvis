@@ -416,6 +416,10 @@ public class BuildingAssistant {
                         + result.blocks.size() + " blocks from " + result.fillCalls
                         + " fill and " + result.setBlockCalls + " setBlock calls"
                         + (attempt > 0 ? " (after " + attempt + " repair)" : ""));
+                if (!result.substitutions.isEmpty()) {
+                    log.warn("Build script used block ids that do not exist; corrected without a repair call: "
+                            + result.substitutions);
+                }
 
                 List<BlockPlacement> placements = new ArrayList<>(result.blocks.size());
                 for (ScriptBuildPlanner.PlannedBlock b : result.blocks) {

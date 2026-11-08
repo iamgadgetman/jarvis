@@ -110,8 +110,12 @@ public class ScriptBuildPlanner {
         public final List<PlannedBlock> blocks;
         public final int fillCalls;
         public final int setBlockCalls;
+        /** Wrong block ids corrected in place, wrong -> right, so the caller can say so once. */
+        public final Map<String, String> substitutions;
 
-        Result(List<PlannedBlock> blocks, int fillCalls, int setBlockCalls) {
+        Result(List<PlannedBlock> blocks, int fillCalls, int setBlockCalls,
+               Map<String, String> substitutions) {
+            this.substitutions = substitutions;
             this.blocks = blocks;
             this.fillCalls = fillCalls;
             this.setBlockCalls = setBlockCalls;
@@ -161,6 +165,7 @@ public class ScriptBuildPlanner {
      * Null disables validation.
      */
     private final Set<String> validBlocks;
+    private final BlockIdFixer fixer;
 
     /**
      * Shared across builds so each one does not pay engine start-up. Measured
@@ -175,6 +180,7 @@ public class ScriptBuildPlanner {
                               Set<String> validBlocks) {
         this.log = log;
         this.validBlocks = validBlocks;
+        this.fixer = new BlockIdFixer(validBlocks);
         this.maxBlocks = maxBlocks;
         this.timeoutMs = timeoutMs;
         this.maxHorizontal = maxHorizontal;
@@ -249,6 +255,8 @@ public class ScriptBuildPlanner {
         // overlapping fills cost the budget once rather than twice.
         Map<Long, PlannedBlock> blocks = new LinkedHashMap<>();
         int[] counters = new int[2]; // 0 = fill calls, 1 = setBlock calls
+        // Ids corrected without a model round trip; see BlockIdFixer.
+        Map<String, String> fixed = new LinkedHashMap<>();
 
         ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "Jarvis-script-watchdog");
@@ -279,7 +287,7 @@ public class ScriptBuildPlanner {
                     throw new LimitExceeded("setBlock needs (x, y, z, block)");
                 }
                 counters[1]++;
-                put(blocks, args[0].asInt(), args[1].asInt(), args[2].asInt(), args[3].asString(), bounds);
+                put(blocks, args[0].asInt(), args[1].asInt(), args[2].asInt(), args[3].asString(), bounds, fixed);
                 return null;
             });
             bindings.putMember("fill", (ProxyExecutable) args -> {
@@ -291,7 +299,7 @@ public class ScriptBuildPlanner {
                 fill(blocks,
                         args[0].asInt(), args[1].asInt(), args[2].asInt(),
                         args[3].asInt(), args[4].asInt(), args[5].asInt(),
-                        args[6].asString(), mode, bounds);
+                        args[6].asString(), mode, bounds, fixed);
                 return null;
             });
 
@@ -326,7 +334,7 @@ public class ScriptBuildPlanner {
         if (blocks.isEmpty()) {
             throw new ScriptException("The script ran but placed no blocks.", false);
         }
-        return new Result(new ArrayList<>(blocks.values()), counters[0], counters[1]);
+        return new Result(new ArrayList<>(blocks.values()), counters[0], counters[1], fixed);
     }
 
     /**
@@ -358,7 +366,8 @@ public class ScriptBuildPlanner {
 
     /** Expands a box into blocks. Modes match the vanilla /fill vocabulary the model already knows. */
     private void fill(Map<Long, PlannedBlock> out, int x1, int y1, int z1,
-                      int x2, int y2, int z2, String spec, String mode, WorldBounds bounds) {
+                      int x2, int y2, int z2, String spec, String mode, WorldBounds bounds,
+                      Map<String, String> fixed) {
         int minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
         int minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
         int minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
@@ -393,13 +402,14 @@ public class ScriptBuildPlanner {
                         if (z == minZ || z == maxZ) onFace++;
                         if (outline ? onFace < 2 : onFace < 1) continue;
                     }
-                    put(out, x, y, z, spec, bounds);
+                    put(out, x, y, z, spec, bounds, fixed);
                 }
             }
         }
     }
 
-    private void put(Map<Long, PlannedBlock> out, int x, int y, int z, String spec, WorldBounds bounds) {
+    private void put(Map<Long, PlannedBlock> out, int x, int y, int z, String spec, WorldBounds bounds,
+                     Map<String, String> fixed) {
         if (Math.abs(x) > maxHorizontal || Math.abs(z) > maxHorizontal) {
             throw new LimitExceeded("Coordinate (" + x + "," + y + "," + z + ") is more than "
                     + maxHorizontal + " blocks from the origin. Keep the build near 0,0,0.");
@@ -426,6 +436,15 @@ public class ScriptBuildPlanner {
         if (validBlocks != null) {
             String base = baseName(spec);
             if (!validBlocks.contains(base)) {
+                // An obvious near-miss is corrected here rather than sent back
+                // through a repair call, which costs as much as the build did.
+                String corrected = fixer.fixSpec(spec, base);
+                if (corrected != null) {
+                    fixed.putIfAbsent(base, baseName(corrected));
+                    spec = corrected;
+                }
+            }
+            if (!validBlocks.contains(baseName(spec))) {
                 String hint = suggest(base);
                 throw new LimitExceeded("'" + base + "' is not a real Minecraft block id."
                         + (hint.isEmpty() ? " Use only ids this server knows."

@@ -24,8 +24,10 @@ class PlanLimitTest {
     }
 
     @Test
-    void ownKeyIsNotAPlanLimit() {
-        assertNull(AIConnector.planLimitMessage(reply("max_tokens", 1024), "sk-ant-x", 16000));
+    void ownKeyCutOffIsReportedWithoutAnUpgradePitch() {
+        String m = AIConnector.planLimitMessage(reply("max_tokens", 1024), "sk-ant-x", 16000);
+        assertNotNull(m);
+        assertFalse(m.contains("upgrade"), m);
     }
 
     @Test
@@ -34,7 +36,9 @@ class PlanLimitTest {
     }
 
     @Test
-    void hittingTheRequestedCeilingIsNotThePlan() {
-        assertNull(AIConnector.planLimitMessage(reply("max_tokens", 16000), "gc_abc", 16000));
+    void hittingTheRequestedCeilingIsReportedButNotAsThePlan() {
+        String m = AIConnector.planLimitMessage(reply("max_tokens", 16000), "gc_abc", 16000);
+        assertNotNull(m);
+        assertFalse(m.contains("upgrade"), m);
     }
 }
