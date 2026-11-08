@@ -77,6 +77,56 @@ class BuildCleanupTest {
     }
 
     @Test
+    void secondFishMarketLadderCutsAHatchThroughTheBeam() throws Exception {
+        // The ladder at x=1, z=4 climbs past a ceiling beam slab at (1,3,4).
+        // It used to be shifted off the beam, then dropped, leaving no hatch.
+        ScriptBuildPlanner.Result r = planner.run(script("fish-market-2.js"));
+        Map<String, String> m = asMap(r);
+        for (int y = 0; y <= 4; y++) {
+            String b = m.get("1," + y + ",4");
+            assertTrue(b != null && b.startsWith("ladder"), "rung at y=" + y + " is " + b);
+        }
+        assertTrue(WalkwayClearer.canReach(new HashMap<>(m), 1, 0, 4), "ladder foot not reachable from outside");
+        assertTrue(WalkwayClearer.canReach(new HashMap<>(m), 4, 4, 2), "loft not reachable from the shop");
+        assertTrue(WalkwayClearer.clear(new HashMap<>(m)).isEmpty(), "a second pass still found closed rooms");
+    }
+
+    @Test
+    void aLadderThatStopsUnderAFloorGetsItsHatch() {
+        // Wall at x=0, ladder at x=1 rungs y=0..2, loft floor at y=3 over x=1..3.
+        Map<String, String> m = new HashMap<>();
+        for (int y = 0; y <= 5; y++) m.put("0," + y + ",0", "oak_planks");
+        for (int y = 0; y <= 2; y++) m.put("1," + y + ",0", "ladder[facing=east]");
+        for (int x = 1; x <= 3; x++) m.put(x + ",3,0", "spruce_planks");
+        List<String> cut = ScriptBuildPlanner.cutLadderHatches(m);
+        assertEquals(List.of("spruce_planks at 1,3,0"), cut);
+        assertEquals("ladder[facing=east]", m.get("1,3,0"));
+        assertEquals("spruce_planks", m.get("2,3,0"));
+
+        // Under a roof with nowhere to step out, nothing is cut.
+        Map<String, String> roof = new HashMap<>();
+        for (int y = 0; y <= 5; y++) roof.put("0," + y + ",0", "oak_planks");
+        for (int y = 0; y <= 2; y++) roof.put("1," + y + ",0", "ladder[facing=east]");
+        roof.put("1,3,0", "spruce_planks");
+        roof.put("1,4,0", "spruce_planks");
+        assertTrue(ScriptBuildPlanner.cutLadderHatches(roof).isEmpty());
+        assertEquals("spruce_planks", roof.get("1,3,0"));
+    }
+
+    @Test
+    void aTorchWrittenAtTheWallStillMovesOffIt() throws Exception {
+        ScriptBuildPlanner.Result r = planner.run("function buildCreation(x,y,z){"
+                + "fill(x,y,z,x+4,y+2,z,'oak_planks'); setBlock(x+2,y+1,z,'wall_torch[facing=south]');"
+                + "setBlock(x+1,y+1,z,'ladder[facing=south]');}");
+        Map<String, String> m = asMap(r);
+        assertEquals("oak_planks", m.get("2,1,0"));
+        assertEquals("wall_torch[facing=south]", m.get("2,1,1"));
+        // Nothing solid behind it (z=-1 is empty), so the ladder shifts too.
+        assertEquals("oak_planks", m.get("1,1,0"));
+        assertEquals("ladder[facing=south]", m.get("1,1,1"));
+    }
+
+    @Test
     void aRoomWithAnOpenDoorwayIsLeftAlone() {
         Map<String, String> m = room();
         m.put("2,0,0", "air");

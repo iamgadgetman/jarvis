@@ -432,6 +432,10 @@ public class BuildingAssistant {
                     log.info("Kept " + result.ladderKeeps.size() + " ladder rung(s) the script overwrote: "
                             + String.join(", ", result.ladderKeeps));
                 }
+                if (!result.ladderHatches.isEmpty()) {
+                    log.info("Cut " + result.ladderHatches.size() + " hatch(es) above ladders that stopped under a floor: "
+                            + String.join(", ", result.ladderHatches));
+                }
                 if (!result.hangingTrims.isEmpty()) {
                     log.info("Trimmed " + result.hangingTrims.size() + " hanging block(s) below head height: "
                             + String.join(", ", result.hangingTrims));

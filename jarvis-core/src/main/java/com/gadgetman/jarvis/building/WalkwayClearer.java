@@ -100,6 +100,17 @@ public final class WalkwayClearer {
         return removed;
     }
 
+    /**
+     * True if a player arriving from outside can stand at (x,y,z) without
+     * anything being removed. For checking a plan, not for changing one.
+     */
+    static boolean canReach(Map<String, String> blocks, int x, int y, int z) {
+        if (blocks.isEmpty()) return false;
+        WalkwayClearer w = new WalkwayClearer(blocks);
+        if (w.fMinX == Integer.MAX_VALUE) return false;
+        return w.reachable().contains(pack(x, y, z));
+    }
+
     // ---- walking -------------------------------------------------------
 
     /** Every position reachable from outside without removing anything. */
