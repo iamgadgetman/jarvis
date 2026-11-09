@@ -262,4 +262,29 @@ class IntentPipelineTest {
             assertTrue(aiAttempts(fx) > 0, "disabled fast path means the AI is asked first\n" + log(fx));
         }
     }
+
+    @Test
+    @DisplayName("a fast-path order gets one answer, not the acknowledgement plus the action's own line")
+    void fastPathHit_answersOnce() {
+        FakeOwner alice = f.summoned("alice");
+        for (String said : new String[]{"follow me", "stop"}) {
+            int before = alice.plainMessages().size();
+            f.core.intents().submit(alice, said, IntentPipeline.Source.CONSOLE);
+            var lines = alice.plainMessages().subList(before, alice.plainMessages().size());
+            assertEquals(1, lines.size(), "\"" + said + "\" should get one line, got " + lines);
+        }
+    }
+
+    @Test
+    @DisplayName("an order given directly (slash command, bell) still says its own line")
+    void directOrder_stillConfirms() {
+        FakeOwner alice = f.summoned("alice");
+        int before = alice.plainMessages().size();
+        f.core.butlers().follow(alice);
+        f.core.butlers().stop(alice);
+        var lines = alice.plainMessages().subList(before, alice.plainMessages().size());
+        assertAll(
+                () -> assertTrue(lines.stream().anyMatch(m -> m.contains("Right behind you, sir.")), lines.toString()),
+                () -> assertTrue(lines.stream().anyMatch(m -> m.contains("Standing down, sir.")), lines.toString()));
+    }
 }

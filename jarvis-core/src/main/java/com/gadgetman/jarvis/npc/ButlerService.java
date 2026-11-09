@@ -140,6 +140,34 @@ public class ButlerService implements ButlerHost {
         owner.message(Colors.jarvis(text));
     }
 
+    /**
+     * Set while the chat pipeline runs an order it has already answered (the
+     * model's reply, or a fast-path acknowledgement), so the action's own
+     * "order received" line is not said as well. Server thread only.
+     */
+    private static final ThreadLocal<Boolean> ANSWERED = ThreadLocal.withInitial(() -> false);
+
+    /** Run {@code order} with its "order received" lines silenced; see {@link #confirm}. */
+    public void runAnswered(Runnable order) {
+        boolean outer = ANSWERED.get();
+        ANSWERED.set(true);
+        try {
+            order.run();
+        } finally {
+            ANSWERED.set(outer);
+        }
+    }
+
+    /**
+     * An "order received" line: said for a slash command or bell button, but
+     * not when the chat pipeline has already answered the same order. Lines
+     * that tell the player something new (an error, a count, "summon me
+     * first") use {@link #say} instead.
+     */
+    void confirm(Owner owner, String text) {
+        if (!ANSWERED.get()) say(owner, text);
+    }
+
     @Override
     public void sayQuiet(Owner owner, String text) {
         owner.actionBar(Colors.GRAY + "Jarvis: " + text);
@@ -166,7 +194,7 @@ public class ButlerService implements ButlerHost {
         if (world == null) return;
 
         spawnBeside(owner, b, world);
-        say(owner, "At your service.");
+        confirm(owner, "At your service.");
     }
 
     /**
@@ -251,7 +279,7 @@ public class ButlerService implements ButlerHost {
         submergedSeconds.remove(owner.id());
 
         b.despawn();
-        say(owner, "Until next time, sir.");
+        confirm(owner, "Until next time, sir.");
 
         debug("Jarvis dismissed for " + owner.name());
     }
@@ -712,13 +740,13 @@ public class ButlerService implements ButlerHost {
         if (!b.world().map(w -> w.id().equals(owner.world())).orElse(false)
                 || b.pos().distance(owner.pos()) > LAST_RESORT_TELEPORT_DISTANCE) {
             teleportToOwner(b, owner);
-            say(owner, "Right behind you, sir.");
+            confirm(owner, "Right behind you, sir.");
             return;
         }
 
         b.applyNavigationDefaults(null);
         ownerEntity(owner).ifPresent(e -> b.navigateTo(e, false));
-        say(owner, "On my way, sir.");
+        confirm(owner, "On my way, sir.");
 
         Task task = platform.scheduler().every(20L, 20L, new Consumer<Task>() {
             Vec3 lastPos = null;
@@ -898,7 +926,7 @@ public class ButlerService implements ButlerHost {
 
         stopTask(owner);
         b.applyNavigationDefaults(null);
-        say(owner, "Right behind you, sir.");
+        confirm(owner, "Right behind you, sir.");
 
         Task task = platform.scheduler().every(0L, 20L, new Consumer<Task>() {
             // Stall watchdog: he used to wedge on fences/corners and simply
@@ -964,7 +992,7 @@ public class ButlerService implements ButlerHost {
 
     public void stop(Owner owner) {
         stopTask(owner);
-        say(owner, "Standing down, sir.");
+        confirm(owner, "Standing down, sir.");
     }
 
     // ==================== TASK REGISTER ====================

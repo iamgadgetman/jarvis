@@ -9,6 +9,13 @@
   can't place go to the model. `intent.fast-path` in config; add your own
   aliases under `extra-phrases`.
 
+### Fixed
+
+- **One order, one answer.** A chat order such as "follow me" or "stop" got
+  two replies: Jarvis's answer and then the action's own "Right behind you,
+  sir." line. Chat orders now get one reply; slash commands and bell buttons
+  keep theirs.
+
 ## v0.18.0 (unreleased — local test build)
 
 ### Added

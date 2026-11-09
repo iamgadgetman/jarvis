@@ -72,6 +72,24 @@ Extend `IntentPipelineTest`: with a fast-path hit, `AIConnector` is **not** call
    to the AI.
 6. Remove all API keys and stop Ollama. Say `follow me`. Expect: still works.
 
+### Results — 2026-11-08, GadgetCraft (Purpur 26.3), build `f269f2e`
+
+Run from a headless test client with the owner watching. `ai.log-usage` was
+off, so "instant" means the reply arrived within the same second as the chat line.
+
+| Step | Said | Result |
+|---|---|---|
+| 1 | `jarvis follow me` | Instant reply. Followed three 3-block moves, ended ~2 blocks behind. **Two replies** (see below). |
+| 2 | `jarvis stop` | Instant reply. Stayed put while the player moved 6 blocks. **Two replies.** |
+| 3 | `jarvis get me 8 torches` | Instant. Resolved to `minecraft:torch`, approval request #1 opened. |
+| 4 | `jarvis can you follow me and then guard the house?` | Went to the model, reply after 3 s. **Two replies.** |
+| 5–6 | — | Not run. |
+
+**Found:** every chat order was answered twice: the pipeline's reply (fast-path ack or the
+model's), then `ButlerService`'s own line. Fixed in the next commit (`ButlerService.confirm`,
+run under `runAnswered`); `IntentPipelineTest.fastPathHit_answersOnce` covers it. Retest steps 1–2
+for one reply each.
+
 ## CHANGELOG line
 
 `### Added` — **Fast path for simple commands.** "follow me", "stop", "mine 10 iron" and

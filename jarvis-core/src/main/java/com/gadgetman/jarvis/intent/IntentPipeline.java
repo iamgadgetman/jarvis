@@ -330,7 +330,16 @@ public class IntentPipeline {
             return;
         }
 
-        // Core NPC / existing actions
+        // Core NPC / existing actions. When a reply was already spoken above, the
+        // action's own "order received" line (ButlerService.confirm) stays quiet,
+        // so one order gets one answer.
+        Runnable order = () -> dispatchNpc(player, actionType, parameters, aiResponse, sink, npc);
+        if (!aiResponse.isEmpty() && npc != null) npc.runAnswered(order);
+        else order.run();
+    }
+
+    private void dispatchNpc(Owner player, String actionType, JSONObject parameters,
+                             String aiResponse, Responder sink, ButlerService npc) {
         switch (actionType.toLowerCase(Locale.ROOT)) {
             case "summon"                  -> npc.summon(player);
             case "dismiss"                 -> npc.dismiss(player);
