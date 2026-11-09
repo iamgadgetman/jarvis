@@ -90,6 +90,8 @@ model's), then `ButlerService`'s own line. Fixed in the next commit (`ButlerServ
 run under `runAnswered`); `IntentPipelineTest.fastPathHit_answersOnce` covers it. Retest steps 1–2
 for one reply each.
 
+**Retest, 2026-11-09, build `fe9d13c2` (`6e1fbf5`):** `follow me` and `stop` gave one reply each; questions got one private answer (no `[Server]` line). Owner marked FB-01 `tested`.
+
 ## CHANGELOG line
 
 `### Added` — **Fast path for simple commands.** "follow me", "stop", "mine 10 iron" and
