@@ -15,8 +15,11 @@ import com.gadgetman.jarvis.schematics.SchematicLibrary;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -55,13 +58,45 @@ public class IntentPipeline {
         }
     };
 
-    /** Actions too risky to trust to a small local model's parsing. */
-    private static final Set<String> RESTRICTED_IN_REDUCED_MODE = Set.of(
+    /**
+     * Actions too risky to trust to a small local model's parsing. The fast
+     * path never produces these either.
+     */
+    static final Set<String> RESTRICTED_IN_REDUCED_MODE = Set.of(
             "console_command", "console_commands", "lp_group_add", "lp_group_remove", "set_gamerule");
+
+    /** Actions whose message reaches every player (or Discord), not just the one who spoke. */
+    static final Set<String> PUBLIC_ACTIONS = Set.of(
+            "server_say", "broadcast", "announce_all", "schedule_broadcast", "discord_broadcast");
+
+    /** Words that show the player asked for an announcement rather than an answer. */
+    private static final java.util.regex.Pattern ASKED_TO_ANNOUNCE = java.util.regex.Pattern.compile(
+            "\\b(announce\\w*|broadcast\\w*|everyone|everybody|all players|all the players"
+                    + "|the (whole )?server|server[- ]wide|discord|tell (them|all)|let (everyone|all)"
+                    + "|remind (everyone|all|people)|in (global|public) chat)\\b");
+
+    /** True when the model picked a whole-server action the player never asked for. */
+    static boolean publicActionWithoutAsking(String actionType, String message) {
+        if (!PUBLIC_ACTIONS.contains(actionType)) return false;
+        String m = message == null ? "" : message.toLowerCase(Locale.ROOT);
+        return !ASKED_TO_ANNOUNCE.matcher(m).find();
+    }
+
+    /** What to say privately in place of a public action: its message if it has one. */
+    static String privateReply(JSONObject parameters, String aiResponse) {
+        String msg = parameters == null ? "" : parameters.optString("message", "").trim();
+        return msg.isEmpty() ? aiResponse : msg;
+    }
 
     private final JarvisCore core;
     private final Platform platform;
     private final AIConnector ai;
+    /**
+     * Bad extra-phrases already warned about, so the log says it once. Server
+     * thread only. The warning appears on the first fast-path line after
+     * startup, and is not repeated after a reload while the server keeps running.
+     */
+    private final java.util.Set<String> warnedAliases = new java.util.HashSet<>();
 
     public IntentPipeline(JarvisCore core) {
         this.core = core;
@@ -91,6 +126,8 @@ public class IntentPipeline {
         // Build the world context on the SERVER thread first, then do the
         // slow AI call async.
         scheduler().sync(() -> {
+            // Literal commands are answered locally, before any model is asked.
+            if (tryFastPath(player, utterance, source, sink)) return;
             final String worldContext = buildContext(player);
             scheduler().async(() -> parseAndDispatch(player, utterance, worldContext, source, sink));
         });
@@ -99,6 +136,92 @@ public class IntentPipeline {
     /** Convenience for the chat path, which always answers in chat. */
     public void submit(Owner player, String utterance, Source source) {
         submit(player, utterance, source, CHAT_RESPONDER);
+    }
+
+    // ==================== FAST PATH ====================
+
+    /**
+     * Run a plain command ("follow me", "mine 10 iron") without the AI.
+     * Server thread. Returns false when the parser can't place the sentence,
+     * or the fast path is off, and the model should decide.
+     */
+    private boolean tryFastPath(Owner player, String utterance, Source source, Responder sink) {
+        var cfg = platform.config();
+        if (!cfg.getBoolean("intent.fast-path.enabled", true)) return false;
+
+        FastPathParser parser = new FastPathParser(extraPhrases());
+        for (String alias : parser.droppedAliases()) {
+            if (warnedAliases.add(alias)) {
+                platform.log().warn("[fast-path] Ignoring intent.fast-path.extra-phrases entry " + alias
+                        + ": aliases can only point at Jarvis's own actions ("
+                        + String.join(", ", new java.util.TreeSet<>(FastPathParser.ALIAS_TARGETS)) + ")");
+            }
+        }
+        Optional<Intent> hit = parser.parse(utterance);
+        if (hit.isEmpty()) return false;
+        Intent intent = hit.get();
+
+        // A request must name a real item: try the words as typed, then the
+        // parser's singular guess. Neither known -> let the model work it out.
+        if ("request_item".equals(intent.action())) {
+            Optional<String> id = resolveRequestedItem(intent.params());
+            if (id.isEmpty()) return false;
+            intent.params().put("item", id.get());
+            intent.params().remove("said");
+        }
+
+        if (cfg.getBoolean("intent.fast-path.log-hits", false)) {
+            platform.log().info("[fast-path] " + intent.action() + " " + intent.params()
+                    + " <- \"" + trim(utterance, 60) + "\"");
+        }
+        executeAction(player, intent.action(), executorParams(intent),
+                FastPathParser.acknowledge(intent), utterance, source, sink);
+        return true;
+    }
+
+    /** The registry id for a fast-path request: as typed first, then singular. */
+    Optional<String> resolveRequestedItem(JSONObject params) {
+        var items = platform.items();
+        if (params.has("said")) {
+            Optional<String> asSaid = items.resolve(params.getString("said"));
+            if (asSaid.isPresent()) return asSaid;
+        }
+        return params.has("item") ? items.resolve(params.getString("item")) : Optional.empty();
+    }
+
+    /** intent.fast-path.extra-phrases, phrase -> action. Re-read each time so a reload takes. */
+    private Map<String, String> extraPhrases() {
+        var section = platform.config().section("intent.fast-path.extra-phrases");
+        Map<String, String> out = new HashMap<>();
+        for (String phrase : section.keys()) {
+            String action = section.getString(phrase, null);
+            if (action != null) out.put(phrase, action);
+        }
+        return out;
+    }
+
+    /**
+     * The parser speaks {@code item}/{@code count}; the actions read their own
+     * names. mine filters by {@code ore} (no count: he mines what he finds),
+     * request_item wants {@code amount}, chop already reads {@code count}.
+     */
+    static JSONObject executorParams(Intent intent) {
+        JSONObject in = intent.params();
+        JSONObject out = new JSONObject(in.toString());
+        switch (intent.action()) {
+            case "mine" -> {
+                out.remove("item");
+                out.remove("count");
+                if (in.has("item")) out.put("ore", in.getString("item"));
+            }
+            case "request_item" -> {
+                out.remove("said");
+                out.remove("count");
+                if (in.has("count")) out.put("amount", in.getInt("count"));
+            }
+            default -> { }
+        }
+        return out;
     }
 
     // ==================== PARSE ====================
@@ -118,7 +241,16 @@ public class IntentPipeline {
                 throw new RuntimeException("No action in AI response");
             }
 
-            scheduler().sync(() -> executeAction(player, actionType, parameters, aiResponse, message, source, sink));
+            // A model that wants to "say" its answer reaches for server_say,
+            // which posts it to every player as [Server]. Only a player who
+            // asked for an announcement gets one; otherwise it is a reply.
+            // The model then puts its real answer in the action's message and
+            // filler ("A tactical observation, sir.") in response, so say the message.
+            boolean keptPrivate = publicActionWithoutAsking(actionType, message);
+            String chosen = keptPrivate ? "chat" : actionType;
+            String reply = keptPrivate ? privateReply(parameters, aiResponse) : aiResponse;
+
+            scheduler().sync(() -> executeAction(player, chosen, parameters, reply, message, source, sink));
 
         } catch (Exception e) {
             platform.log().warn("Natural language parse failed: " + e.getMessage());
@@ -212,8 +344,13 @@ public class IntentPipeline {
         ActionExecutor executor = core.actions();
         ButlerService npc = core.butlers();
 
+        // "summon" with no entity is Jarvis himself, not a mob: the adapter's
+        // executor would otherwise offer to spawn a zombie for "come here".
+        boolean npcSummon = "summon".equals(actionType)
+                && (parameters == null || !parameters.has("entity"));
+
         // Server-administration actions belong to the adapter's executor
-        if (executor != null && executor.handles(actionType)) {
+        if (!npcSummon && executor != null && executor.handles(actionType)) {
             if (executor.dangerousActions().contains(actionType)) {
                 queueForConfirmation(player, actionType, parameters, executor);
             } else {
@@ -225,7 +362,16 @@ public class IntentPipeline {
             return;
         }
 
-        // Core NPC / existing actions
+        // Core NPC / existing actions. When a reply was already spoken above, the
+        // action's own "order received" line (ButlerService.confirm) stays quiet,
+        // so one order gets one answer.
+        Runnable order = () -> dispatchNpc(player, actionType, parameters, aiResponse, sink, npc);
+        if (!aiResponse.isEmpty() && npc != null) npc.runAnswered(order);
+        else order.run();
+    }
+
+    private void dispatchNpc(Owner player, String actionType, JSONObject parameters,
+                             String aiResponse, Responder sink, ButlerService npc) {
         switch (actionType.toLowerCase(Locale.ROOT)) {
             case "summon"                  -> npc.summon(player);
             case "dismiss"                 -> npc.dismiss(player);
@@ -243,7 +389,11 @@ public class IntentPipeline {
             case "guard", "defend", "protect"-> npc.guard(player, "defensive");
             case "watch", "sentry"         -> npc.watch(player, null);
             case "stand_down"              -> npc.guard(player, "passive");
-            case "mine", "mining"          -> npc.mine(player);
+            case "mine", "mining" -> {
+                String ore = parameters == null ? "" : parameters.optString("ore", "");
+                if (ore.isEmpty()) npc.mine(player);
+                else npc.mine(player, new String[]{ore});
+            }
             case "stop"                    -> npc.stop(player);
             case "loot", "inventory"       -> npc.openInventory(player);
             case "build" -> {

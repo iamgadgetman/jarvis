@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -66,5 +67,260 @@ class IntentPipelineTest {
     void unmatchedOrderIsAnswered() {
         f.core.intents().submit(p, "polish the silverware", IntentPipeline.Source.CONSOLE);
         assertTrue(p.wasTold("couldn't make an order of it"), String.join("\n", p.plainMessages()));
+    }
+
+    // ---- FB-01: fast path ------------------------------------------------
+
+    /**
+     * Every trip into {@code AIConnector}'s provider loop leaves a log line:
+     * a provider that was tried and failed ("AI provider ollama failed ...")
+     * or one skipped while cooling down ("Skipping ollama ..."). The fixture's
+     * AI points at a port nothing listens on, so a call can never succeed
+     * silently. Zero such lines means zero AI invocations.
+     */
+    private static long aiAttempts(Fixture fx) {
+        return fx.platform.logLines.stream()
+                .filter(l -> l.contains("AI provider ") || l.contains("Skipping ")
+                        || l.contains("All AI providers failed") || l.contains("No AI providers configured"))
+                .count();
+    }
+
+    private static String log(Fixture fx) {
+        return String.join("\n", fx.platform.logLines);
+    }
+
+    @Test
+    @DisplayName("control: an order the fast path cannot place does reach the AI")
+    void fastPathMiss_callsAi() {
+        FakeOwner alice = f.summoned("alice");
+        f.platform.logLines.clear();
+
+        f.core.intents().submit(alice, "can you follow me?", IntentPipeline.Source.CONSOLE);
+
+        assertTrue(aiAttempts(f) > 0, "a question goes to the model; if this fails, aiAttempts() "
+                + "no longer sees AI calls and the zero-call tests below prove nothing\n" + log(f));
+    }
+
+    @Test
+    @DisplayName("a fast-path hit from chat runs the order with zero AI invocations")
+    void fastPathHit_makesNoAiCall() {
+        FakeOwner alice = f.summoned("alice");
+        f.platform.logLines.clear();
+        AtomicBoolean cancelled = new AtomicBoolean();
+
+        f.platform.events().publish(new ChatEvent(alice, "Jarvis, follow me", cancelled::set));
+
+        assertAll(
+                () -> assertEquals(0, aiAttempts(f), "fast path must not call the AI\n" + log(f)),
+                () -> assertTrue(cancelled.get(), "the line was for him"),
+                () -> assertEquals(1, f.core.butlers().getActiveTaskCount(), "he is following"),
+                () -> assertFalse(alice.plainMessages().isEmpty(), "a canned acknowledgement was sent"));
+    }
+
+    @Test
+    @DisplayName("a fast-path hit from the console path makes zero AI invocations")
+    void fastPathHit_consoleSource_makesNoAiCall() {
+        FakeOwner alice = f.summoned("alice");
+        f.platform.logLines.clear();
+
+        f.core.intents().submit(alice, "follow me", IntentPipeline.Source.CONSOLE);
+
+        assertEquals(0, aiAttempts(f), log(f));
+        assertEquals(1, f.core.butlers().getActiveTaskCount());
+    }
+
+    @Test
+    @DisplayName("an extra phrase from intent.fast-path.extra-phrases is honoured with zero AI invocations")
+    void extraPhraseFromConfig_makesNoAiCall() throws IOException {
+        try (Fixture fx = new Fixture(Fixture.DEFAULT_CONFIG + """
+                intent:
+                  fast-path:
+                    enabled: true
+                    log-hits: false
+                    extra-phrases:
+                      "heel": follow
+                """)) {
+            FakeOwner bob = fx.summoned("bob");
+            fx.platform.logLines.clear();
+
+            fx.core.intents().submit(bob, "heel", IntentPipeline.Source.CONSOLE);
+
+            assertEquals(0, aiAttempts(fx), log(fx));
+            assertEquals(1, fx.core.butlers().getActiveTaskCount(), "the alias ran follow");
+        }
+    }
+
+    @Test
+    @DisplayName("parser names are translated to the names each action reads")
+    void executorParams_translatesNames() {
+        var mine = IntentPipeline.executorParams(new Intent("mine",
+                new org.json.JSONObject().put("item", "iron").put("count", 32)));
+        assertEquals("iron", mine.getString("ore"));
+        assertFalse(mine.has("item"), mine.toString());
+        assertFalse(mine.has("count"), "mining has no count; it must not be passed on: " + mine);
+
+        var req = IntentPipeline.executorParams(new Intent("request_item",
+                new org.json.JSONObject().put("item", "minecraft:torch").put("count", 16)));
+        assertEquals("minecraft:torch", req.getString("item"));
+        assertEquals(16, req.getInt("amount"));
+        assertFalse(req.has("count"), req.toString());
+
+        var chop = IntentPipeline.executorParams(new Intent("chop",
+                new org.json.JSONObject().put("count", 5)));
+        assertEquals(5, chop.getInt("count"), "chop already reads count");
+    }
+
+    @Test
+    @DisplayName("\"come here\" summons Jarvis even when the server executor also claims summon")
+    void comeHere_summonsJarvisNotAMob() {
+        // Like Paper: the adapter's executor handles "summon" (a mob) and wants confirmation.
+        f.actions.alsoHandles.add("summon");
+        f.actions.alsoDangerous.add("summon");
+        FakeOwner alice = f.player("alice");
+
+        f.core.intents().submit(alice, "come here", IntentPipeline.Source.CONSOLE);
+
+        assertTrue(f.core.butlers().exists(alice), "Jarvis was summoned\n" + String.join("\n", alice.plainMessages()));
+        assertTrue(f.actions.executed.isEmpty(), "no mob was spawned: " + f.actions.executed);
+        assertFalse(alice.plainMessages().stream().anyMatch(m -> m.toLowerCase().contains("confirm")),
+                "no mob-summon confirmation was offered\n" + String.join("\n", alice.plainMessages()));
+    }
+
+    @Test
+    @DisplayName("a fast-path request is checked against the item registry: as typed first, then singular")
+    void requestItem_resolvedAgainstRegistry() {
+        // honey_bottles is made up: a plural id the keep-list doesn't know, so only
+        // the as-typed lookup can find it.
+        f.platform.knownItems.addAll(java.util.Set.of(
+                "minecraft:iron_bars", "minecraft:torch", "minecraft:honey_bottles"));
+        f.actions.alsoHandles.add("request_item");
+        FakeOwner alice = f.summoned("alice");
+
+        f.core.intents().submit(alice, "get me 8 iron bars", IntentPipeline.Source.CONSOLE);
+        f.core.intents().submit(alice, "get me 16 torches", IntentPipeline.Source.CONSOLE);
+        f.core.intents().submit(alice, "get me 2 honey bottles", IntentPipeline.Source.CONSOLE);
+
+        assertEquals(java.util.List.of("request_item", "request_item", "request_item"), f.actions.executed);
+        var bars = f.actions.executedParams.get(0);
+        var torches = f.actions.executedParams.get(1);
+        assertEquals("minecraft:iron_bars", bars.getString("item"), "the plural id as typed wins");
+        assertEquals(8, bars.getInt("amount"));
+        assertEquals("minecraft:torch", torches.getString("item"), "else the singular guess");
+        assertEquals("minecraft:honey_bottles", f.actions.executedParams.get(2).getString("item"),
+                "the words as typed are tried before the singular guess");
+        assertFalse(bars.has("said") || torches.has("said"), "parser-only key must not leak");
+    }
+
+    @Test
+    @DisplayName("a fast-path request for an item the registry doesn't know goes to the AI")
+    void requestItem_unknownItem_goesToAi() {
+        f.platform.knownItems.add("minecraft:torch");
+        f.actions.alsoHandles.add("request_item");
+        FakeOwner alice = f.summoned("alice");
+        f.platform.logLines.clear();
+
+        f.core.intents().submit(alice, "get me 3 unobtainium", IntentPipeline.Source.CONSOLE);
+
+        assertTrue(f.actions.executed.isEmpty(), "no request filed for a made-up item");
+        assertTrue(aiAttempts(f) > 0, "the model gets to work it out\n" + log(f));
+    }
+
+    @Test
+    @DisplayName("an alias to a server action is ignored and warned about once")
+    void aliasToServerAction_warnsOnce() throws IOException {
+        try (Fixture fx = new Fixture(Fixture.DEFAULT_CONFIG + """
+                intent:
+                  fast-path:
+                    extra-phrases:
+                      "patch me up": heal
+                """)) {
+            FakeOwner bob = fx.summoned("bob");
+            fx.platform.logLines.clear();
+
+            fx.core.intents().submit(bob, "follow me", IntentPipeline.Source.CONSOLE);
+            fx.core.intents().submit(bob, "stop", IntentPipeline.Source.CONSOLE);
+
+            long warnings = fx.platform.logLines.stream()
+                    .filter(l -> l.startsWith("WARN") && l.contains("\"patch me up\" -> heal")).count();
+            assertEquals(1, warnings, log(fx));
+        }
+    }
+
+    @Test
+    @DisplayName("with intent.fast-path.enabled: false, a simple order goes to the AI")
+    void fastPathDisabled_callsAi() throws IOException {
+        try (Fixture fx = new Fixture(Fixture.DEFAULT_CONFIG + """
+                intent:
+                  fast-path:
+                    enabled: false
+                """)) {
+            FakeOwner bob = fx.summoned("bob");
+            fx.platform.logLines.clear();
+
+            fx.core.intents().submit(bob, "follow me", IntentPipeline.Source.CONSOLE);
+
+            assertTrue(aiAttempts(fx) > 0, "disabled fast path means the AI is asked first\n" + log(fx));
+        }
+    }
+
+    @Test
+    @DisplayName("a fast-path order gets one answer, not the acknowledgement plus the action's own line")
+    void fastPathHit_answersOnce() {
+        FakeOwner alice = f.summoned("alice");
+        for (String said : new String[]{"follow me", "stop"}) {
+            int before = alice.plainMessages().size();
+            f.core.intents().submit(alice, said, IntentPipeline.Source.CONSOLE);
+            var lines = alice.plainMessages().subList(before, alice.plainMessages().size());
+            assertEquals(1, lines.size(), "\"" + said + "\" should get one line, got " + lines);
+        }
+    }
+
+    @Test
+    @DisplayName("an order given directly (slash command, bell) still says its own line")
+    void directOrder_stillConfirms() {
+        FakeOwner alice = f.summoned("alice");
+        int before = alice.plainMessages().size();
+        f.core.butlers().follow(alice);
+        f.core.butlers().stop(alice);
+        var lines = alice.plainMessages().subList(before, alice.plainMessages().size());
+        assertAll(
+                () -> assertTrue(lines.stream().anyMatch(m -> m.contains("Right behind you, sir.")), lines.toString()),
+                () -> assertTrue(lines.stream().anyMatch(m -> m.contains("Standing down, sir.")), lines.toString()));
+    }
+
+    @Test
+    @DisplayName("a question answered with server_say is kept private; an asked-for announcement is not")
+    void publicActionsNeedAnAsk() {
+        for (String question : new String[]{
+                "jarvis what do you think of the weather tonight?",
+                "jarvis how are you feeling tonight?",
+                "jarvis what is your favourite block?",
+                "what do you say to that?"}) {
+            for (String action : IntentPipeline.PUBLIC_ACTIONS) {
+                assertTrue(IntentPipeline.publicActionWithoutAsking(action, question),
+                        action + " for \"" + question + "\" should become a private reply");
+            }
+        }
+        for (String ask : new String[]{
+                "jarvis announce that the server restarts in 5 minutes",
+                "tell everyone dinner is ready",
+                "broadcast: build contest at 8",
+                "jarvis let everyone know the nether portal is fixed",
+                "post it on discord"}) {
+            assertFalse(IntentPipeline.publicActionWithoutAsking("server_say", ask),
+                    "\"" + ask + "\" asked for an announcement");
+        }
+        assertFalse(IntentPipeline.publicActionWithoutAsking("follow", "follow me"),
+                "private actions are never touched");
+    }
+
+    @Test
+    @DisplayName("a public action kept private says its message, not the filler response")
+    void privateReplyUsesTheMessage() {
+        var params = new org.json.JSONObject().put("message", "Zombies? Predictable, sir.");
+        assertEquals("Zombies? Predictable, sir.",
+                IntentPipeline.privateReply(params, "A tactical observation, sir."));
+        assertEquals("Fallback, sir.", IntentPipeline.privateReply(new org.json.JSONObject(), "Fallback, sir."));
+        assertEquals("Fallback, sir.", IntentPipeline.privateReply(null, "Fallback, sir."));
     }
 }

@@ -111,9 +111,17 @@ public final class FakePlatform implements Platform {
         public Optional<String> resolve(String name) {
             if (name == null) return Optional.empty();
             String key = Ids.key(name.trim().toLowerCase(Locale.ROOT));
-            return key.matches("[a-z0-9_]+") ? Optional.of(Ids.of(key)) : Optional.empty();
+            if (!key.matches("[a-z0-9_]+")) return Optional.empty();
+            String id = Ids.of(key);
+            return knownItems.isEmpty() || knownItems.contains(id) ? Optional.of(id) : Optional.empty();
         }
     };
+
+    /**
+     * When non-empty, {@code items().resolve} knows only these ids, like a real
+     * registry. Empty (the default) accepts any well-formed name.
+     */
+    public final Set<String> knownItems = new java.util.HashSet<>();
 
     /** Things a plan might name that are items, never blocks. */
     private static final Set<String> ITEM_ONLY = Set.of("diamond", "stick", "bread", "brick", "coal",

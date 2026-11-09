@@ -493,6 +493,20 @@ natural-language:
   require-prefix: false          # Must start with prefix
   cooldown-ms: 2000              # Millisecond cooldown between commands
 
+# Plain orders ("follow me", "stop", "guard", "mine 10 iron", "chop 5 trees")
+# are understood locally and run at once, with no AI call. Questions, "if",
+# "and", "then" and anything else unusual still go to the model. Never runs
+# console commands, permission changes or gamerules.
+intent:
+  fast-path:
+    enabled: true          # Parse simple commands locally before asking the AI
+    log-hits: false        # Log "[fast-path] follow" lines to see what it catches
+    extra-phrases:         # Your own aliases, phrase -> action. Targets must be Jarvis's own
+                           # actions (follow, guard, stop, mine, take_home, ...); anything else,
+                           # such as heal or give_item, is ignored with a warning in the log.
+      "heel": follow
+      "chill": stand_down
+
 # ========== DATABASE CONFIGURATION ==========
 databases:
   file: databases.yml            # Database configuration file

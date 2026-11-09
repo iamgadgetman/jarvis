@@ -407,155 +407,8 @@ public class AIConnector {
         return sendTiered(Tier.HEAVY, prompt, system, true, BUILD_SCRIPT_MAX_TOKENS);
     }
 
-    /**
-     * Literal commands that need no model at all.
-     *
-     * <p>Ported from the `dev` branch, minus its `quest_status` entries -- that
-     * action belongs to a quests package this branch does not have, and
-     * emitting it would produce an action the dispatcher cannot route. Extended
-     * to cover the commands this branch actually dispatches, which is most of
-     * the value: the original map predated the farmer, fisherman, lumberjack,
-     * lamplighter and steward.
-     *
-     * <p>Every value here must match a case in ChatListener's dispatcher.
-     */
-    private static final Map<String, String> FAST_ACTIONS = Map.ofEntries(
-            Map.entry("summon", "summon"), Map.entry("come here", "summon"),
-            Map.entry("come", "summon"), Map.entry("here boy", "summon"),
-            Map.entry("dismiss", "dismiss"), Map.entry("go away", "dismiss"),
-            Map.entry("leave", "dismiss"), Map.entry("begone", "dismiss"),
-            Map.entry("follow", "follow"), Map.entry("follow me", "follow"),
-            Map.entry("return", "return"), Map.entry("come back", "return"),
-            Map.entry("attack", "attack"), Map.entry("fight", "attack"),
-            Map.entry("guard", "guard"), Map.entry("defend me", "guard"),
-            Map.entry("protect me", "guard"),
-            Map.entry("watch", "watch"), Map.entry("night watch", "watch"),
-            Map.entry("stand down", "stand_down"), Map.entry("at ease", "stand_down"),
-            Map.entry("mine", "mine"), Map.entry("start mining", "mine"),
-            Map.entry("mine here", "mine_here"), Map.entry("branch mine", "mine_here"),
-            Map.entry("dig down", "dig_down"), Map.entry("dig a shaft", "dig_down"),
-            Map.entry("stop", "stop"), Map.entry("halt", "stop"),
-            Map.entry("stop it", "stop"), Map.entry("cancel", "stop"),
-            Map.entry("clearloot", "clearloot"), Map.entry("drop loot", "clearloot"),
-            Map.entry("drop everything", "clearloot"),
-            Map.entry("deposit", "deposit"), Map.entry("unload", "deposit"),
-            Map.entry("loot", "loot"), Map.entry("inventory", "loot"),
-            Map.entry("fish", "fish"), Map.entry("go fishing", "fish"),
-            Map.entry("chop", "chop"), Map.entry("chop trees", "chop"),
-            Map.entry("farm", "farm"), Map.entry("tend", "tend"),
-            Map.entry("dance", "dance"), Map.entry("patrol", "patrol"),
-            Map.entry("report", "report"), Map.entry("recover", "recover"),
-            Map.entry("take me home", "take_home"), Map.entry("set home", "set_home"),
-            Map.entry("light", "light"), Map.entry("light the area", "light"),
-            Map.entry("undo", "undo"), Map.entry("undo that", "undo"),
-            Map.entry("put it back", "undo"), Map.entry("put that back", "undo"),
-            Map.entry("put everything back", "undo"), Map.entry("undo the build", "undo"),
-            Map.entry("redo", "redo"), Map.entry("redo that", "redo"));
-
-    private static final Set<String> FAST_ORES = Set.of(
-            "diamond", "emerald", "gold", "iron", "copper", "redstone",
-            "lapis", "quartz", "coal", "netherite", "ancient debris");
-
-    /** A little variety so the canned replies don't read as canned. */
-    private static final Map<String, String[]> FAST_QUIPS = Map.ofEntries(
-            Map.entry("summon",     new String[]{"At your service. Again.", "You rang.", "Materialising. Try to look busy."}),
-            Map.entry("dismiss",    new String[]{"Finally.", "I shall be elsewhere. Anywhere else.", "Dismissed. Do call less often."}),
-            Map.entry("follow",     new String[]{"Right behind you. Regrettably.", "Following. Mind the lava."}),
-            Map.entry("return",     new String[]{"Returning. Do try to stay put.", "On my way back to you."}),
-            Map.entry("attack",     new String[]{"Violence. How predictable.", "Engaging. Do stand back."}),
-            Map.entry("guard",      new String[]{"Guarding. Try not to need it.", "I shall keep watch over you."}),
-            Map.entry("watch",      new String[]{"Taking the night watch, sir.", "The post is mine. Sleep well."}),
-            Map.entry("stand_down", new String[]{"Standing down. Reluctantly.", "At ease, then."}),
-            Map.entry("mine",       new String[]{"Manual labour. How delightfully medieval.", "Digging. Because you asked nicely."}),
-            Map.entry("mine_here",  new String[]{"A proper mine, then. Mind the drop.", "Sinking a shaft. Do keep clear."}),
-            Map.entry("dig_down",   new String[]{"Straight down it is, sir.", "Digging. Do stand back from the edge."}),
-            Map.entry("stop",       new String[]{"Stopping. Second thoughts already?", "Halted.", "As you wish. Again."}),
-            Map.entry("clearloot",  new String[]{"Dropping everything. Literally.", "Your hoard, unhoarded."}),
-            Map.entry("deposit",    new String[]{"Off to the chest with it.", "Unloading. The bags were getting heavy."}),
-            Map.entry("loot",       new String[]{"My bags, such as they are.", "Behold, the haul."}),
-            Map.entry("fish",       new String[]{"Fishing. The height of ambition.", "To the water, then."}),
-            Map.entry("chop",       new String[]{"Timber, presently.", "Off to fell something."}),
-            Map.entry("farm",       new String[]{"To the fields.", "Farming. How pastoral."}),
-            Map.entry("tend",       new String[]{"Tending the crops, sir.", "The fields shall have my attention."}),
-            Map.entry("dance",      new String[]{"If I must.", "Observe. Briefly."}),
-            Map.entry("patrol",     new String[]{"Patrolling. Someone has to.", "Making the rounds."}),
-            Map.entry("report",     new String[]{"The briefing, sir.", "Your situation, in brief."}),
-            Map.entry("recover",    new String[]{"Retrieving your things. Again.", "Off to the scene of your misfortune."}),
-            Map.entry("take_home",  new String[]{"Homeward. Do keep up.", "Leading you home, sir."}),
-            Map.entry("set_home",   new String[]{"Noted as home.", "This spot is now home. Ambitious."}),
-            Map.entry("light",      new String[]{"Let there be light. Grudgingly.", "Lighting the place up."}),
-            Map.entry("undo",       new String[]{"Putting it all back, sir.", "As though it never happened."}),
-            Map.entry("redo",       new String[]{"Up it goes again.", "Back as it was, sir."}));
-
     /** Token usage from the last provider call, for ai.log-usage. */
     private volatile String lastUsage;
-
-    /** "dig down 20 blocks" and friends, so a depth costs no model call. */
-    private static final java.util.regex.Pattern DIG_DEPTH = java.util.regex.Pattern.compile(
-            "dig (?:down |a shaft )?(\\d{1,3})(?: blocks?)?(?: (?:down|deep))?");
-
-    private final java.util.concurrent.atomic.AtomicInteger quipCounter =
-            new java.util.concurrent.atomic.AtomicInteger();
-
-    /**
-     * Resolve a literal command locally, skipping the model entirely.
-     *
-     * <p>This is the bulk of chat traffic, and none of it needs a model. The
-     * saving is latency rather than money -- the light tier goes to Ollama
-     * first, which is free but takes a second or two -- so "jarvis follow"
-     * answers instantly instead of after a round trip.
-     *
-     * @return the same JSON shape the model would produce, or null when the
-     *         phrasing is anything but an exact known command
-     */
-    private String tryFastPath(String message) {
-        if (message == null) return null;
-        String m = message.toLowerCase(Locale.ROOT).trim().replaceAll("[.!?]+$", "");
-        if (m.startsWith("jarvis")) m = m.substring(6).replaceAll("^[,\\s]+", "").trim();
-        if (m.isEmpty()) return null;
-
-        String action = FAST_ACTIONS.get(m);
-        JSONObject parameters = new JSONObject();
-
-        // "dig down 20", "dig a shaft 30 blocks" -- reading one number does not
-        // need a model call.
-        if (action == null) {
-            java.util.regex.Matcher dd = DIG_DEPTH.matcher(m);
-            if (dd.matches()) {
-                action = "dig_down";
-                parameters.put("depth", Integer.parseInt(dd.group(1)));
-            }
-        }
-
-        // "mine diamond" / "mine ancient debris" -- the one parameterised form.
-        if (action == null && m.startsWith("mine ")) {
-            String ore = m.substring(5).replaceFirst("^(some |for |me )+", "").trim();
-            if (ore.equals("debris")) ore = "ancient debris";
-            // Only de-pluralise if the literal form isn't already an ore --
-            // "ancient debris" must not become "ancient debri".
-            if (!FAST_ORES.contains(ore) && ore.endsWith("s")) {
-                ore = ore.substring(0, ore.length() - 1);
-            }
-            if (FAST_ORES.contains(ore)) {
-                action = "mine";
-                parameters.put("ore", ore);
-            }
-        }
-        if (action == null) return null;
-
-        String[] quips = FAST_QUIPS.get(action);
-        String quip = quips == null ? "Very good, sir."
-                : quips[Math.floorMod(quipCounter.getAndIncrement(), quips.length)];
-        if (parameters.has("ore")) {
-            quip = "Off to find " + parameters.getString("ore") + ". Try to contain yourself.";
-        }
-
-        return new JSONObject()
-                .put("action", action)
-                .put("parameters", parameters)
-                .put("response", quip)
-                .toString();
-    }
 
     /**
      * Ask the AI for a JavaScript build script.
@@ -840,13 +693,15 @@ public class AIConnector {
      * Parse natural language command into structured action
      */
     public String parseNaturalLanguage(String message, String playerName, String context) throws Exception {
-        // Literal commands don't need a model. This is the bulk of chat traffic.
-        String fastPath = tryFastPath(message);
-        if (fastPath != null) return fastPath;
-
+        // Literal commands ("follow me", "mine 10 iron") never get here:
+        // IntentPipeline answers them with FastPathParser first, unless
+        // intent.fast-path.enabled is off, in which case the model decides.
         String systemPrompt = JARVIS_PERSONALITY + "\n\n" +
                 "TASK: Parse player commands into JSON actions. Maintain your sarcastic butler persona in the response field.\n" +
                 "Output format: {\"action\":\"...\",\"parameters\":{...},\"response\":\"your witty 1-2 sentence response\"}\n\n" +
+                "CONVERSATION:\n" +
+                "  chat - just answer; no action. Use for questions, small talk and opinions.\n" +
+                "         The response field is the answer, seen only by this player.\n\n" +
                 "NPC ACTIONS (control the physical Jarvis NPC):\n" +
                 "  summon - bring Jarvis to the player\n" +
                 "  dismiss - send Jarvis away\n" +
@@ -899,8 +754,8 @@ public class AIConnector {
                 "  set_weather - set weather, params: {type: clear|rain|thunder}\n" +
                 "  set_gamerule - change a rule, params: {rule, value}\n" +
                 "  summon - summon a mob/entity, params: {entity: minecraft:xxx, x (optional), y (optional), z (optional)}\n" +
-                "  broadcast - announce to all players, params: {message}\n" +
-                "  server_say - say in chat, params: {message}\n" +
+                "  broadcast - announce to EVERY player; only when asked to announce something, params: {message}\n" +
+                "  server_say - post a [Server] line EVERY player sees; only when asked to, never to answer, params: {message}\n" +
                 "  lp_group_add - add to permission group, params: {player, group}\n" +
                 "  lp_group_remove - remove from permission group, params: {player, group}\n" +
                 "  warp - warp to a location, params: {player, warp}\n" +
@@ -913,7 +768,7 @@ public class AIConnector {
                 "  clear_drops - remove all ground items, params: {radius (optional)}\n" +
                 "  save_world - save the world, params: {}\n" +
                 "  set_difficulty - change difficulty, params: {difficulty: peaceful|easy|normal|hard}\n" +
-                "  announce_all - send title screen message to ALL players, params: {message, subtitle (optional)}\n" +
+                "  announce_all - title screen message to ALL players; only when asked to, params: {message, subtitle (optional)}\n" +
                 "  schedule_broadcast - scheduled/repeating chat message, params: {message, delay_seconds, interval_seconds (optional), count (optional)}\n\n" +
                 "PLAYER REQUESTS (for non-admin players):\n" +
                 "  request_item - submit an item request to admins, params: {item (minecraft:xxx), amount, reason (optional)}\n\n" +
