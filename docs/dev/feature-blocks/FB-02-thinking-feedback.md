@@ -82,6 +82,22 @@ Extend `FakeOwner`/`FakeButlers` in `core/testing/` to record `actionBar` and
    stops and the usual failure message appears — never a Jarvis stuck crouching.
 5. `animate: false` → only the action bar. `enabled: false` → nothing.
 
+### Results — 2026-11-09, GadgetCraft (Purpur 26.3), build `92feb41`
+
+Run from a headless test client; action-bar text read with hmc-specifics `render`, rotation with
+`/data get entity … Rotation`.
+
+| Step | Result |
+|---|---|
+| 1–2 action bar | **Pass.** "Jarvis is thinking.." then "Jarvis is thinking..." captured while the model worked. |
+| 3 reply | **Pass.** Bar cleared, reply printed (Ollama, 3–5 s). |
+| 2 turn to face | **Not seen.** Yaw stayed -90.4° (east) before, during and after; the player was to the west. Suspect Citizens' `rotationtrait` re-aims the NPC every tick and undoes `faceLocation`. Unverified. |
+| 2 arm swing | Not observable from the headless client. |
+| 4–5 | Not run (unit tests cover the failure path and the switches). |
+
+**Open:** owner to watch the turn and swing in-game. If he doesn't turn, drive the turn through
+Citizens' `RotationTrait` instead of `faceLocation`.
+
 ## CHANGELOG line
 
 `### Added` — **Jarvis shows he's thinking.** While a sentence is with the AI he turns to
