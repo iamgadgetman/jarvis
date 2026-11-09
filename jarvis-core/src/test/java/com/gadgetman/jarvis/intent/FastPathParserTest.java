@@ -113,4 +113,22 @@ class FastPathParserTest {
         assertTrue(parser.parse("heel").isEmpty(), "no alias configured, so \"heel\" is unknown");
         assertTrue(parser.parse("").isEmpty());
     }
+
+    @Test
+    @DisplayName("request_item uses the singular item id, except ids that are plural")
+    void requestItem_usesValidItemId() {
+        Map<String, String> cases = Map.of(
+                "get me 64 torches", "minecraft:torch",
+                "request 16 cooked beef", "minecraft:cooked_beef",
+                "get me 32 oak logs", "minecraft:oak_log",
+                "get me 8 potatoes", "minecraft:potato",
+                "get me 64 oak planks", "minecraft:oak_planks",
+                "get me 10 sweet berries", "minecraft:sweet_berries",
+                "get me 4 glass", "minecraft:glass");
+        cases.forEach((input, id) -> {
+            Optional<Intent> hit = parser.parse(input);
+            assertEquals("request_item", actionOf(hit, input), input);
+            assertEquals(id, hit.get().params().getString("item"), input);
+        });
+    }
 }

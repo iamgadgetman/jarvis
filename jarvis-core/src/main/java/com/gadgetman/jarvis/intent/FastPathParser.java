@@ -197,13 +197,39 @@ public class FastPathParser {
 
         Matcher req = REQUEST.matcher(m);
         if (req.matches()) {
-            String item = req.group(2).trim().replace(' ', '_');
+            String item = singularItem(req.group(2).trim()).replace(' ', '_');
             if (!item.contains(":")) item = "minecraft:" + item;
             return new Intent("request_item", new JSONObject()
                     .put("item", item)
                     .put("count", Integer.parseInt(req.group(1))));
         }
         return null;
+    }
+
+    /**
+     * Last words whose plural form IS the Minecraft id ("oak planks" -> oak_planks,
+     * "sweet berries" -> sweet_berries), so they must not be de-pluralised.
+     */
+    private static final Set<String> PLURAL_IDS = Set.of(
+            "planks", "leaves", "seeds", "bricks", "stairs", "tiles", "berries", "shears");
+
+    /**
+     * "64 torches" -> "torch", "oak logs" -> "oak log", "potatoes" -> "potato".
+     * Item ids are singular, so "minecraft:torches" would be a request that can
+     * never be filled. Only the last word changes; ids that are plural stay.
+     */
+    static String singularItem(String said) {
+        int space = said.lastIndexOf(' ');
+        String head = space < 0 ? "" : said.substring(0, space + 1);
+        String last = space < 0 ? said : said.substring(space + 1);
+        if (last.contains(":") || PLURAL_IDS.contains(last)) return said;
+        if (last.endsWith("ches") || last.endsWith("shes") || last.endsWith("sses")
+                || last.endsWith("xes") || last.endsWith("oes")) {
+            last = last.substring(0, last.length() - 2);
+        } else if (last.endsWith("s") && !last.endsWith("ss") && last.length() > 3) {
+            last = last.substring(0, last.length() - 1);
+        }
+        return head + last;
     }
 
     /** "diamonds" -> "diamond", "debris" -> "ancient debris"; null if not an ore. */
