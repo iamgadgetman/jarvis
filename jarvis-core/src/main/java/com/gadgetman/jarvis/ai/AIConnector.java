@@ -699,6 +699,9 @@ public class AIConnector {
         String systemPrompt = JARVIS_PERSONALITY + "\n\n" +
                 "TASK: Parse player commands into JSON actions. Maintain your sarcastic butler persona in the response field.\n" +
                 "Output format: {\"action\":\"...\",\"parameters\":{...},\"response\":\"your witty 1-2 sentence response\"}\n\n" +
+                "CONVERSATION:\n" +
+                "  chat - just answer; no action. Use for questions, small talk and opinions.\n" +
+                "         The response field is the answer, seen only by this player.\n\n" +
                 "NPC ACTIONS (control the physical Jarvis NPC):\n" +
                 "  summon - bring Jarvis to the player\n" +
                 "  dismiss - send Jarvis away\n" +
@@ -751,8 +754,8 @@ public class AIConnector {
                 "  set_weather - set weather, params: {type: clear|rain|thunder}\n" +
                 "  set_gamerule - change a rule, params: {rule, value}\n" +
                 "  summon - summon a mob/entity, params: {entity: minecraft:xxx, x (optional), y (optional), z (optional)}\n" +
-                "  broadcast - announce to all players, params: {message}\n" +
-                "  server_say - say in chat, params: {message}\n" +
+                "  broadcast - announce to EVERY player; only when asked to announce something, params: {message}\n" +
+                "  server_say - post a [Server] line EVERY player sees; only when asked to, never to answer, params: {message}\n" +
                 "  lp_group_add - add to permission group, params: {player, group}\n" +
                 "  lp_group_remove - remove from permission group, params: {player, group}\n" +
                 "  warp - warp to a location, params: {player, warp}\n" +
@@ -765,7 +768,7 @@ public class AIConnector {
                 "  clear_drops - remove all ground items, params: {radius (optional)}\n" +
                 "  save_world - save the world, params: {}\n" +
                 "  set_difficulty - change difficulty, params: {difficulty: peaceful|easy|normal|hard}\n" +
-                "  announce_all - send title screen message to ALL players, params: {message, subtitle (optional)}\n" +
+                "  announce_all - title screen message to ALL players; only when asked to, params: {message, subtitle (optional)}\n" +
                 "  schedule_broadcast - scheduled/repeating chat message, params: {message, delay_seconds, interval_seconds (optional), count (optional)}\n\n" +
                 "PLAYER REQUESTS (for non-admin players):\n" +
                 "  request_item - submit an item request to admins, params: {item (minecraft:xxx), amount, reason (optional)}\n\n" +

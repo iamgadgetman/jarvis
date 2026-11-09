@@ -15,6 +15,11 @@
   two replies: Jarvis's answer and then the action's own "Right behind you,
   sir." line. Chat orders now get one reply; slash commands and bell buttons
   keep theirs.
+- **Answers stay private.** Asking Jarvis a question could post his answer to
+  every player as `[Server] …` ("Said it."): the model used `server_say` to
+  talk. He now has a plain `chat` action, and `server_say`, `broadcast`,
+  `announce_all`, `schedule_broadcast` and `discord_broadcast` only run when
+  the player asks for an announcement ("announce", "tell everyone", …).
 
 ## v0.18.0 (unreleased — local test build)
 

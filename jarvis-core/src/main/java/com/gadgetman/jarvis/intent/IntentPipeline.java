@@ -65,6 +65,23 @@ public class IntentPipeline {
     static final Set<String> RESTRICTED_IN_REDUCED_MODE = Set.of(
             "console_command", "console_commands", "lp_group_add", "lp_group_remove", "set_gamerule");
 
+    /** Actions whose message reaches every player (or Discord), not just the one who spoke. */
+    static final Set<String> PUBLIC_ACTIONS = Set.of(
+            "server_say", "broadcast", "announce_all", "schedule_broadcast", "discord_broadcast");
+
+    /** Words that show the player asked for an announcement rather than an answer. */
+    private static final java.util.regex.Pattern ASKED_TO_ANNOUNCE = java.util.regex.Pattern.compile(
+            "\\b(announce\\w*|broadcast\\w*|everyone|everybody|all players|all the players"
+                    + "|the (whole )?server|server[- ]wide|discord|tell (them|all)|let (everyone|all)"
+                    + "|remind (everyone|all|people)|in (global|public) chat)\\b");
+
+    /** True when the model picked a whole-server action the player never asked for. */
+    static boolean publicActionWithoutAsking(String actionType, String message) {
+        if (!PUBLIC_ACTIONS.contains(actionType)) return false;
+        String m = message == null ? "" : message.toLowerCase(Locale.ROOT);
+        return !ASKED_TO_ANNOUNCE.matcher(m).find();
+    }
+
     private final JarvisCore core;
     private final Platform platform;
     private final AIConnector ai;
@@ -218,7 +235,12 @@ public class IntentPipeline {
                 throw new RuntimeException("No action in AI response");
             }
 
-            scheduler().sync(() -> executeAction(player, actionType, parameters, aiResponse, message, source, sink));
+            // A model that wants to "say" its answer reaches for server_say,
+            // which posts it to every player as [Server]. Only a player who
+            // asked for an announcement gets one; otherwise it is a reply.
+            String chosen = publicActionWithoutAsking(actionType, message) ? "chat" : actionType;
+
+            scheduler().sync(() -> executeAction(player, chosen, parameters, aiResponse, message, source, sink));
 
         } catch (Exception e) {
             platform.log().warn("Natural language parse failed: " + e.getMessage());

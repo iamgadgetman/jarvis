@@ -287,4 +287,30 @@ class IntentPipelineTest {
                 () -> assertTrue(lines.stream().anyMatch(m -> m.contains("Right behind you, sir.")), lines.toString()),
                 () -> assertTrue(lines.stream().anyMatch(m -> m.contains("Standing down, sir.")), lines.toString()));
     }
+
+    @Test
+    @DisplayName("a question answered with server_say is kept private; an asked-for announcement is not")
+    void publicActionsNeedAnAsk() {
+        for (String question : new String[]{
+                "jarvis what do you think of the weather tonight?",
+                "jarvis how are you feeling tonight?",
+                "jarvis what is your favourite block?",
+                "what do you say to that?"}) {
+            for (String action : IntentPipeline.PUBLIC_ACTIONS) {
+                assertTrue(IntentPipeline.publicActionWithoutAsking(action, question),
+                        action + " for \"" + question + "\" should become a private reply");
+            }
+        }
+        for (String ask : new String[]{
+                "jarvis announce that the server restarts in 5 minutes",
+                "tell everyone dinner is ready",
+                "broadcast: build contest at 8",
+                "jarvis let everyone know the nether portal is fixed",
+                "post it on discord"}) {
+            assertFalse(IntentPipeline.publicActionWithoutAsking("server_say", ask),
+                    "\"" + ask + "\" asked for an announcement");
+        }
+        assertFalse(IntentPipeline.publicActionWithoutAsking("follow", "follow me"),
+                "private actions are never touched");
+    }
 }
