@@ -313,4 +313,14 @@ class IntentPipelineTest {
         assertFalse(IntentPipeline.publicActionWithoutAsking("follow", "follow me"),
                 "private actions are never touched");
     }
+
+    @Test
+    @DisplayName("a public action kept private says its message, not the filler response")
+    void privateReplyUsesTheMessage() {
+        var params = new org.json.JSONObject().put("message", "Zombies? Predictable, sir.");
+        assertEquals("Zombies? Predictable, sir.",
+                IntentPipeline.privateReply(params, "A tactical observation, sir."));
+        assertEquals("Fallback, sir.", IntentPipeline.privateReply(new org.json.JSONObject(), "Fallback, sir."));
+        assertEquals("Fallback, sir.", IntentPipeline.privateReply(null, "Fallback, sir."));
+    }
 }

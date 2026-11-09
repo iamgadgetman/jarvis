@@ -82,6 +82,12 @@ public class IntentPipeline {
         return !ASKED_TO_ANNOUNCE.matcher(m).find();
     }
 
+    /** What to say privately in place of a public action: its message if it has one. */
+    static String privateReply(JSONObject parameters, String aiResponse) {
+        String msg = parameters == null ? "" : parameters.optString("message", "").trim();
+        return msg.isEmpty() ? aiResponse : msg;
+    }
+
     private final JarvisCore core;
     private final Platform platform;
     private final AIConnector ai;
@@ -238,9 +244,13 @@ public class IntentPipeline {
             // A model that wants to "say" its answer reaches for server_say,
             // which posts it to every player as [Server]. Only a player who
             // asked for an announcement gets one; otherwise it is a reply.
-            String chosen = publicActionWithoutAsking(actionType, message) ? "chat" : actionType;
+            // The model then puts its real answer in the action's message and
+            // filler ("A tactical observation, sir.") in response, so say the message.
+            boolean keptPrivate = publicActionWithoutAsking(actionType, message);
+            String chosen = keptPrivate ? "chat" : actionType;
+            String reply = keptPrivate ? privateReply(parameters, aiResponse) : aiResponse;
 
-            scheduler().sync(() -> executeAction(player, chosen, parameters, aiResponse, message, source, sink));
+            scheduler().sync(() -> executeAction(player, chosen, parameters, reply, message, source, sink));
 
         } catch (Exception e) {
             platform.log().warn("Natural language parse failed: " + e.getMessage());
