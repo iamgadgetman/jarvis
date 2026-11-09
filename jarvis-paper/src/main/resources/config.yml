@@ -506,6 +506,11 @@ intent:
                            # such as heal or give_item, is ignored with a warning in the log.
       "heel": follow
       "chill": stand_down
+  thinking-feedback:       # While a sentence is with the AI (not for fast-path hits)
+    enabled: true          # Show that Jarvis is working on an answer
+    action-bar: true       # "Jarvis is thinking..." above the hotbar, dots cycling
+    animate: true          # He turns to face you and swings an arm every few seconds
+    text: "Jarvis is thinking"   # Words shown before the cycling dots
 
 # ========== DATABASE CONFIGURATION ==========
 databases:

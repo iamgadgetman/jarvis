@@ -44,6 +44,17 @@ look frozen.
       text: "Jarvis is thinking"
   ```
 
+## As built (deviations)
+
+- **No sneak.** `Butler` has no crouch call, and adding one meant a new interface method in three
+  implementations plus Fabric/NeoForge rebuilds. The fidget is a look plus an arm swing every ~3 s,
+  using the existing `lookAt` and `swing`. The owner agreed to this on 2026-11-09.
+- **No platform changes.** `Owner.actionBar` already existed (via `Audience`), so the block is
+  core-only: new `intent/ThinkingFeedback.java`, hooked in `IntentPipeline`. The
+  "playThinking/actionBar" fakes the spec mentions weren't needed; tests read the existing
+  `FakeOwner.actionBars` and `FakeButlers.State.swings`.
+- **Safety cutoff:** feedback ends by itself after 90 s even if no reply or failure comes back.
+
 ## Files
 
 `core/platform/Butler.java`, `core/platform/Owner.java`, `platform/PaperOwner.java`,

@@ -129,7 +129,10 @@ public class IntentPipeline {
             // Literal commands are answered locally, before any model is asked.
             if (tryFastPath(player, utterance, source, sink)) return;
             final String worldContext = buildContext(player);
-            scheduler().async(() -> parseAndDispatch(player, utterance, worldContext, source, sink));
+            // The model can take seconds; show that he is on it (FB-02).
+            final ThinkingFeedback thinking = ThinkingFeedback.start(
+                    player, core.butlers().butler(player), platform.config(), scheduler());
+            scheduler().async(() -> parseAndDispatch(player, utterance, worldContext, source, sink, thinking));
         });
     }
 
@@ -227,7 +230,7 @@ public class IntentPipeline {
     // ==================== PARSE ====================
 
     private void parseAndDispatch(Owner player, String message, String worldContext,
-                                  Source source, Responder sink) {
+                                  Source source, Responder sink, ThinkingFeedback thinking) {
         try {
             String context  = worldContext + buildMemoryContext(player);
             String response = ai.parseNaturalLanguage(message, player.name(), context);
@@ -250,11 +253,17 @@ public class IntentPipeline {
             String chosen = keptPrivate ? "chat" : actionType;
             String reply = keptPrivate ? privateReply(parameters, aiResponse) : aiResponse;
 
-            scheduler().sync(() -> executeAction(player, chosen, parameters, reply, message, source, sink));
+            scheduler().sync(() -> {
+                thinking.stop();
+                executeAction(player, chosen, parameters, reply, message, source, sink);
+            });
 
         } catch (Exception e) {
             platform.log().warn("Natural language parse failed: " + e.getMessage());
-            scheduler().sync(() -> executeFallbackAction(player, message, sink));
+            scheduler().sync(() -> {
+                thinking.stop();
+                executeFallbackAction(player, message, sink);
+            });
         }
     }
 
