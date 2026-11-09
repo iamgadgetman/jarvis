@@ -134,18 +134,22 @@ class FastPathParserTest {
     @Test
     @DisplayName("request_item uses the singular item id, except ids that are plural")
     void requestItem_usesValidItemId() {
-        Map<String, String> cases = Map.of(
-                "get me 64 torches", "minecraft:torch",
-                "request 16 cooked beef", "minecraft:cooked_beef",
-                "get me 32 oak logs", "minecraft:oak_log",
-                "get me 8 potatoes", "minecraft:potato",
-                "get me 64 oak planks", "minecraft:oak_planks",
-                "get me 10 sweet berries", "minecraft:sweet_berries",
-                "get me 4 glass", "minecraft:glass");
-        cases.forEach((input, id) -> {
+        String[][] cases = {
+                {"get me 64 torches", "minecraft:torch"},
+                {"request 16 cooked beef", "minecraft:cooked_beef"},
+                {"get me 32 oak logs", "minecraft:oak_log"},
+                {"get me 8 potatoes", "minecraft:potato"},
+                {"get me 64 oak planks", "minecraft:oak_planks"},
+                {"get me 10 sweet berries", "minecraft:sweet_berries"},
+                {"get me 4 glass", "minecraft:glass"},
+                {"get me 2 cactus", "minecraft:cactus"},
+                {"get me 4 ancient debris", "minecraft:ancient_debris"},
+                {"get me 1 iron boots", "minecraft:iron_boots"}};
+        for (String[] c : cases) {
+            String input = c[0], id = c[1];
             Optional<Intent> hit = parser.parse(input);
             assertEquals("request_item", actionOf(hit, input), input);
             assertEquals(id, hit.get().params().getString("item"), input);
-        });
+        }
     }
 }

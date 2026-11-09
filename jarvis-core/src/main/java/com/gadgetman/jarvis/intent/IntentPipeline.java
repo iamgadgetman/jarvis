@@ -68,7 +68,11 @@ public class IntentPipeline {
     private final JarvisCore core;
     private final Platform platform;
     private final AIConnector ai;
-    /** Bad extra-phrases already warned about, so the log says it once. Server thread only. */
+    /**
+     * Bad extra-phrases already warned about, so the log says it once. Server
+     * thread only. The warning appears on the first fast-path line after
+     * startup, and is not repeated after a reload while the server keeps running.
+     */
     private final java.util.Set<String> warnedAliases = new java.util.HashSet<>();
 
     public IntentPipeline(JarvisCore core) {
@@ -134,6 +138,15 @@ public class IntentPipeline {
         if (hit.isEmpty()) return false;
         Intent intent = hit.get();
 
+        // A request must name a real item: try the words as typed, then the
+        // parser's singular guess. Neither known -> let the model work it out.
+        if ("request_item".equals(intent.action())) {
+            Optional<String> id = resolveRequestedItem(intent.params());
+            if (id.isEmpty()) return false;
+            intent.params().put("item", id.get());
+            intent.params().remove("said");
+        }
+
         if (cfg.getBoolean("intent.fast-path.log-hits", false)) {
             platform.log().info("[fast-path] " + intent.action() + " " + intent.params()
                     + " <- \"" + trim(utterance, 60) + "\"");
@@ -141,6 +154,16 @@ public class IntentPipeline {
         executeAction(player, intent.action(), executorParams(intent),
                 FastPathParser.acknowledge(intent), utterance, source, sink);
         return true;
+    }
+
+    /** The registry id for a fast-path request: as typed first, then singular. */
+    Optional<String> resolveRequestedItem(JSONObject params) {
+        var items = platform.items();
+        if (params.has("said")) {
+            Optional<String> asSaid = items.resolve(params.getString("said"));
+            if (asSaid.isPresent()) return asSaid;
+        }
+        return params.has("item") ? items.resolve(params.getString("item")) : Optional.empty();
     }
 
     /** intent.fast-path.extra-phrases, phrase -> action. Re-read each time so a reload takes. */
@@ -169,6 +192,7 @@ public class IntentPipeline {
                 if (in.has("item")) out.put("ore", in.getString("item"));
             }
             case "request_item" -> {
+                out.remove("said");
                 out.remove("count");
                 if (in.has("count")) out.put("amount", in.getInt("count"));
             }

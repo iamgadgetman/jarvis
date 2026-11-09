@@ -64,6 +64,8 @@ public final class Fixture implements AutoCloseable {
     /** Records what the AI asked the server to do. */
     public static final class FakeActions implements ActionExecutor {
         public final List<String> executed = new ArrayList<>();
+        /** The parameters of each executed action, in the same order. */
+        public final List<JSONObject> executedParams = new ArrayList<>();
 
         /** Extra action names to claim, e.g. "summon" to act like the Paper executor. */
         public final Set<String> alsoHandles = new java.util.HashSet<>();
@@ -82,6 +84,7 @@ public final class Fixture implements AutoCloseable {
         @Override
         public String execute(String actionType, JSONObject params, Owner requester) {
             executed.add(actionType);
+            executedParams.add(params);
             return "did " + actionType;
         }
 

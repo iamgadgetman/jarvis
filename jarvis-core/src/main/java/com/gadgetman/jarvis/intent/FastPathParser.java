@@ -143,7 +143,12 @@ public class FastPathParser {
      * console commands) are left to the AI path and its checks, so a chat
      * alias can't hand them to whoever says the phrase.
      */
-    static final Set<String> ALIAS_TARGETS = Set.copyOf(PHRASES.values());
+    static final Set<String> ALIAS_TARGETS;
+    static {
+        Set<String> targets = new java.util.HashSet<>(PHRASES.values());
+        targets.add("set_chest"); // no built-in phrase, but a natural alias ("this is my chest")
+        ALIAS_TARGETS = Set.copyOf(targets);
+    }
 
     private final Map<String, String> extraPhrases;
     private final List<String> droppedAliases;
@@ -218,11 +223,15 @@ public class FastPathParser {
 
         Matcher req = REQUEST.matcher(m);
         if (req.matches()) {
-            String item = singularItem(req.group(2).trim()).replace(' ', '_');
-            if (!item.contains(":")) item = "minecraft:" + item;
-            return new Intent("request_item", new JSONObject()
+            String said = itemId(req.group(2).trim());
+            String item = itemId(singularItem(req.group(2).trim()));
+            JSONObject params = new JSONObject()
                     .put("item", item)
-                    .put("count", Integer.parseInt(req.group(1))));
+                    .put("count", Integer.parseInt(req.group(1)));
+            // The words as typed, for IntentPipeline to try first against the
+            // item registry: "iron bars" is iron_bars even though it ends in s.
+            if (!said.equals(item)) params.put("said", said);
+            return new Intent("request_item", params);
         }
         return null;
     }
@@ -232,18 +241,28 @@ public class FastPathParser {
      * "sweet berries" -> sweet_berries), so they must not be de-pluralised.
      */
     private static final Set<String> PLURAL_IDS = Set.of(
-            "planks", "leaves", "seeds", "bricks", "stairs", "tiles", "berries", "shears");
+            "planks", "leaves", "seeds", "bricks", "stairs", "tiles", "berries", "shears",
+            "boots", "leggings", "bars", "beans", "vines", "roots", "petals", "sprouts", "debris");
+
+    /** "oak log" -> "minecraft:oak_log"; a namespaced id is kept as given. */
+    private static String itemId(String name) {
+        String id = name.replace(' ', '_');
+        return id.contains(":") ? id : "minecraft:" + id;
+    }
 
     /**
      * "64 torches" -> "torch", "oak logs" -> "oak log", "potatoes" -> "potato".
      * Item ids are singular, so "minecraft:torches" would be a request that can
-     * never be filled. Only the last word changes; ids that are plural stay.
+     * never be filled. Only the last word changes; ids that are plural stay, and
+     * words ending in -us or -is (cactus, lapis) are not plurals. This is only a
+     * guess: IntentPipeline checks it against the server's item registry.
      */
     static String singularItem(String said) {
         int space = said.lastIndexOf(' ');
         String head = space < 0 ? "" : said.substring(0, space + 1);
         String last = space < 0 ? said : said.substring(space + 1);
-        if (last.contains(":") || PLURAL_IDS.contains(last)) return said;
+        if (last.contains(":") || PLURAL_IDS.contains(last)
+                || last.endsWith("us") || last.endsWith("is")) return said;
         if (last.endsWith("ches") || last.endsWith("shes") || last.endsWith("sses")
                 || last.endsWith("xes") || last.endsWith("oes")) {
             last = last.substring(0, last.length() - 2);

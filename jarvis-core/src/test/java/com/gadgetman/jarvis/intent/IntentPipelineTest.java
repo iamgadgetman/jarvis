@@ -187,6 +187,45 @@ class IntentPipelineTest {
     }
 
     @Test
+    @DisplayName("a fast-path request is checked against the item registry: as typed first, then singular")
+    void requestItem_resolvedAgainstRegistry() {
+        // honey_bottles is made up: a plural id the keep-list doesn't know, so only
+        // the as-typed lookup can find it.
+        f.platform.knownItems.addAll(java.util.Set.of(
+                "minecraft:iron_bars", "minecraft:torch", "minecraft:honey_bottles"));
+        f.actions.alsoHandles.add("request_item");
+        FakeOwner alice = f.summoned("alice");
+
+        f.core.intents().submit(alice, "get me 8 iron bars", IntentPipeline.Source.CONSOLE);
+        f.core.intents().submit(alice, "get me 16 torches", IntentPipeline.Source.CONSOLE);
+        f.core.intents().submit(alice, "get me 2 honey bottles", IntentPipeline.Source.CONSOLE);
+
+        assertEquals(java.util.List.of("request_item", "request_item", "request_item"), f.actions.executed);
+        var bars = f.actions.executedParams.get(0);
+        var torches = f.actions.executedParams.get(1);
+        assertEquals("minecraft:iron_bars", bars.getString("item"), "the plural id as typed wins");
+        assertEquals(8, bars.getInt("amount"));
+        assertEquals("minecraft:torch", torches.getString("item"), "else the singular guess");
+        assertEquals("minecraft:honey_bottles", f.actions.executedParams.get(2).getString("item"),
+                "the words as typed are tried before the singular guess");
+        assertFalse(bars.has("said") || torches.has("said"), "parser-only key must not leak");
+    }
+
+    @Test
+    @DisplayName("a fast-path request for an item the registry doesn't know goes to the AI")
+    void requestItem_unknownItem_goesToAi() {
+        f.platform.knownItems.add("minecraft:torch");
+        f.actions.alsoHandles.add("request_item");
+        FakeOwner alice = f.summoned("alice");
+        f.platform.logLines.clear();
+
+        f.core.intents().submit(alice, "get me 3 unobtainium", IntentPipeline.Source.CONSOLE);
+
+        assertTrue(f.actions.executed.isEmpty(), "no request filed for a made-up item");
+        assertTrue(aiAttempts(f) > 0, "the model gets to work it out\n" + log(f));
+    }
+
+    @Test
     @DisplayName("an alias to a server action is ignored and warned about once")
     void aliasToServerAction_warnsOnce() throws IOException {
         try (Fixture fx = new Fixture(Fixture.DEFAULT_CONFIG + """
