@@ -26,6 +26,7 @@ says push.
 | [FB-08](FB-08-reward-tags.md) | Reward tags → admin-defined command bundles | D | FB-07 merged | S | planned |
 | [FB-09](FB-09-first-run.md) | Free-tier-first first run | D | — | S | planned |
 | [FB-10](FB-10-mcp-dev-server.md) | Jarvis MCP server for development | E | — | M | planned |
+| [FB-11](FB-11-onboarding.md) | First-join welcome, interactive tutorial, admin quick start | F | FB-09 merged | M | planned |
 
 Size: S = an afternoon, M = a day or two. Status values: `planned`, `in progress`,
 `built` (branch ready, unit tests green), `tested` (owner verified in-game), `shipped`.
@@ -41,6 +42,7 @@ Lane B  ai/AIConnector + prompts ............ FB-03 → FB-05 → FB-06
 Lane C  memory/ + DatabaseManager ........... FB-04
 Lane D  building/ + commands/ + config.yml .. FB-07 → FB-08, FB-09
 Lane E  tools/ (new, no Java) ............... FB-10
+Lane F  onboarding/ (new) + steward/ + wiki . FB-11 (after FB-09)
 ```
 
 Three ways to split the work, from simplest to most parallel:
