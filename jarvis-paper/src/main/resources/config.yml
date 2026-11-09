@@ -501,7 +501,9 @@ intent:
   fast-path:
     enabled: true          # Parse simple commands locally before asking the AI
     log-hits: false        # Log "[fast-path] follow" lines to see what it catches
-    extra-phrases:         # Your own aliases, phrase -> action
+    extra-phrases:         # Your own aliases, phrase -> action. Targets must be Jarvis's own
+                           # actions (follow, guard, stop, mine, take_home, ...); anything else,
+                           # such as heal or give_item, is ignored with a warning in the log.
       "heel": follow
       "chill": stand_down
 

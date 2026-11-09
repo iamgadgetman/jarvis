@@ -65,8 +65,19 @@ public final class Fixture implements AutoCloseable {
     public static final class FakeActions implements ActionExecutor {
         public final List<String> executed = new ArrayList<>();
 
-        @Override public boolean handles(String actionType) { return actionType.startsWith("admin_"); }
-        @Override public Set<String> dangerousActions() { return Set.of("admin_dangerous"); }
+        /** Extra action names to claim, e.g. "summon" to act like the Paper executor. */
+        public final Set<String> alsoHandles = new java.util.HashSet<>();
+        /** Extra action names that need confirmation. */
+        public final Set<String> alsoDangerous = new java.util.HashSet<>();
+
+        @Override public boolean handles(String actionType) {
+            return actionType.startsWith("admin_") || alsoHandles.contains(actionType);
+        }
+        @Override public Set<String> dangerousActions() {
+            Set<String> out = new java.util.HashSet<>(alsoDangerous);
+            out.add("admin_dangerous");
+            return out;
+        }
 
         @Override
         public String execute(String actionType, JSONObject params, Owner requester) {

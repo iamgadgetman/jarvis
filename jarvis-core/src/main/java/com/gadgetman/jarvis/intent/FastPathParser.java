@@ -137,26 +137,47 @@ public class FastPathParser {
 
     private static final AtomicInteger ackCounter = new AtomicInteger();
 
+    /**
+     * What an alias may point at: Jarvis's own actions, the same ones the
+     * built-in phrases use. Server actions (heal, feed, give_item, teleport,
+     * console commands) are left to the AI path and its checks, so a chat
+     * alias can't hand them to whoever says the phrase.
+     */
+    static final Set<String> ALIAS_TARGETS = Set.copyOf(PHRASES.values());
+
     private final Map<String, String> extraPhrases;
+    private final List<String> droppedAliases;
 
     /**
      * @param extraPhrases the owner's own aliases from
      *        {@code intent.fast-path.extra-phrases}, phrase to action. Aliases
-     *        to a restricted action are dropped here and never match.
+     *        to anything outside {@link #ALIAS_TARGETS} (which never includes a
+     *        restricted action) are dropped and listed in {@link #droppedAliases()}.
      */
     public FastPathParser(Map<String, String> extraPhrases) {
         Map<String, String> clean = new HashMap<>();
+        List<String> dropped = new java.util.ArrayList<>();
         if (extraPhrases != null) {
             for (Map.Entry<String, String> e : extraPhrases.entrySet()) {
                 if (e.getKey() == null || e.getValue() == null) continue;
                 String phrase = normalize(e.getKey());
                 String action = e.getValue().trim().toLowerCase(Locale.ROOT);
                 if (phrase == null || phrase.isEmpty() || action.isEmpty()) continue;
-                if (IntentPipeline.RESTRICTED_IN_REDUCED_MODE.contains(action)) continue;
+                if (!ALIAS_TARGETS.contains(action)
+                        || IntentPipeline.RESTRICTED_IN_REDUCED_MODE.contains(action)) {
+                    dropped.add("\"" + e.getKey() + "\" -> " + action);
+                    continue;
+                }
                 clean.put(phrase, action);
             }
         }
         this.extraPhrases = Map.copyOf(clean);
+        this.droppedAliases = List.copyOf(dropped);
+    }
+
+    /** Aliases from config that were ignored, as {@code "phrase" -> action}, for a warning. */
+    public List<String> droppedAliases() {
+        return droppedAliases;
     }
 
     /** The order as an action, or empty when the model should decide. */

@@ -115,6 +115,23 @@ class FastPathParserTest {
     }
 
     @Test
+    @DisplayName("an alias may only point at Jarvis's own actions; server actions are dropped and listed")
+    void aliasToServerAction_isDropped() {
+        FastPathParser p = new FastPathParser(Map.of(
+                "patch me up", "heal",
+                "gimme diamonds", "give_item",
+                "beam me", "teleport",
+                "watch my back", "guard"));
+
+        assertTrue(p.parse("patch me up").isEmpty());
+        assertTrue(p.parse("gimme diamonds").isEmpty());
+        assertTrue(p.parse("beam me").isEmpty());
+        assertEquals("guard", actionOf(p.parse("watch my back"), "watch my back"));
+        assertEquals(3, p.droppedAliases().size(), String.valueOf(p.droppedAliases()));
+        assertTrue(p.droppedAliases().contains("\"patch me up\" -> heal"), String.valueOf(p.droppedAliases()));
+    }
+
+    @Test
     @DisplayName("request_item uses the singular item id, except ids that are plural")
     void requestItem_usesValidItemId() {
         Map<String, String> cases = Map.of(

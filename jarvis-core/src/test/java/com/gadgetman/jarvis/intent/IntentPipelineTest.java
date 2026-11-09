@@ -151,6 +151,63 @@ class IntentPipelineTest {
     }
 
     @Test
+    @DisplayName("parser names are translated to the names each action reads")
+    void executorParams_translatesNames() {
+        var mine = IntentPipeline.executorParams(new Intent("mine",
+                new org.json.JSONObject().put("item", "iron").put("count", 32)));
+        assertEquals("iron", mine.getString("ore"));
+        assertFalse(mine.has("item"), mine.toString());
+        assertFalse(mine.has("count"), "mining has no count; it must not be passed on: " + mine);
+
+        var req = IntentPipeline.executorParams(new Intent("request_item",
+                new org.json.JSONObject().put("item", "minecraft:torch").put("count", 16)));
+        assertEquals("minecraft:torch", req.getString("item"));
+        assertEquals(16, req.getInt("amount"));
+        assertFalse(req.has("count"), req.toString());
+
+        var chop = IntentPipeline.executorParams(new Intent("chop",
+                new org.json.JSONObject().put("count", 5)));
+        assertEquals(5, chop.getInt("count"), "chop already reads count");
+    }
+
+    @Test
+    @DisplayName("\"come here\" summons Jarvis even when the server executor also claims summon")
+    void comeHere_summonsJarvisNotAMob() {
+        // Like Paper: the adapter's executor handles "summon" (a mob) and wants confirmation.
+        f.actions.alsoHandles.add("summon");
+        f.actions.alsoDangerous.add("summon");
+        FakeOwner alice = f.player("alice");
+
+        f.core.intents().submit(alice, "come here", IntentPipeline.Source.CONSOLE);
+
+        assertTrue(f.core.butlers().exists(alice), "Jarvis was summoned\n" + String.join("\n", alice.plainMessages()));
+        assertTrue(f.actions.executed.isEmpty(), "no mob was spawned: " + f.actions.executed);
+        assertFalse(alice.plainMessages().stream().anyMatch(m -> m.toLowerCase().contains("confirm")),
+                "no mob-summon confirmation was offered\n" + String.join("\n", alice.plainMessages()));
+    }
+
+    @Test
+    @DisplayName("an alias to a server action is ignored and warned about once")
+    void aliasToServerAction_warnsOnce() throws IOException {
+        try (Fixture fx = new Fixture(Fixture.DEFAULT_CONFIG + """
+                intent:
+                  fast-path:
+                    extra-phrases:
+                      "patch me up": heal
+                """)) {
+            FakeOwner bob = fx.summoned("bob");
+            fx.platform.logLines.clear();
+
+            fx.core.intents().submit(bob, "follow me", IntentPipeline.Source.CONSOLE);
+            fx.core.intents().submit(bob, "stop", IntentPipeline.Source.CONSOLE);
+
+            long warnings = fx.platform.logLines.stream()
+                    .filter(l -> l.startsWith("WARN") && l.contains("\"patch me up\" -> heal")).count();
+            assertEquals(1, warnings, log(fx));
+        }
+    }
+
+    @Test
     @DisplayName("with intent.fast-path.enabled: false, a simple order goes to the AI")
     void fastPathDisabled_callsAi() throws IOException {
         try (Fixture fx = new Fixture(Fixture.DEFAULT_CONFIG + """

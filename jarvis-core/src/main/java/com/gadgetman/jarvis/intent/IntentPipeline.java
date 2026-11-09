@@ -68,6 +68,8 @@ public class IntentPipeline {
     private final JarvisCore core;
     private final Platform platform;
     private final AIConnector ai;
+    /** Bad extra-phrases already warned about, so the log says it once. Server thread only. */
+    private final java.util.Set<String> warnedAliases = new java.util.HashSet<>();
 
     public IntentPipeline(JarvisCore core) {
         this.core = core;
@@ -120,7 +122,15 @@ public class IntentPipeline {
         var cfg = platform.config();
         if (!cfg.getBoolean("intent.fast-path.enabled", true)) return false;
 
-        Optional<Intent> hit = new FastPathParser(extraPhrases()).parse(utterance);
+        FastPathParser parser = new FastPathParser(extraPhrases());
+        for (String alias : parser.droppedAliases()) {
+            if (warnedAliases.add(alias)) {
+                platform.log().warn("[fast-path] Ignoring intent.fast-path.extra-phrases entry " + alias
+                        + ": aliases can only point at Jarvis's own actions ("
+                        + String.join(", ", new java.util.TreeSet<>(FastPathParser.ALIAS_TARGETS)) + ")");
+            }
+        }
+        Optional<Intent> hit = parser.parse(utterance);
         if (hit.isEmpty()) return false;
         Intent intent = hit.get();
 
