@@ -726,7 +726,7 @@ public class AIConnector {
                 "  deposit - carry collected loot to the player's registered chest\n" +
                 "  set_chest - register the chest the player is looking at for deposits\n" +
                 "  stop - stop current task\n" +
-                "  report - deliver the server status briefing (TPS, players, weather)\n" +
+                "  report - deliver the server status briefing (TPS, players, weather); only when asked for a report or status\n" +
                 "  recover - retrieve the player's death drops from where they died\n" +
                 "  take_home - escort the player back to their saved home point\n" +
                 "  set_home - save the player's current spot as home\n" +
@@ -783,7 +783,8 @@ public class AIConnector {
                 "  'weapons free' -> {\"action\":\"attack\",\"response\":\"With pleasure, sir.\"}\n" +
                 "  'keep watch tonight' -> {\"action\":\"watch\",\"response\":\"I shall hold this post until dawn, sir.\"}\n" +
                 "  'stand down' -> {\"action\":\"stand_down\",\"response\":\"Standing down, sir. Observing only.\"}\n" +
-                "  'how are things' -> {\"action\":\"report\",\"response\":\"The briefing, sir.\"}\n" +
+                "  'give me a status report' -> {\"action\":\"report\",\"response\":\"The briefing, sir.\"}\n" +
+                "  'what should I do next?' -> {\"action\":\"chat\",\"response\":\"Gather wood and build a shelter before nightfall, sir.\"}\n" +
                 "  'get my stuff back' -> {\"action\":\"recover\",\"response\":\"On my way, sir. Do try to stay alive this time.\"}\n" +
                 "  'take me home' -> {\"action\":\"take_home\",\"response\":\"This way, sir. I shall light the road.\"}\n" +
                 "  'farm the carrots' -> {\"action\":\"farm\",\"parameters\":{\"crop\":\"carrots\"},\"response\":\"To the fields, sir. The carrots won't harvest themselves. Well — now they will.\"}\n" +

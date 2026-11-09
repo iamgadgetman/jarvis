@@ -323,4 +323,21 @@ class IntentPipelineTest {
         assertEquals("Fallback, sir.", IntentPipeline.privateReply(new org.json.JSONObject(), "Fallback, sir."));
         assertEquals("Fallback, sir.", IntentPipeline.privateReply(null, "Fallback, sir."));
     }
+
+    @Test
+    @DisplayName("the status briefing runs only when asked for; a question gets a plain answer")
+    void reportNeedsAnAsk() {
+        for (String question : new String[]{
+                "jarvis what should I do next?",
+                "jarvis what is the best way to find diamonds?",
+                "how are you?"}) {
+            assertTrue(IntentPipeline.publicActionWithoutAsking("report", question),
+                    "report for \"" + question + "\" should become a plain answer");
+        }
+        for (String ask : new String[]{
+                "jarvis give me a status report", "report", "brief me", "how's the server doing?",
+                "is there any lag?", "what's the tps"}) {
+            assertFalse(IntentPipeline.publicActionWithoutAsking("report", ask), "\"" + ask + "\" asked for it");
+        }
+    }
 }

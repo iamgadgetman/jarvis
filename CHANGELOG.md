@@ -24,6 +24,10 @@
   talk. He now has a plain `chat` action, and `server_say`, `broadcast`,
   `announce_all`, `schedule_broadcast` and `discord_broadcast` only run when
   the player asks for an announcement ("announce", "tell everyone", …).
+- **Questions get answers, not briefings.** "What should I do next?" made the
+  model run the status report and attach the whole estate briefing. The
+  report now runs only when asked for (report, status, briefing, TPS, lag);
+  anything else is answered as plain chat.
 
 ## v0.18.0 (unreleased — local test build)
 

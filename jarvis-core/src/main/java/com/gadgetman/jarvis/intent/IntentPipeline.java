@@ -75,11 +75,22 @@ public class IntentPipeline {
                     + "|the (whole )?server|server[- ]wide|discord|tell (them|all)|let (everyone|all)"
                     + "|remind (everyone|all|people)|in (global|public) chat)\\b");
 
-    /** True when the model picked a whole-server action the player never asked for. */
+    /** Words that show the player asked for the status briefing. */
+    private static final java.util.regex.Pattern ASKED_FOR_REPORT = java.util.regex.Pattern.compile(
+            "\\b(report|status|briefing|brief me|tps|lag\\w*|how('s| is) the (server|estate)"
+                    + "|server (health|performance))\\b");
+
+    /**
+     * True when the model picked an action the player never asked for: a
+     * whole-server action without an announcement request, or the status
+     * briefing without a request for one ("what should I do next?" is a
+     * question, not a report). Such a pick is answered as plain chat instead.
+     */
     static boolean publicActionWithoutAsking(String actionType, String message) {
-        if (!PUBLIC_ACTIONS.contains(actionType)) return false;
         String m = message == null ? "" : message.toLowerCase(Locale.ROOT);
-        return !ASKED_TO_ANNOUNCE.matcher(m).find();
+        if (PUBLIC_ACTIONS.contains(actionType)) return !ASKED_TO_ANNOUNCE.matcher(m).find();
+        if ("report".equals(actionType)) return !ASKED_FOR_REPORT.matcher(m).find();
+        return false;
     }
 
     /** What to say privately in place of a public action: its message if it has one. */
