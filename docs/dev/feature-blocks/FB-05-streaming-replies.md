@@ -106,9 +106,17 @@ final `speak`; streaming off → single `speak`.
 
 ## Results
 
+Run 2026-11-10 from the headless client (callmegadget) on GadgetCraft, qwen2.5:7b on Ollama.
+Times are when each line reached the client.
+
 | Step | Result |
 |---|---|
-| 1–6 | Not run yet. |
+| 1 Ollama story | **PASS** (build `41fdfc22`). Three "Jarvis:" lines at +3.9 s, +0.6 s, +0.6 s. First run (build `aad07c58`) split "and... well" at the ellipsis; fixed in `15d1d13`. |
+| 2 cloud provider | **N/A on GadgetCraft.** Its Claude key is Jarvis Cloud (`gc_`), which is buffered by design (see As built). Covered by `StreamAssemblerTest` (OpenAI, Anthropic, Gemini wire formats). |
+| 3 follow + joke | **PASS.** Joke streamed in two lines 0.5 s apart; action `follow` ran after; Jarvis caught up when the player moved 8 blocks. |
+| 4 provider stops mid-reply | **Not run in-game** (the Ollama host is shared with other services). Covered by `StreamingPipelineTest.droppedStreamRetries` / `errorStatusNotRetried`. |
+| 5 `enabled: false` | **PASS.** One reply line. Live config restored afterwards (backup `config.yml.bak-20261110-fb05`). |
+| 6 Jarvis Cloud counts once | **N/A by design**: `gc_` keys never stream, so the request path is unchanged. |
 
 ## CHANGELOG line
 
