@@ -95,8 +95,9 @@ Run from a headless test client; action-bar text read with hmc-specifics `render
 | 2 arm swing | Not observable from the headless client. |
 | 4–5 | Not run (unit tests cover the failure path and the switches). |
 
-**Open:** owner to watch the turn and swing in-game. If he doesn't turn, drive the turn through
-Citizens' `RotationTrait` instead of `faceLocation`.
+**Owner check, 2026-11-09, build `5de0157c` (`a066d0c`):** watched in-game. Jarvis faced the
+player and swung his arms while the bar showed. The headless "not seen" was a bad measurement
+(body yaw, possibly the other Jarvis NPC); `rotationtrait` doesn't interfere. Owner marked FB-02 `tested`.
 
 ## CHANGELOG line
 
