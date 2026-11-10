@@ -12,6 +12,12 @@
   you, swings an arm now and then, and an action-bar line reads "Jarvis is
   thinking…". Off with `intent.thinking-feedback.enabled: false`; `animate`
   and `action-bar` switch each half off.
+- **Jarvis knows where you are.** Chat requests now carry your health, food,
+  held item, time, weather, light, biome and nearby hostile mobs and players,
+  plus what Jarvis himself is doing and carrying, so "what should I do?" gets
+  a real answer. A new `knowledge.yml` holds server facts and named locations
+  he treats as true ("where is the market?"). `ai.context.level` (0–3) sets
+  how much is sent; `/jarvis reload` re-reads the file.
 
 ### Fixed
 
@@ -28,6 +34,11 @@
   model run the status report and attach the whole estate briefing. The
   report now runs only when asked for (report, status, briefing, TPS, lag);
   anything else is answered as plain chat.
+- **"Where is…" no longer teleports you.** Asking where a place is could make
+  the model pick `teleport` and move you on the spot. Teleport and warp now run
+  only when you ask to be moved ("take me to", "tp me", "send me"); otherwise
+  Jarvis tells you the coordinates. Teleport and warp also ask Confirm/Cancel
+  first now, so nobody is moved without saying yes.
 
 ## v0.18.0 (unreleased — local test build)
 

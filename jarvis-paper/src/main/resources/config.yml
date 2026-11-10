@@ -25,6 +25,23 @@ ai:
   reduced-mode:
     allow-risky-actions: false   # Ollama-only mode: allow console/permission actions
 
+  # ---- World context (FB-03) ----
+  # Every chat request carries a few short lines about the speaker's situation,
+  # so "what should I do?" gets a real answer. About 60-150 tokens at level 3;
+  # with log-usage on, each request logs its context size.
+  context:
+    # 0 = nothing
+    # 1 = you: health, food, held item, game mode
+    # 2 = + where you are (biome, y, surface/underground), time, weather, light,
+    #     and Jarvis: his task, health, tool, useful cargo (torches, food, ores)
+    # 3 = + hostile mobs and other players near you
+    level: 2
+    hostile-radius: 16     # Blocks around you counted for hostile mobs (level 3)
+    player-radius: 32      # Blocks around you for naming other players (level 3)
+    # Server facts and named places Jarvis treats as true, in plugins/Jarvis/.
+    # Re-read on /jarvis reload. Missing file = no facts. See knowledge.yml.
+    knowledge-file: knowledge.yml
+
   # Provider priority for auto mode (tried top-to-bottom)
   # Providers without API keys (except ollama) are skipped.
   #

@@ -693,6 +693,15 @@ public class AIConnector {
      * Parse natural language command into structured action
      */
     public String parseNaturalLanguage(String message, String playerName, String context) throws Exception {
+        return parseNaturalLanguage(message, playerName, context, "");
+    }
+
+    /**
+     * Parse a sentence into an action, with the admin's server facts
+     * ({@link ServerKnowledge#render()}, may be empty) in the system prompt.
+     */
+    public String parseNaturalLanguage(String message, String playerName, String context,
+                                       String serverFacts) throws Exception {
         // Literal commands ("follow me", "mine 10 iron") never get here:
         // IntentPipeline answers them with FastPathParser first, unless
         // intent.fast-path.enabled is off, in which case the model decides.
@@ -701,7 +710,10 @@ public class AIConnector {
                 "Output format: {\"action\":\"...\",\"parameters\":{...},\"response\":\"your witty 1-2 sentence response\"}\n\n" +
                 "CONVERSATION:\n" +
                 "  chat - just answer; no action. Use for questions, small talk and opinions.\n" +
-                "         The response field is the answer, seen only by this player.\n\n" +
+                "         The response field is the answer, seen only by this player.\n" +
+                "  The Context lines are the player's real situation right now (health, time, mobs, Jarvis).\n" +
+                "  Use them when advising; never invent details they don't give.\n" +
+                "  If there is a WARNINGS line, deal with those dangers first in your answer.\n\n" +
                 "NPC ACTIONS (control the physical Jarvis NPC):\n" +
                 "  summon - bring Jarvis to the player\n" +
                 "  dismiss - send Jarvis away\n" +
@@ -749,7 +761,7 @@ public class AIConnector {
                 "  heal - restore health, params: {player}\n" +
                 "  feed - restore hunger, params: {player}\n" +
                 "  set_gamemode - change gamemode, params: {player, mode: survival|creative|adventure|spectator}\n" +
-                "  teleport - teleport player, params: {player, x, y, z, world (optional)}\n" +
+                "  teleport - move the player; ONLY when asked to be moved (\"take me to\", \"tp me\"), never for \"where is\", params: {player, x, y, z, world (optional)}\n" +
                 "  set_time - set world time, params: {value: day|night|noon|midnight}\n" +
                 "  set_weather - set weather, params: {type: clear|rain|thunder}\n" +
                 "  set_gamerule - change a rule, params: {rule, value}\n" +
@@ -758,7 +770,7 @@ public class AIConnector {
                 "  server_say - post a [Server] line EVERY player sees; only when asked to, never to answer, params: {message}\n" +
                 "  lp_group_add - add to permission group, params: {player, group}\n" +
                 "  lp_group_remove - remove from permission group, params: {player, group}\n" +
-                "  warp - warp to a location, params: {player, warp}\n" +
+                "  warp - warp to a location; only when asked to be moved, params: {player, warp}\n" +
                 "  discord_broadcast - send to Discord, params: {message}\n" +
                 "  paste_schematic - paste a saved schematic at player location, params: {schematic}\n\n" +
                 "ADMIN / CONSOLE ACTIONS (always require confirmation):\n" +
@@ -785,6 +797,8 @@ public class AIConnector {
                 "  'stand down' -> {\"action\":\"stand_down\",\"response\":\"Standing down, sir. Observing only.\"}\n" +
                 "  'give me a status report' -> {\"action\":\"report\",\"response\":\"The briefing, sir.\"}\n" +
                 "  'what should I do next?' -> {\"action\":\"chat\",\"response\":\"Gather wood and build a shelter before nightfall, sir.\"}\n" +
+                "  'where is the market?' -> {\"action\":\"chat\",\"response\":\"The market is at x 120, y 70, z -40, sir.\"} (coordinates from SERVER FACTS; if it isn't listed, say you don't know)\n" +
+                "  'take me to the market' -> {\"action\":\"teleport\",\"parameters\":{\"x\":120,\"y\":70,\"z\":-40},\"response\":\"Off you go, sir.\"}\n" +
                 "  'get my stuff back' -> {\"action\":\"recover\",\"response\":\"On my way, sir. Do try to stay alive this time.\"}\n" +
                 "  'take me home' -> {\"action\":\"take_home\",\"response\":\"This way, sir. I shall light the road.\"}\n" +
                 "  'farm the carrots' -> {\"action\":\"farm\",\"parameters\":{\"crop\":\"carrots\"},\"response\":\"To the fields, sir. The carrots won't harvest themselves. Well — now they will.\"}\n" +
@@ -804,8 +818,11 @@ public class AIConnector {
                 "  'replace all dirt with grass in this area' -> {\"action\":\"console_commands\",\"parameters\":{\"commands\":[\"execute in world run fill ~-20 ~-5 ~-20 ~20 ~5 ~20 grass_block replace dirt\"]},\"response\":\"Upgrading the terrain. One does try to maintain standards.\"}\n" +
                 "  'can I get some food' -> {\"action\":\"request_item\",\"parameters\":{\"item\":\"minecraft:cooked_beef\",\"amount\":16,\"reason\":\"hungry\"},\"response\":\"Request submitted. Whether the admin is feeling charitable is another matter.\"}\n" +
                 "Output ONLY valid JSON. The requesting player is: " + playerName;
+        if (serverFacts != null && !serverFacts.isBlank()) {
+            systemPrompt += "\n\n" + serverFacts;
+        }
 
-        String userPrompt = String.format("Player %s says: \"%s\". Context: %s", playerName, message, context);
+        String userPrompt = String.format("Player %s says: \"%s\".\nContext:\n%s", playerName, message, context);
         return sendTiered(Tier.LIGHT, userPrompt, systemPrompt, true);
     }
 

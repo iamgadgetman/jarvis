@@ -75,6 +75,41 @@ Extend `AiSettingsTest` for the new keys' defaults.
 5. `level: 0`, reload, repeat step 3 → generic answer with no situational detail.
 6. With `ai.log-usage: true`, confirm the context adds well under ~300 tokens.
 
+## As built (deviations)
+
+- **No `core/platform/` changes.** Every read the spec lists already existed (weather,
+  sky/block light, `nearby(…, HOSTILE)`, health/food/held item), so the Fabric and NeoForge
+  mods are untouched.
+- **No armor summary.** `Owner` has no armor-slot read; adding one means a platform change in
+  three adapters for one line of context. Left out.
+- Level 2 also carries Jarvis's line (task, health, tool, cargo highlights); level 3 adds
+  hostiles and players. The world line includes the world name so `knowledge.yml` locations
+  with `world:` can be matched.
+- Defaults of the new keys are tested in `WorldContextTest.settingsDefaults`, not
+  `AiSettingsTest`: the keys live in `WorldContext.Settings`, not `AiSettings`.
+- `buildContext` catches a world read that throws and sends no context rather than no reply.
+- `ai.log-usage` logs both the context and the server-facts size per request.
+- The example `knowledge.yml` is written on first start (Paper only), all commented out.
+
+## Results
+
+Owner, GadgetCraft (Purpur 26.3), qwen2.5:7b on Ollama.
+
+| Step | Result |
+|---|---|
+| 1 knowledge.yml | Written with the spec's facts and market; `/jarvis reload` logged "2 facts, 1 locations". |
+| 2 where is the market | **First try FAIL** (build `5c72dd5d`): the model picked `teleport` and moved the owner to spawn. Fixed in `7eea931` (move actions need a move word) and `d4c6308` (teleport/warp ask Confirm/Cancel). **Retest PASS** (build `e6aab3e0`). |
+| 3 night, empty hand, 3 hearts | Run from the headless client (callmegadget). **First try FAIL** (build `e6aab3e0`): "Gather some wood for a simple hut… a nice, clear night", nothing on health. `6c41a00` adds a WARNINGS line in words. **Retest PARTIAL** (build `c7f42df6`): "Tend to your health first; that low light isn't good. Build a shelter or find some torches." Health and darkness yes; no weapon not mentioned. |
+| 4 two zombies | **PARTIAL.** "Low light and zombies nearby? Gather torches or build a quick camp before those zombies get curious." Context said "2 zombies, nearest 4m"; he named them but didn't count. |
+| 5 level 0 | **PASS.** Context 0 chars; "Consider starting a farm… some basic shelter is in order." No situational detail. |
+| 6 token cost | **PASS.** Level 3 context 68–99 tokens (269–396 chars), server facts 45 tokens (177 chars), per `ai.log-usage`. |
+
+The partials are qwen2.5:7b taking the facts loosely, not missing context: the counts and the
+no-weapon warning were in the prompt (`ai.log-usage` sizes match). A larger model should do better.
+Live config is back to `level: 2`, `log-usage: false`.
+
+**Owner, 2026-11-10:** accepted steps 3–4 as partial (model limit, context correct) and marked FB-03 `tested`.
+
 ## CHANGELOG line
 
 `### Added` — **Jarvis knows where you are.** Prompts now carry your health, held item,

@@ -2,7 +2,9 @@ package com.gadgetman.jarvis.intent;
 
 import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.ai.AIConnector;
+import com.gadgetman.jarvis.ai.WorldContext;
 import com.gadgetman.jarvis.commands.ActionExecutor;
+import com.gadgetman.jarvis.core.platform.Butler;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Scheduler;
@@ -80,23 +82,48 @@ public class IntentPipeline {
             "\\b(report|status|briefing|brief me|tps|lag\\w*|how('s| is) the (server|estate)"
                     + "|server (health|performance))\\b");
 
+    /** Words that show the player asked to be moved, not just told where something is. */
+    private static final java.util.regex.Pattern ASKED_TO_MOVE = java.util.regex.Pattern.compile(
+            "\\b(teleport\\w*|tp|warp\\w*|take me|send me|bring me|put me|move me|get me (to|there|back)"
+                    + "|beam me|zap me|port me)\\b");
+
+    /** Actions that move the player. */
+    static final Set<String> MOVE_ACTIONS = Set.of("teleport", "warp");
+
     /**
      * True when the model picked an action the player never asked for: a
-     * whole-server action without an announcement request, or the status
+     * whole-server action without an announcement request, the status
      * briefing without a request for one ("what should I do next?" is a
-     * question, not a report). Such a pick is answered as plain chat instead.
+     * question, not a report), or a teleport for a question ("where is the
+     * market?" is not "take me to the market"). Such a pick is answered as
+     * plain chat instead.
      */
-    static boolean publicActionWithoutAsking(String actionType, String message) {
+    static boolean unaskedAction(String actionType, String message) {
         String m = message == null ? "" : message.toLowerCase(Locale.ROOT);
         if (PUBLIC_ACTIONS.contains(actionType)) return !ASKED_TO_ANNOUNCE.matcher(m).find();
         if ("report".equals(actionType)) return !ASKED_FOR_REPORT.matcher(m).find();
+        if (MOVE_ACTIONS.contains(actionType)) return !ASKED_TO_MOVE.matcher(m).find();
         return false;
     }
 
-    /** What to say privately in place of a public action: its message if it has one. */
-    static String privateReply(JSONObject parameters, String aiResponse) {
+    /**
+     * What to say in place of an action that was not asked for: its message if
+     * it has one, the coordinates a teleport was aimed at, else the model's reply
+     * ("Arriving at the market" would be wrong once nobody moves).
+     */
+    static String privateReply(String actionType, JSONObject parameters, String aiResponse) {
         String msg = parameters == null ? "" : parameters.optString("message", "").trim();
-        return msg.isEmpty() ? aiResponse : msg;
+        if (!msg.isEmpty()) return msg;
+        if (MOVE_ACTIONS.contains(actionType) && parameters != null) {
+            if (parameters.has("x") && parameters.has("z")) {
+                return "That's at x " + parameters.optInt("x") + (parameters.has("y") ? ", y " + parameters.optInt("y") : "")
+                        + ", z " + parameters.optInt("z") + ", sir. Say \"take me there\" if you'd like a lift.";
+            }
+            String warp = parameters.optString("warp", "").trim();
+            if (!warp.isEmpty()) return "That's the " + warp + " warp, sir. Ask me to take you if you'd like a lift.";
+            return "I'm not certain where that is, sir.";
+        }
+        return aiResponse;
     }
 
     private final JarvisCore core;
@@ -244,7 +271,8 @@ public class IntentPipeline {
                                   Source source, Responder sink, ThinkingFeedback thinking) {
         try {
             String context  = worldContext + buildMemoryContext(player);
-            String response = ai.parseNaturalLanguage(message, player.name(), context);
+            String response = ai.parseNaturalLanguage(message, player.name(), context,
+                    core.knowledge().render());
 
             JSONObject action     = new JSONObject(extractJson(response));
             String actionType     = action.optString("action", "unknown");
@@ -260,9 +288,9 @@ public class IntentPipeline {
             // asked for an announcement gets one; otherwise it is a reply.
             // The model then puts its real answer in the action's message and
             // filler ("A tactical observation, sir.") in response, so say the message.
-            boolean keptPrivate = publicActionWithoutAsking(actionType, message);
+            boolean keptPrivate = unaskedAction(actionType, message);
             String chosen = keptPrivate ? "chat" : actionType;
-            String reply = keptPrivate ? privateReply(parameters, aiResponse) : aiResponse;
+            String reply = keptPrivate ? privateReply(actionType, parameters, aiResponse) : aiResponse;
 
             scheduler().sync(() -> {
                 thinking.stop();
@@ -322,16 +350,33 @@ public class IntentPipeline {
         return text.length() <= max ? text : text.substring(0, max) + "...";
     }
 
-    /** Must run on the server thread. */
+    /**
+     * The player's situation for the prompt (FB-03): {@link WorldContext} at
+     * {@code ai.context.level}. Must run on the server thread.
+     */
     public String buildContext(Owner player) {
         World world = platform.world(player.world()).orElse(null);
-        String worldName = world == null ? player.world().id() : world.name();
-        String biome = world == null ? "unknown" : world.biome(player.pos().block());
-        return "Location: " + worldName
-                + ", Biome: " + biome
-                + ", Health: " + (int) player.health() + "/20"
-                + ", Gamemode: " + player.gameMode()
-                + ", Jarvis summoned: " + core.butlers().exists(player);
+        WorldContext.Settings settings = WorldContext.Settings.from(platform.config());
+        ButlerService npc = core.butlers();
+        Butler butler = npc == null ? null : npc.butler(player);
+        String task = npc == null ? null : npc.describeCurrentTask(player);
+        String text;
+        try {
+            text = WorldContext.capture(player, world, butler, task, settings,
+                    platform.players().online(), platform.items()::isEdible).render();
+        } catch (RuntimeException e) {
+            // Context is a nice-to-have; a world read that throws must not cost the reply.
+            platform.log().warn("World context failed for " + player.name() + ": " + e);
+            text = "";
+        }
+        if (platform.config().getBoolean("ai.log-usage", false)) {
+            // ~4 characters a token is close enough to judge the cost.
+            int facts = core.knowledge().render().length();
+            platform.log().info("AI context [level " + settings.level() + "] ~" + (text.length() + 3) / 4
+                    + " tokens (" + text.length() + " chars), server facts ~" + (facts + 3) / 4
+                    + " tokens (" + facts + " chars)");
+        }
+        return text.isEmpty() ? "none" : text;
     }
 
     // ==================== EXECUTE ====================

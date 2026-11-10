@@ -24,6 +24,11 @@ ai:
   ollama:
     endpoint: "http://localhost:11434"
     model: mistral
+  context:                  # what each chat request knows about you (0.18.1)
+    level: 2                # 0 none · 1 you · 2 + world and Jarvis · 3 + nearby mobs/players
+    hostile-radius: 16
+    player-radius: 32
+    knowledge-file: knowledge.yml   # server facts, in plugins/Jarvis/
 
 memory:                     # experience memory (0.8.0)
   enabled: true
@@ -64,6 +69,25 @@ discord:
 permissions:
   admin-permission: "jarvis.admin"
 ```
+
+### Server facts: knowledge.yml
+
+`plugins/Jarvis/knowledge.yml` (written on first start, all commented out)
+holds facts and places Jarvis treats as true. Every chat request includes it,
+so keep it short.
+
+```yaml
+facts:
+  - "PvP is off"
+  - "Spawn is at 0, 64, 0"
+locations:
+  market: {x: 120, y: 70, z: -40, note: "player shops"}
+  farm: "east of spawn, past the river"
+```
+
+Ask `jarvis where is the market?` and he quotes the coordinates. Run
+`/jarvis reload` after editing. A missing or broken file just means no facts
+(a broken one logs a warning).
 
 ### Getting an AI API key
 

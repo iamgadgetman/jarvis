@@ -1,6 +1,8 @@
 package com.gadgetman.jarvis;
 
 import com.gadgetman.jarvis.ai.AIConnector;
+import com.gadgetman.jarvis.ai.ServerKnowledge;
+import com.gadgetman.jarvis.ai.WorldContext;
 import com.gadgetman.jarvis.ai.AiSettings;
 import com.gadgetman.jarvis.ai.CloudActivation;
 import com.gadgetman.jarvis.ai.InstallId;
@@ -39,6 +41,7 @@ import com.gadgetman.jarvis.ui.TaskMonitor;
 import com.gadgetman.jarvis.voice.VoiceConfig;
 import com.gadgetman.jarvis.voice.VoiceStatus;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -61,6 +64,8 @@ public final class JarvisCore {
     private final Log log;
 
     private AIConnector ai;
+    /** Server facts from knowledge.yml; swapped whole on reload, read from the async AI call. */
+    private volatile ServerKnowledge knowledge = ServerKnowledge.EMPTY;
     private DatabaseManager database;
     private ExperienceMemory memory;
     private TaskRecoveryHandler recovery;
@@ -109,6 +114,7 @@ public final class JarvisCore {
         Config config = platform.config();
 
         ai = new AIConnector(config, log);
+        loadKnowledge();
         installId = InstallId.load(platform.dataDir(), log);
         ai.setInstallId(installId);
 
@@ -220,6 +226,7 @@ public final class JarvisCore {
     public void reload() {
         platform.config().reload();
         if (ai != null) ai.reloadConfig();
+        loadKnowledge();
         if (memory != null) memory.reload();
         if (recovery != null) recovery.reload();
         if (requestDecomposer != null) requestDecomposer.reload();
@@ -249,6 +256,26 @@ public final class JarvisCore {
     public Platform platform() { return platform; }
     public String version() { return version; }
     public AIConnector ai() { return ai; }
+
+    /** Admin-written server facts from knowledge.yml (FB-03); empty when there is none. */
+    public ServerKnowledge knowledge() { return knowledge; }
+
+    /** (Re)read knowledge.yml from the data folder; called at start and on /jarvis reload. */
+    private void loadKnowledge() {
+        String name = WorldContext.Settings.from(platform.config()).knowledgeFile();
+        Path dir = platform.dataDir();
+        Path file = dir.resolve(name).normalize();
+        if (!file.startsWith(dir.normalize())) {
+            log.warn("ai.context.knowledge-file must stay inside the Jarvis folder; ignoring " + name);
+            knowledge = ServerKnowledge.EMPTY;
+            return;
+        }
+        knowledge = ServerKnowledge.load(file, log);
+        if (!knowledge.isEmpty()) {
+            log.info("Server knowledge: " + knowledge.facts().size() + " facts, "
+                    + knowledge.locations().size() + " locations from " + name);
+        }
+    }
     public DatabaseManager database() { return database; }
     public ExperienceMemory memory() { return memory; }
     public TaskRecoveryHandler recovery() { return recovery; }

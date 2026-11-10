@@ -51,6 +51,10 @@ public class Jarvis extends JavaPlugin {
         // config.yml. Without this the data folder has no databases.yml, no data
         // source is ever registered, and every getConnection() throws.
         saveResource("databases.yml", false);
+        // The commented example server-facts file (FB-03); never overwrites one.
+        if (!new java.io.File(getDataFolder(), "knowledge.yml").exists()) {
+            saveResource("knowledge.yml", false);
+        }
 
         platform = new PaperPlatform(this);
         platform.registerEvents();

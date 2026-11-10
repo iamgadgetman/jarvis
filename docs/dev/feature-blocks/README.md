@@ -18,7 +18,7 @@ says push.
 |---|---|---|---|---|---|
 | [FB-01](FB-01-parser-first.md) | Parser-first fast path | A | — | S | tested |
 | [FB-02](FB-02-thinking-feedback.md) | "Thinking" feedback while the model works | A | — | S | tested |
-| [FB-03](FB-03-world-context.md) | Rich world context in every prompt | B | — | S | planned |
+| [FB-03](FB-03-world-context.md) | Rich world context in every prompt | B | — | S | tested |
 | [FB-04](FB-04-conversation-memory.md) | Per-player conversation memory | C | — | M | planned |
 | [FB-05](FB-05-streaming-replies.md) | Streaming replies | B | FB-03 merged | M | planned |
 | [FB-06](FB-06-tool-calling.md) | Native tool calling for actions | B | FB-05 merged | M | planned |
