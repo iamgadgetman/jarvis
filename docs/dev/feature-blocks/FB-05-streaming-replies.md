@@ -118,6 +118,8 @@ Times are when each line reached the client.
 | 5 `enabled: false` | **PASS.** One reply line. Live config restored afterwards (backup `config.yml.bak-20261110-fb05`). |
 | 6 Jarvis Cloud counts once | **N/A by design**: `gc_` keys never stream, so the request path is unchanged. |
 
+**Owner, 2026-11-10:** accepted the headless results (2, 4, 6 covered by unit tests / N/A) and marked FB-05 `tested`.
+
 ## CHANGELOG line
 
 `### Changed` — **Replies stream.** Jarvis's sentences appear as the model writes them
