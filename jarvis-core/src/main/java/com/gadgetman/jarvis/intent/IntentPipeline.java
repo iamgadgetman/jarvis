@@ -2,7 +2,9 @@ package com.gadgetman.jarvis.intent;
 
 import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.ai.AIConnector;
+import com.gadgetman.jarvis.ai.WorldContext;
 import com.gadgetman.jarvis.commands.ActionExecutor;
+import com.gadgetman.jarvis.core.platform.Butler;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Scheduler;
@@ -244,7 +246,8 @@ public class IntentPipeline {
                                   Source source, Responder sink, ThinkingFeedback thinking) {
         try {
             String context  = worldContext + buildMemoryContext(player);
-            String response = ai.parseNaturalLanguage(message, player.name(), context);
+            String response = ai.parseNaturalLanguage(message, player.name(), context,
+                    core.knowledge().render());
 
             JSONObject action     = new JSONObject(extractJson(response));
             String actionType     = action.optString("action", "unknown");
@@ -322,16 +325,33 @@ public class IntentPipeline {
         return text.length() <= max ? text : text.substring(0, max) + "...";
     }
 
-    /** Must run on the server thread. */
+    /**
+     * The player's situation for the prompt (FB-03): {@link WorldContext} at
+     * {@code ai.context.level}. Must run on the server thread.
+     */
     public String buildContext(Owner player) {
         World world = platform.world(player.world()).orElse(null);
-        String worldName = world == null ? player.world().id() : world.name();
-        String biome = world == null ? "unknown" : world.biome(player.pos().block());
-        return "Location: " + worldName
-                + ", Biome: " + biome
-                + ", Health: " + (int) player.health() + "/20"
-                + ", Gamemode: " + player.gameMode()
-                + ", Jarvis summoned: " + core.butlers().exists(player);
+        WorldContext.Settings settings = WorldContext.Settings.from(platform.config());
+        ButlerService npc = core.butlers();
+        Butler butler = npc == null ? null : npc.butler(player);
+        String task = npc == null ? null : npc.describeCurrentTask(player);
+        String text;
+        try {
+            text = WorldContext.capture(player, world, butler, task, settings,
+                    platform.players().online(), platform.items()::isEdible).render();
+        } catch (RuntimeException e) {
+            // Context is a nice-to-have; a world read that throws must not cost the reply.
+            platform.log().warn("World context failed for " + player.name() + ": " + e);
+            text = "";
+        }
+        if (platform.config().getBoolean("ai.log-usage", false)) {
+            // ~4 characters a token is close enough to judge the cost.
+            int facts = core.knowledge().render().length();
+            platform.log().info("AI context [level " + settings.level() + "] ~" + (text.length() + 3) / 4
+                    + " tokens (" + text.length() + " chars), server facts ~" + (facts + 3) / 4
+                    + " tokens (" + facts + " chars)");
+        }
+        return text.isEmpty() ? "none" : text;
     }
 
     // ==================== EXECUTE ====================

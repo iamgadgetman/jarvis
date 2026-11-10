@@ -12,6 +12,12 @@
   you, swings an arm now and then, and an action-bar line reads "Jarvis is
   thinking…". Off with `intent.thinking-feedback.enabled: false`; `animate`
   and `action-bar` switch each half off.
+- **Jarvis knows where you are.** Chat requests now carry your health, food,
+  held item, time, weather, light, biome and nearby hostile mobs and players,
+  plus what Jarvis himself is doing and carrying, so "what should I do?" gets
+  a real answer. A new `knowledge.yml` holds server facts and named locations
+  he treats as true ("where is the market?"). `ai.context.level` (0–3) sets
+  how much is sent; `/jarvis reload` re-reads the file.
 
 ### Fixed
 

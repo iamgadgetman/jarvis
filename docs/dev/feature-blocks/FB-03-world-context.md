@@ -75,6 +75,28 @@ Extend `AiSettingsTest` for the new keys' defaults.
 5. `level: 0`, reload, repeat step 3 → generic answer with no situational detail.
 6. With `ai.log-usage: true`, confirm the context adds well under ~300 tokens.
 
+## As built (deviations)
+
+- **No `core/platform/` changes.** Every read the spec lists already existed (weather,
+  sky/block light, `nearby(…, HOSTILE)`, health/food/held item), so the Fabric and NeoForge
+  mods are untouched.
+- **No armor summary.** `Owner` has no armor-slot read; adding one means a platform change in
+  three adapters for one line of context. Left out.
+- Level 2 also carries Jarvis's line (task, health, tool, cargo highlights); level 3 adds
+  hostiles and players. The world line includes the world name so `knowledge.yml` locations
+  with `world:` can be matched.
+- Defaults of the new keys are tested in `WorldContextTest.settingsDefaults`, not
+  `AiSettingsTest`: the keys live in `WorldContext.Settings`, not `AiSettings`.
+- `buildContext` catches a world read that throws and sends no context rather than no reply.
+- `ai.log-usage` logs both the context and the server-facts size per request.
+- The example `knowledge.yml` is written on first start (Paper only), all commented out.
+
+## Results
+
+| Step | Result |
+|---|---|
+| 1–6 | Not run yet. |
+
 ## CHANGELOG line
 
 `### Added` — **Jarvis knows where you are.** Prompts now carry your health, held item,

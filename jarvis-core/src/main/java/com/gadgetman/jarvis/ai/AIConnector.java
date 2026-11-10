@@ -693,6 +693,15 @@ public class AIConnector {
      * Parse natural language command into structured action
      */
     public String parseNaturalLanguage(String message, String playerName, String context) throws Exception {
+        return parseNaturalLanguage(message, playerName, context, "");
+    }
+
+    /**
+     * Parse a sentence into an action, with the admin's server facts
+     * ({@link ServerKnowledge#render()}, may be empty) in the system prompt.
+     */
+    public String parseNaturalLanguage(String message, String playerName, String context,
+                                       String serverFacts) throws Exception {
         // Literal commands ("follow me", "mine 10 iron") never get here:
         // IntentPipeline answers them with FastPathParser first, unless
         // intent.fast-path.enabled is off, in which case the model decides.
@@ -701,7 +710,9 @@ public class AIConnector {
                 "Output format: {\"action\":\"...\",\"parameters\":{...},\"response\":\"your witty 1-2 sentence response\"}\n\n" +
                 "CONVERSATION:\n" +
                 "  chat - just answer; no action. Use for questions, small talk and opinions.\n" +
-                "         The response field is the answer, seen only by this player.\n\n" +
+                "         The response field is the answer, seen only by this player.\n" +
+                "  The Context lines are the player's real situation right now (health, time, mobs, Jarvis).\n" +
+                "  Use them when advising; never invent details they don't give.\n\n" +
                 "NPC ACTIONS (control the physical Jarvis NPC):\n" +
                 "  summon - bring Jarvis to the player\n" +
                 "  dismiss - send Jarvis away\n" +
@@ -804,8 +815,11 @@ public class AIConnector {
                 "  'replace all dirt with grass in this area' -> {\"action\":\"console_commands\",\"parameters\":{\"commands\":[\"execute in world run fill ~-20 ~-5 ~-20 ~20 ~5 ~20 grass_block replace dirt\"]},\"response\":\"Upgrading the terrain. One does try to maintain standards.\"}\n" +
                 "  'can I get some food' -> {\"action\":\"request_item\",\"parameters\":{\"item\":\"minecraft:cooked_beef\",\"amount\":16,\"reason\":\"hungry\"},\"response\":\"Request submitted. Whether the admin is feeling charitable is another matter.\"}\n" +
                 "Output ONLY valid JSON. The requesting player is: " + playerName;
+        if (serverFacts != null && !serverFacts.isBlank()) {
+            systemPrompt += "\n\n" + serverFacts;
+        }
 
-        String userPrompt = String.format("Player %s says: \"%s\". Context: %s", playerName, message, context);
+        String userPrompt = String.format("Player %s says: \"%s\".\nContext:\n%s", playerName, message, context);
         return sendTiered(Tier.LIGHT, userPrompt, systemPrompt, true);
     }
 
