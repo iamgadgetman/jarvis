@@ -108,6 +108,8 @@ The partials are qwen2.5:7b taking the facts loosely, not missing context: the c
 no-weapon warning were in the prompt (`ai.log-usage` sizes match). A larger model should do better.
 Live config is back to `level: 2`, `log-usage: false`.
 
+**Owner, 2026-11-10:** accepted steps 3–4 as partial (model limit, context correct) and marked FB-03 `tested`.
+
 ## CHANGELOG line
 
 `### Added` — **Jarvis knows where you are.** Prompts now carry your health, held item,
