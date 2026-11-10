@@ -53,6 +53,13 @@ public final class WorldContext {
     private final List<String> playerLines = new ArrayList<>();
     private final List<String> worldLines = new ArrayList<>();
     private final List<String> nearbyLines = new ArrayList<>();
+    /**
+     * Dangers spelled out in words. A small local model reads "health 6/20"
+     * and still says nothing about it; "low health (3 hearts)" it acts on.
+     */
+    private final List<String> warnings = new ArrayList<>();
+    private boolean noWeapon;
+    private boolean danger;
 
     private WorldContext(Settings settings) {
         this.settings = settings;
@@ -81,7 +88,17 @@ public final class WorldContext {
     // ---- reading (server thread) ----
 
     private void readPlayer(Owner p) {
+        double hearts = Math.ceil(p.health()) / 2.0;
+        String heartText = (hearts == Math.floor(hearts) ? String.valueOf((int) hearts) : String.valueOf(hearts))
+                + (hearts == 1 ? " heart" : " hearts");
+        if (p.health() <= Math.max(6, p.maxHealth() * 0.3)) {
+            warnings.add("low health (" + heartText + ")");
+            danger = true;
+        }
+        if (p.foodLevel() <= 6) warnings.add("hungry (food " + p.foodLevel() + "/20)");
+        noWeapon = !isWeapon(p.heldItem());
         playerLines.add("You: health " + (int) Math.ceil(p.health()) + "/" + (int) Math.round(p.maxHealth())
+                + " (" + heartText + ")"
                 + ", food " + p.foodLevel() + "/20"
                 + ", holding " + itemName(p.heldItem())
                 + ", " + p.gameMode().toLowerCase(Locale.ROOT) + " mode");
@@ -97,8 +114,11 @@ public final class WorldContext {
                     + ", y=" + feet.y() + (underground ? ", underground" : ", surface"));
             String weather = world.isThundering() ? "thunderstorm" : world.isRaining() ? "rain" : "clear";
             String time = timeOfDay(world.time());
+            int light = lightAt(world, feet, time);
             worldLines.add("Time: " + time + ", weather " + weather
-                    + ", light at your feet " + lightAt(world, feet, time) + "/15");
+                    + ", light at your feet " + light + "/15");
+            if (time.equals("night")) { warnings.add("it is night: monsters spawn"); danger = true; }
+            else if (light <= 7) { warnings.add("dark here (light " + light + "): monsters can spawn"); danger = true; }
         }
         worldLines.add(jarvisLine(butler, task, edible));
     }
@@ -112,6 +132,10 @@ public final class WorldContext {
                 if (!e.isAlive()) continue;
                 counts.merge(mobName(e.typeId()), 1, Integer::sum);
                 nearest = Math.min(nearest, e.pos().distance(at));
+            }
+            if (!counts.isEmpty()) {
+                warnings.add(mobList(counts) + " nearby, nearest " + Math.round(nearest) + "m");
+                danger = true;
             }
             nearbyLines.add("Hostiles within " + (int) settings.hostileRadius() + "m: "
                     + (counts.isEmpty() ? "none" : mobList(counts) + ", nearest " + Math.round(nearest) + "m"));
@@ -167,7 +191,12 @@ public final class WorldContext {
 
     /** The snapshot as short lines, or "" at level 0. */
     public String render() {
-        List<String> all = new ArrayList<>(playerLines);
+        List<String> all = new ArrayList<>();
+        List<String> w = new ArrayList<>(warnings);
+        // No weapon only matters when something is dangerous; mining with a pickaxe is fine.
+        if (noWeapon && danger) w.add("no weapon in hand");
+        if (!w.isEmpty()) all.add("WARNINGS: " + String.join("; ", w));
+        all.addAll(playerLines);
         all.addAll(worldLines);
         all.addAll(nearbyLines);
         return String.join("\n", all);
@@ -197,6 +226,13 @@ public final class WorldContext {
         if (world.isThundering()) dim = Math.max(dim, 10);
         else if (world.isRaining()) dim = Math.max(dim, 3);
         return Math.max(world.blockLight(feet), Math.max(0, sky - dim));
+    }
+
+    private static boolean isWeapon(Item item) {
+        if (item == null || item.isEmpty()) return false;
+        String k = Ids.key(item.id());
+        return k.endsWith("_sword") || k.endsWith("_axe") || k.equals("trident") || k.equals("bow")
+                || k.equals("crossbow") || k.equals("mace") || k.endsWith("_spear");
     }
 
     private static String itemName(Item item) {

@@ -170,4 +170,35 @@ class WorldContextTest {
         assertTrue(out.contains("5 bread"), out);
         assertFalse(out.contains("dirt"), "only highlights, not every stack: " + out);
     }
+
+    @Test
+    @DisplayName("at night, empty-handed, on 3 hearts: the warnings say so in words")
+    void warningsSpellItOut() {
+        steve.health = 6;
+        f.world.time = 13000;
+        String out = render(2);
+        String first = out.lines().findFirst().orElse("");
+        assertTrue(first.startsWith("WARNINGS: "), out);
+        assertTrue(first.contains("low health (3 hearts)"), first);
+        assertTrue(first.contains("night"), first);
+        assertTrue(first.contains("no weapon in hand"), first);
+    }
+
+    @Test
+    @DisplayName("daytime, full health, holding a pickaxe: no warnings line")
+    void noWarningsWhenSafe() {
+        f.world.time = 6000;
+        steve.heldItem = Item.of("minecraft:iron_pickaxe");
+        assertFalse(render(2).contains("WARNINGS"), render(2));
+    }
+
+    @Test
+    @DisplayName("a sword in hand at night: night is warned, no-weapon is not")
+    void swordMeansArmed() {
+        f.world.time = 13000;
+        steve.heldItem = Item.of("minecraft:iron_sword");
+        String out = render(2);
+        assertTrue(out.contains("night"), out);
+        assertFalse(out.contains("no weapon"), out);
+    }
 }

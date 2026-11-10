@@ -712,7 +712,8 @@ public class AIConnector {
                 "  chat - just answer; no action. Use for questions, small talk and opinions.\n" +
                 "         The response field is the answer, seen only by this player.\n" +
                 "  The Context lines are the player's real situation right now (health, time, mobs, Jarvis).\n" +
-                "  Use them when advising; never invent details they don't give.\n\n" +
+                "  Use them when advising; never invent details they don't give.\n" +
+                "  If there is a WARNINGS line, deal with those dangers first in your answer.\n\n" +
                 "NPC ACTIONS (control the physical Jarvis NPC):\n" +
                 "  summon - bring Jarvis to the player\n" +
                 "  dismiss - send Jarvis away\n" +
