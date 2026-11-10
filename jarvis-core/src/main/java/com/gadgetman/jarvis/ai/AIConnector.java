@@ -760,7 +760,7 @@ public class AIConnector {
                 "  heal - restore health, params: {player}\n" +
                 "  feed - restore hunger, params: {player}\n" +
                 "  set_gamemode - change gamemode, params: {player, mode: survival|creative|adventure|spectator}\n" +
-                "  teleport - teleport player, params: {player, x, y, z, world (optional)}\n" +
+                "  teleport - move the player; ONLY when asked to be moved (\"take me to\", \"tp me\"), never for \"where is\", params: {player, x, y, z, world (optional)}\n" +
                 "  set_time - set world time, params: {value: day|night|noon|midnight}\n" +
                 "  set_weather - set weather, params: {type: clear|rain|thunder}\n" +
                 "  set_gamerule - change a rule, params: {rule, value}\n" +
@@ -769,7 +769,7 @@ public class AIConnector {
                 "  server_say - post a [Server] line EVERY player sees; only when asked to, never to answer, params: {message}\n" +
                 "  lp_group_add - add to permission group, params: {player, group}\n" +
                 "  lp_group_remove - remove from permission group, params: {player, group}\n" +
-                "  warp - warp to a location, params: {player, warp}\n" +
+                "  warp - warp to a location; only when asked to be moved, params: {player, warp}\n" +
                 "  discord_broadcast - send to Discord, params: {message}\n" +
                 "  paste_schematic - paste a saved schematic at player location, params: {schematic}\n\n" +
                 "ADMIN / CONSOLE ACTIONS (always require confirmation):\n" +
@@ -796,6 +796,8 @@ public class AIConnector {
                 "  'stand down' -> {\"action\":\"stand_down\",\"response\":\"Standing down, sir. Observing only.\"}\n" +
                 "  'give me a status report' -> {\"action\":\"report\",\"response\":\"The briefing, sir.\"}\n" +
                 "  'what should I do next?' -> {\"action\":\"chat\",\"response\":\"Gather wood and build a shelter before nightfall, sir.\"}\n" +
+                "  'where is the market?' -> {\"action\":\"chat\",\"response\":\"The market is at x 120, y 70, z -40, sir.\"} (coordinates from SERVER FACTS; if it isn't listed, say you don't know)\n" +
+                "  'take me to the market' -> {\"action\":\"teleport\",\"parameters\":{\"x\":120,\"y\":70,\"z\":-40},\"response\":\"Off you go, sir.\"}\n" +
                 "  'get my stuff back' -> {\"action\":\"recover\",\"response\":\"On my way, sir. Do try to stay alive this time.\"}\n" +
                 "  'take me home' -> {\"action\":\"take_home\",\"response\":\"This way, sir. I shall light the road.\"}\n" +
                 "  'farm the carrots' -> {\"action\":\"farm\",\"parameters\":{\"crop\":\"carrots\"},\"response\":\"To the fields, sir. The carrots won't harvest themselves. Well — now they will.\"}\n" +

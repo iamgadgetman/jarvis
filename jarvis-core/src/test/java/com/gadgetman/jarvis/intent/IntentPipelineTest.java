@@ -297,7 +297,7 @@ class IntentPipelineTest {
                 "jarvis what is your favourite block?",
                 "what do you say to that?"}) {
             for (String action : IntentPipeline.PUBLIC_ACTIONS) {
-                assertTrue(IntentPipeline.publicActionWithoutAsking(action, question),
+                assertTrue(IntentPipeline.unaskedAction(action, question),
                         action + " for \"" + question + "\" should become a private reply");
             }
         }
@@ -307,10 +307,10 @@ class IntentPipelineTest {
                 "broadcast: build contest at 8",
                 "jarvis let everyone know the nether portal is fixed",
                 "post it on discord"}) {
-            assertFalse(IntentPipeline.publicActionWithoutAsking("server_say", ask),
+            assertFalse(IntentPipeline.unaskedAction("server_say", ask),
                     "\"" + ask + "\" asked for an announcement");
         }
-        assertFalse(IntentPipeline.publicActionWithoutAsking("follow", "follow me"),
+        assertFalse(IntentPipeline.unaskedAction("follow", "follow me"),
                 "private actions are never touched");
     }
 
@@ -319,9 +319,9 @@ class IntentPipelineTest {
     void privateReplyUsesTheMessage() {
         var params = new org.json.JSONObject().put("message", "Zombies? Predictable, sir.");
         assertEquals("Zombies? Predictable, sir.",
-                IntentPipeline.privateReply(params, "A tactical observation, sir."));
-        assertEquals("Fallback, sir.", IntentPipeline.privateReply(new org.json.JSONObject(), "Fallback, sir."));
-        assertEquals("Fallback, sir.", IntentPipeline.privateReply(null, "Fallback, sir."));
+                IntentPipeline.privateReply("broadcast", params, "A tactical observation, sir."));
+        assertEquals("Fallback, sir.", IntentPipeline.privateReply("broadcast", new org.json.JSONObject(), "Fallback, sir."));
+        assertEquals("Fallback, sir.", IntentPipeline.privateReply("broadcast", null, "Fallback, sir."));
     }
 
     @Test
@@ -331,13 +331,43 @@ class IntentPipelineTest {
                 "jarvis what should I do next?",
                 "jarvis what is the best way to find diamonds?",
                 "how are you?"}) {
-            assertTrue(IntentPipeline.publicActionWithoutAsking("report", question),
+            assertTrue(IntentPipeline.unaskedAction("report", question),
                     "report for \"" + question + "\" should become a plain answer");
         }
         for (String ask : new String[]{
                 "jarvis give me a status report", "report", "brief me", "how's the server doing?",
                 "is there any lag?", "what's the tps"}) {
-            assertFalse(IntentPipeline.publicActionWithoutAsking("report", ask), "\"" + ask + "\" asked for it");
+            assertFalse(IntentPipeline.unaskedAction("report", ask), "\"" + ask + "\" asked for it");
         }
     }
+
+    @Test
+    @DisplayName("a question about a place is answered, not a teleport")
+    void teleportNeedsAnAsk() {
+        for (String question : new String[]{
+                "where is the market?", "jarvis where's spawn", "how far is the arena?",
+                "what are the coordinates of the farm?"}) {
+            for (String action : IntentPipeline.MOVE_ACTIONS) {
+                assertTrue(IntentPipeline.unaskedAction(action, question),
+                        action + " for \"" + question + "\" should become a plain answer");
+            }
+        }
+        for (String ask : new String[]{
+                "take me to the market", "tp me to spawn", "teleport me home", "jarvis send me to the arena",
+                "warp spawn", "get me there", "bring me to the farm"}) {
+            assertFalse(IntentPipeline.unaskedAction("teleport", ask), "\"" + ask + "\" asked to move");
+        }
+    }
+
+    @Test
+    @DisplayName("a teleport kept as an answer says where, not \"arriving\"")
+    void teleportAnswerGivesCoordinates() {
+        var params = new org.json.JSONObject().put("x", 120).put("y", 70).put("z", -40);
+        String reply = IntentPipeline.privateReply("teleport", params, "Arriving at the market, sir.");
+        assertTrue(reply.contains("x 120, y 70, z -40"), reply);
+        assertFalse(reply.contains("Arriving"), reply);
+        assertEquals("I'm not certain where that is, sir.",
+                IntentPipeline.privateReply("teleport", new org.json.JSONObject(), "Arriving, sir."));
+    }
+
 }

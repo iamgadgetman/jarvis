@@ -82,23 +82,48 @@ public class IntentPipeline {
             "\\b(report|status|briefing|brief me|tps|lag\\w*|how('s| is) the (server|estate)"
                     + "|server (health|performance))\\b");
 
+    /** Words that show the player asked to be moved, not just told where something is. */
+    private static final java.util.regex.Pattern ASKED_TO_MOVE = java.util.regex.Pattern.compile(
+            "\\b(teleport\\w*|tp|warp\\w*|take me|send me|bring me|put me|move me|get me (to|there|back)"
+                    + "|beam me|zap me|port me)\\b");
+
+    /** Actions that move the player. */
+    static final Set<String> MOVE_ACTIONS = Set.of("teleport", "warp");
+
     /**
      * True when the model picked an action the player never asked for: a
-     * whole-server action without an announcement request, or the status
+     * whole-server action without an announcement request, the status
      * briefing without a request for one ("what should I do next?" is a
-     * question, not a report). Such a pick is answered as plain chat instead.
+     * question, not a report), or a teleport for a question ("where is the
+     * market?" is not "take me to the market"). Such a pick is answered as
+     * plain chat instead.
      */
-    static boolean publicActionWithoutAsking(String actionType, String message) {
+    static boolean unaskedAction(String actionType, String message) {
         String m = message == null ? "" : message.toLowerCase(Locale.ROOT);
         if (PUBLIC_ACTIONS.contains(actionType)) return !ASKED_TO_ANNOUNCE.matcher(m).find();
         if ("report".equals(actionType)) return !ASKED_FOR_REPORT.matcher(m).find();
+        if (MOVE_ACTIONS.contains(actionType)) return !ASKED_TO_MOVE.matcher(m).find();
         return false;
     }
 
-    /** What to say privately in place of a public action: its message if it has one. */
-    static String privateReply(JSONObject parameters, String aiResponse) {
+    /**
+     * What to say in place of an action that was not asked for: its message if
+     * it has one, the coordinates a teleport was aimed at, else the model's reply
+     * ("Arriving at the market" would be wrong once nobody moves).
+     */
+    static String privateReply(String actionType, JSONObject parameters, String aiResponse) {
         String msg = parameters == null ? "" : parameters.optString("message", "").trim();
-        return msg.isEmpty() ? aiResponse : msg;
+        if (!msg.isEmpty()) return msg;
+        if (MOVE_ACTIONS.contains(actionType) && parameters != null) {
+            if (parameters.has("x") && parameters.has("z")) {
+                return "That's at x " + parameters.optInt("x") + (parameters.has("y") ? ", y " + parameters.optInt("y") : "")
+                        + ", z " + parameters.optInt("z") + ", sir. Say \"take me there\" if you'd like a lift.";
+            }
+            String warp = parameters.optString("warp", "").trim();
+            if (!warp.isEmpty()) return "That's the " + warp + " warp, sir. Ask me to take you if you'd like a lift.";
+            return "I'm not certain where that is, sir.";
+        }
+        return aiResponse;
     }
 
     private final JarvisCore core;
@@ -263,9 +288,9 @@ public class IntentPipeline {
             // asked for an announcement gets one; otherwise it is a reply.
             // The model then puts its real answer in the action's message and
             // filler ("A tactical observation, sir.") in response, so say the message.
-            boolean keptPrivate = publicActionWithoutAsking(actionType, message);
+            boolean keptPrivate = unaskedAction(actionType, message);
             String chosen = keptPrivate ? "chat" : actionType;
-            String reply = keptPrivate ? privateReply(parameters, aiResponse) : aiResponse;
+            String reply = keptPrivate ? privateReply(actionType, parameters, aiResponse) : aiResponse;
 
             scheduler().sync(() -> {
                 thinking.stop();

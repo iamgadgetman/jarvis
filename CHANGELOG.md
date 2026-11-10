@@ -34,6 +34,10 @@
   model run the status report and attach the whole estate briefing. The
   report now runs only when asked for (report, status, briefing, TPS, lag);
   anything else is answered as plain chat.
+- **"Where is…" no longer teleports you.** Asking where a place is could make
+  the model pick `teleport` and move you on the spot. Teleport and warp now run
+  only when you ask to be moved ("take me to", "tp me", "send me"); otherwise
+  Jarvis tells you the coordinates.
 
 ## v0.18.0 (unreleased — local test build)
 
