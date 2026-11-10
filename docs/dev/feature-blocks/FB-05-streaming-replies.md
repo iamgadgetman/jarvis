@@ -80,6 +80,46 @@ final `speak`; streaming off → single `speak`.
 5. `enabled: false` → one reply block as before.
 6. Jarvis Cloud provider active: `/jarvis cloud status` still counts the request once.
 
+## As built (deviations)
+
+- **Format kept as JSON.** The reply stays `{"action","parameters","response"}` and only the
+  `response` string is streamed. A `SAY:`/`ACTION` format would have meant dropping Ollama's
+  `format: json`, which is what keeps qwen2.5:7b's output valid. The prompt already puts
+  `action` and `parameters` before `response`, so the action is known before any words arrive.
+- **Guarded replies aren't streamed.** A reply is streamed only if `action` was complete before
+  `response` began and `IntentPipeline.unaskedAction` would not rewrite it. An unasked
+  broadcast, status report or teleport is still shown once, whole, after the guard runs.
+- **Jarvis Cloud is never streamed.** The Worker forces `stream: false` so it can meter the
+  final usage block; a `gc_` key always takes the buffered path, so step 6 counts once by design.
+- **Voice stays buffered.** `Responder.streams()` defaults to false; only the chat responder
+  opts in. Voice speaks the whole reply as before.
+- **Failure:** only a stream that breaks after the provider accepted it (dropped connection,
+  no end marker, an error event mid-stream) is retried once without streaming on the same
+  provider. A refused request (429, 5xx), a connect failure or a timeout goes straight to the
+  next provider, as before, so nothing is sent twice. If the whole `response` had already
+  arrived, the retry is used for its action only and nothing is said twice; if only part had,
+  the retry's reply is shown whole after it. A stream is also cut off once the whole reply
+  takes longer than the tier timeout. `unknown` is never streamed, so the keyword fallback
+  still answers it.
+- Only chat intent parsing streams; builds and other calls are unchanged.
+- `ai.log-usage` reports streamed Anthropic and Ollama token counts, tagged "(streamed)".
+
+## Results
+
+Run 2026-11-10 from the headless client (callmegadget) on GadgetCraft, qwen2.5:7b on Ollama.
+Times are when each line reached the client.
+
+| Step | Result |
+|---|---|
+| 1 Ollama story | **PASS** (build `41fdfc22`). Three "Jarvis:" lines at +3.9 s, +0.6 s, +0.6 s. First run (build `aad07c58`) split "and... well" at the ellipsis; fixed in `15d1d13`. |
+| 2 cloud provider | **N/A on GadgetCraft.** Its Claude key is Jarvis Cloud (`gc_`), which is buffered by design (see As built). Covered by `StreamAssemblerTest` (OpenAI, Anthropic, Gemini wire formats). |
+| 3 follow + joke | **PASS.** Joke streamed in two lines 0.5 s apart; action `follow` ran after; Jarvis caught up when the player moved 8 blocks. |
+| 4 provider stops mid-reply | **Not run in-game** (the Ollama host is shared with other services). Covered by `StreamingPipelineTest.droppedStreamRetries` / `errorStatusNotRetried`. |
+| 5 `enabled: false` | **PASS.** One reply line. Live config restored afterwards (backup `config.yml.bak-20261110-fb05`). |
+| 6 Jarvis Cloud counts once | **N/A by design**: `gc_` keys never stream, so the request path is unchanged. |
+
+**Owner, 2026-11-10:** accepted the headless results (2, 4, 6 covered by unit tests / N/A) and marked FB-05 `tested`.
+
 ## CHANGELOG line
 
 `### Changed` — **Replies stream.** Jarvis's sentences appear as the model writes them

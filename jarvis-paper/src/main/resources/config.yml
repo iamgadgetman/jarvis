@@ -42,6 +42,16 @@ ai:
     # Re-read on /jarvis reload. Missing file = no facts. See knowledge.yml.
     knowledge-file: knowledge.yml
 
+  # ---- Streaming replies (FB-05) ----
+  # Jarvis's chat replies appear sentence by sentence while the model is still
+  # writing, instead of all at once at the end; actions still wait for the whole
+  # reply. Jarvis Cloud replies are never streamed (the service meters them whole),
+  # and voice replies are spoken whole.
+  streaming:
+    enabled: true
+    min-interval-ms: 400   # Floor between chat lines so fast models don't spam
+    providers: [openai, claude, gemini, grok, ollama]   # Remove one to keep it buffered
+
   # Provider priority for auto mode (tried top-to-bottom)
   # Providers without API keys (except ollama) are skipped.
   #

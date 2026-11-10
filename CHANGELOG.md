@@ -19,6 +19,14 @@
   he treats as true ("where is the market?"). `ai.context.level` (0–3) sets
   how much is sent; `/jarvis reload` re-reads the file.
 
+### Changed
+
+- **Replies stream.** Jarvis's sentences appear as the model writes them
+  instead of all at once; actions still wait for the full reply. Replies the
+  safety checks may rewrite (an unasked announcement, a teleport for a "where
+  is" question) are still shown whole. `ai.streaming` to tune or disable; Jarvis
+  Cloud and voice replies stay buffered.
+
 ### Fixed
 
 - **One order, one answer.** A chat order such as "follow me" or "stop" got
