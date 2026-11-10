@@ -93,9 +93,13 @@ Extend `AiSettingsTest` for the new keys' defaults.
 
 ## Results
 
+Owner, GadgetCraft (Purpur 26.3), qwen2.5:7b on Ollama.
+
 | Step | Result |
 |---|---|
-| 1–6 | Not run yet. |
+| 1 knowledge.yml | Written with the spec's facts and market; `/jarvis reload` logged "2 facts, 1 locations". |
+| 2 where is the market | **First try FAIL** (build `5c72dd5d`): the model picked `teleport` and moved the owner to spawn. Fixed in `7eea931` (move actions need a move word) and `d4c6308` (teleport/warp ask Confirm/Cancel). **Retest PASS** (build `e6aab3e0`). |
+| 3–6 | Not run yet. |
 
 ## CHANGELOG line
 
