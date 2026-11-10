@@ -20,7 +20,7 @@ says push.
 | [FB-02](FB-02-thinking-feedback.md) | "Thinking" feedback while the model works | A | — | S | tested |
 | [FB-03](FB-03-world-context.md) | Rich world context in every prompt | B | — | S | tested |
 | [FB-04](FB-04-conversation-memory.md) | Per-player conversation memory | C | — | M | planned |
-| [FB-05](FB-05-streaming-replies.md) | Streaming replies | B | FB-03 merged | M | planned |
+| [FB-05](FB-05-streaming-replies.md) | Streaming replies | B | FB-03 merged | M | in progress |
 | [FB-06](FB-06-tool-calling.md) | Native tool calling for actions | B | FB-05 merged | M | planned |
 | [FB-07](FB-07-build-guardrails.md) | Build guardrails: blocked blocks, limits, preview | D | — | M | planned |
 | [FB-08](FB-08-reward-tags.md) | Reward tags → admin-defined command bundles | D | FB-07 merged | S | planned |

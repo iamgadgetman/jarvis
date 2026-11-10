@@ -29,6 +29,10 @@ ai:
     hostile-radius: 16
     player-radius: 32
     knowledge-file: knowledge.yml   # server facts, in plugins/Jarvis/
+  streaming:                # replies appear sentence by sentence (0.18.1)
+    enabled: true
+    min-interval-ms: 400    # floor between chat lines
+    providers: [openai, claude, gemini, grok, ollama]
 
 memory:                     # experience memory (0.8.0)
   enabled: true

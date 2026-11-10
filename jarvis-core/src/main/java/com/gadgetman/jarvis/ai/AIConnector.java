@@ -702,6 +702,16 @@ public class AIConnector {
      */
     public String parseNaturalLanguage(String message, String playerName, String context,
                                        String serverFacts) throws Exception {
+        return parseNaturalLanguage(message, playerName, context, serverFacts, null);
+    }
+
+    /**
+     * As above; with a {@code stream} sink, the reply's sentences are handed to it
+     * while the model is still writing (FB-05, {@code ai.streaming}). The full
+     * reply is still returned for the normal parse.
+     */
+    public String parseNaturalLanguage(String message, String playerName, String context,
+                                       String serverFacts, StreamAssembler.Sink stream) throws Exception {
         // Literal commands ("follow me", "mine 10 iron") never get here:
         // IntentPipeline answers them with FastPathParser first, unless
         // intent.fast-path.enabled is off, in which case the model decides.
@@ -823,7 +833,7 @@ public class AIConnector {
         }
 
         String userPrompt = String.format("Player %s says: \"%s\".\nContext:\n%s", playerName, message, context);
-        return sendTiered(Tier.LIGHT, userPrompt, systemPrompt, true);
+        return sendTiered(Tier.LIGHT, userPrompt, systemPrompt, true, DEFAULT_MAX_TOKENS, stream);
     }
 
     /**
@@ -999,6 +1009,11 @@ public class AIConnector {
      */
     private String sendTiered(Tier tier, String userContent, String systemContent, boolean jsonMode,
                               int maxTokens) throws Exception {
+        return sendTiered(tier, userContent, systemContent, jsonMode, maxTokens, null);
+    }
+
+    private String sendTiered(Tier tier, String userContent, String systemContent, boolean jsonMode,
+                              int maxTokens, StreamAssembler.Sink stream) throws Exception {
         enforceRateLimit();
 
         List<String> route = tier == Tier.LIGHT ? lightRoute : heavyRoute;
@@ -1023,7 +1038,7 @@ public class AIConnector {
             try {
                 lastUsage = null;
                 String result = sendRequestForProvider(tryProvider, userContent, systemContent, jsonMode,
-                        timeoutOverride, maxTokens);
+                        timeoutOverride, maxTokens, stream);
                 health.recordSuccess();
 
                 if (lastUsage != null && this.config.getBoolean("ai.log-usage", false)) {
@@ -1055,25 +1070,108 @@ public class AIConnector {
 
     private String sendRequestForProvider(String providerName, String userContent, String systemContent,
                                           boolean jsonMode, int timeoutOverrideSeconds,
-                                          int maxTokens) throws Exception {
+                                          int maxTokens, StreamAssembler.Sink stream) throws Exception {
         ProviderConfig config = providerConfigs.get(providerName);
         if (config == null) {
             throw new RuntimeException("Unknown provider: " + providerName);
         }
         int readTimeoutMs = (timeoutOverrideSeconds > 0 ? timeoutOverrideSeconds : config.timeoutSeconds) * 1000;
 
+        if (stream != null && streams(providerName, config)) {
+            StreamAssembler asm = new StreamAssembler(wireFor(providerName), stream,
+                    this.config.getLong("ai.streaming.min-interval-ms", 400), System::currentTimeMillis);
+            try {
+                return send(providerName, userContent, systemContent, config, jsonMode, readTimeoutMs, maxTokens, asm);
+            } catch (PlanLimitException e) {
+                throw e;
+            } catch (Exception e) {
+                // Words already on screen stay; if the whole answer arrived, the next
+                // reply is used for its action only, so nothing is said twice.
+                if (!asm.responseComplete()) asm.abandon();
+                // Only a stream that broke after a good start is retried the old way. A
+                // refused request, a rate limit or a timeout before any reply goes to the
+                // next provider, as without streaming, rather than being sent twice.
+                if (!(e instanceof StreamBroken)) throw e;
+                log.warn("Streaming from " + providerName + " broke (" + e.getMessage()
+                        + "); retrying without streaming.");
+            }
+        }
+        return send(providerName, userContent, systemContent, config, jsonMode, readTimeoutMs, maxTokens, null);
+    }
+
+    private String send(String providerName, String userContent, String systemContent, ProviderConfig config,
+                        boolean jsonMode, int readTimeoutMs, int maxTokens, StreamAssembler asm) throws Exception {
         return switch (providerName) {
-            case "claude" -> sendClaudeRequest(userContent, systemContent, config, readTimeoutMs, maxTokens);
-            case "gemini" -> sendGeminiRequest(userContent, systemContent, config, readTimeoutMs);
-            case "ollama" -> sendOllamaRequest(userContent, systemContent, config, jsonMode, readTimeoutMs);
-            default -> sendOpenAIStyleRequest(userContent, systemContent, config, readTimeoutMs, maxTokens);
+            case "claude" -> sendClaudeRequest(userContent, systemContent, config, readTimeoutMs, maxTokens, asm);
+            case "gemini" -> sendGeminiRequest(userContent, systemContent, config, readTimeoutMs, asm);
+            case "ollama" -> sendOllamaRequest(userContent, systemContent, config, jsonMode, readTimeoutMs, asm);
+            default -> sendOpenAIStyleRequest(userContent, systemContent, config, readTimeoutMs, maxTokens, asm);
         };
+    }
+
+    /**
+     * Whether replies from this provider are streamed: {@code ai.streaming.enabled},
+     * the provider in {@code ai.streaming.providers}, and not Jarvis Cloud ({@code gc_}
+     * keys), which collects the stream itself so it can meter the request.
+     */
+    private boolean streams(String providerName, ProviderConfig config) {
+        if (!this.config.getBoolean("ai.streaming.enabled", true)) return false;
+        List<String> allowed = this.config.contains("ai.streaming.providers")
+                ? this.config.getStringList("ai.streaming.providers") : KNOWN_PROVIDERS;
+        if (!allowed.contains(providerName)) return false;
+        if (config.apiKey != null && config.apiKey.startsWith("gc_")) return false;
+        if (providerName.equals("gemini")) return config.endpoint != null && config.endpoint.contains(":generateContent");
+        return true;
+    }
+
+    private static StreamAssembler.Wire wireFor(String providerName) {
+        return switch (providerName) {
+            case "claude" -> StreamAssembler.Wire.ANTHROPIC_SSE;
+            case "gemini" -> StreamAssembler.Wire.GEMINI_SSE;
+            case "ollama" -> StreamAssembler.Wire.OLLAMA_NDJSON;
+            default -> StreamAssembler.Wire.OPENAI_SSE;
+        };
+    }
+
+    /** A stream that failed after the provider accepted the request: worth one buffered retry. */
+    static final class StreamBroken extends RuntimeException {
+        StreamBroken(String message, Throwable cause) { super(message, cause); }
+    }
+
+    /**
+     * Read a streamed body line by line into the assembler; the whole reply text.
+     * The read timeout restarts on every line, so a model that trickles tokens
+     * forever is also cut off once the whole reply has taken {@code totalMs}.
+     */
+    private static String readStream(HttpURLConnection conn, StreamAssembler asm, long totalMs) throws Exception {
+        long deadline = System.currentTimeMillis() + Math.max(1000, totalMs);
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                asm.line(line);
+                if (asm.done()) break;
+                if (System.currentTimeMillis() > deadline) {
+                    throw new RuntimeException("streamed reply took longer than " + totalMs / 1000 + "s");
+                }
+            }
+        } catch (java.io.IOException | IllegalStateException e) {
+            throw new StreamBroken(e.getMessage(), e);
+        }
+        // Every provider marks the end ([DONE], message_stop, done:true, finishReason);
+        // a stream that just stops is a dropped connection, not a short reply.
+        if (!asm.done()) {
+            asm.finish();
+            throw new StreamBroken("stream ended before the reply was complete", null);
+        }
+        String text = asm.finish().trim();
+        if (text.isEmpty()) throw new StreamBroken("empty streamed reply", null);
+        return text;
     }
 
     // ==================== PROVIDER IMPLEMENTATIONS ====================
 
     private String sendOllamaRequest(String userContent, String systemContent, ProviderConfig config,
-                                     boolean jsonMode, int readTimeoutMs) throws Exception {
+                                     boolean jsonMode, int readTimeoutMs, StreamAssembler asm) throws Exception {
         URL url = new URL(config.endpoint + "/api/chat");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -1084,7 +1182,7 @@ public class AIConnector {
 
         JSONObject payload = new JSONObject();
         payload.put("model", config.model);
-        payload.put("stream", false);
+        payload.put("stream", asm != null);
         payload.put("keep_alive", config.keepAlive);
         if (jsonMode) {
             // Structured output: constrains small local models to valid JSON
@@ -1109,6 +1207,7 @@ public class AIConnector {
             String error = readErrorStream(conn);
             throw new RuntimeException("Ollama error: " + responseCode + " - " + error);
         }
+        if (asm != null) return readStream(conn, asm, readTimeoutMs);
 
         try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
             StringBuilder response = new StringBuilder();
@@ -1131,7 +1230,7 @@ public class AIConnector {
     }
 
     private String sendClaudeRequest(String userContent, String systemContent, ProviderConfig config,
-                                     int readTimeoutMs, int maxTokens) throws Exception {
+                                     int readTimeoutMs, int maxTokens, StreamAssembler asm) throws Exception {
         URL url = new URL(config.endpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -1147,6 +1246,7 @@ public class AIConnector {
         payload.put("model", config.model);
         payload.put("max_tokens", maxTokens);
         payload.put("system", systemContent);
+        if (asm != null) payload.put("stream", true);
 
         JSONArray messages = new JSONArray();
         messages.put(new JSONObject()
@@ -1162,6 +1262,11 @@ public class AIConnector {
         if (responseCode != 200) {
             String error = readErrorStream(conn);
             throw new RuntimeException("Claude API error: " + responseCode + " - " + error);
+        }
+        if (asm != null) {
+            String text = readStream(conn, asm, readTimeoutMs);
+            lastUsage = asm.usage();
+            return text;
         }
 
         try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
@@ -1205,7 +1310,7 @@ public class AIConnector {
     }
 
     private String sendOpenAIStyleRequest(String userContent, String systemContent, ProviderConfig config,
-                                          int readTimeoutMs, int maxTokens) throws Exception {
+                                          int readTimeoutMs, int maxTokens, StreamAssembler asm) throws Exception {
         URL url = new URL(config.endpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -1218,6 +1323,7 @@ public class AIConnector {
         JSONObject payload = new JSONObject();
         payload.put("model", config.model);
         payload.put("max_tokens", maxTokens);
+        if (asm != null) payload.put("stream", true);
 
         JSONArray messages = new JSONArray();
         messages.put(new JSONObject().put("role", "system").put("content", systemContent));
@@ -1233,6 +1339,7 @@ public class AIConnector {
             String error = readErrorStream(conn);
             throw new RuntimeException("HTTP error: " + responseCode + " - " + error);
         }
+        if (asm != null) return readStream(conn, asm, readTimeoutMs);
 
         try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
             StringBuilder response = new StringBuilder();
@@ -1269,9 +1376,12 @@ public class AIConnector {
     }
 
     private String sendGeminiRequest(String userContent, String systemContent, ProviderConfig config,
-                                     int readTimeoutMs) throws Exception {
-        String resolvedEndpoint = String.format(config.endpoint, config.model) + "?key=" +
-                java.net.URLEncoder.encode(config.apiKey, StandardCharsets.UTF_8);
+                                     int readTimeoutMs, StreamAssembler asm) throws Exception {
+        String base = String.format(config.endpoint, config.model);
+        if (asm != null) base = base.replace(":generateContent", ":streamGenerateContent");
+        String resolvedEndpoint = base + "?key=" +
+                java.net.URLEncoder.encode(config.apiKey, StandardCharsets.UTF_8)
+                + (asm != null ? "&alt=sse" : "");
         URL url = new URL(resolvedEndpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -1298,6 +1408,7 @@ public class AIConnector {
             String error = readErrorStream(conn);
             throw new RuntimeException("Gemini error: " + responseCode + " - " + error);
         }
+        if (asm != null) return readStream(conn, asm, readTimeoutMs);
 
         try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
             StringBuilder response = new StringBuilder();
@@ -1396,7 +1507,7 @@ public class AIConnector {
         if (!providerConfigs.containsKey(providerName)) throw new IllegalArgumentException("Unknown provider: " + providerName);
         if (!"ollama".equals(providerName) && !hasApiKey(providerName)) throw new IllegalStateException("no API key set");
         String reply = sendRequestForProvider(providerName, "Reply with the single word: ready",
-                "You are a connectivity check. Answer with one word.", false, 20, 16);
+                "You are a connectivity check. Answer with one word.", false, 20, 16, null);
         ProviderHealth health = providerHealth.get(providerName);
         if (health != null) health.recordSuccess();
         return reply == null ? "" : reply.trim();

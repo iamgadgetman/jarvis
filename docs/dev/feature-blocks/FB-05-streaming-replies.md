@@ -80,6 +80,36 @@ final `speak`; streaming off → single `speak`.
 5. `enabled: false` → one reply block as before.
 6. Jarvis Cloud provider active: `/jarvis cloud status` still counts the request once.
 
+## As built (deviations)
+
+- **Format kept as JSON.** The reply stays `{"action","parameters","response"}` and only the
+  `response` string is streamed. A `SAY:`/`ACTION` format would have meant dropping Ollama's
+  `format: json`, which is what keeps qwen2.5:7b's output valid. The prompt already puts
+  `action` and `parameters` before `response`, so the action is known before any words arrive.
+- **Guarded replies aren't streamed.** A reply is streamed only if `action` was complete before
+  `response` began and `IntentPipeline.unaskedAction` would not rewrite it. An unasked
+  broadcast, status report or teleport is still shown once, whole, after the guard runs.
+- **Jarvis Cloud is never streamed.** The Worker forces `stream: false` so it can meter the
+  final usage block; a `gc_` key always takes the buffered path, so step 6 counts once by design.
+- **Voice stays buffered.** `Responder.streams()` defaults to false; only the chat responder
+  opts in. Voice speaks the whole reply as before.
+- **Failure:** only a stream that breaks after the provider accepted it (dropped connection,
+  no end marker, an error event mid-stream) is retried once without streaming on the same
+  provider. A refused request (429, 5xx), a connect failure or a timeout goes straight to the
+  next provider, as before, so nothing is sent twice. If the whole `response` had already
+  arrived, the retry is used for its action only and nothing is said twice; if only part had,
+  the retry's reply is shown whole after it. A stream is also cut off once the whole reply
+  takes longer than the tier timeout. `unknown` is never streamed, so the keyword fallback
+  still answers it.
+- Only chat intent parsing streams; builds and other calls are unchanged.
+- `ai.log-usage` reports streamed Anthropic and Ollama token counts, tagged "(streamed)".
+
+## Results
+
+| Step | Result |
+|---|---|
+| 1–6 | Not run yet. |
+
 ## CHANGELOG line
 
 `### Changed` — **Replies stream.** Jarvis's sentences appear as the model writes them

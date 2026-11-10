@@ -2,6 +2,7 @@ package com.gadgetman.jarvis.intent;
 
 import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.ai.AIConnector;
+import com.gadgetman.jarvis.ai.StreamAssembler;
 import com.gadgetman.jarvis.ai.WorldContext;
 import com.gadgetman.jarvis.commands.ActionExecutor;
 import com.gadgetman.jarvis.core.platform.Butler;
@@ -48,6 +49,16 @@ public class IntentPipeline {
     public interface Responder {
         void speak(Owner player, String jarvisLine);
         void feedback(Owner player, String line);
+
+        /**
+         * Whether this responder shows a reply sentence by sentence while the
+         * model is still writing (FB-05). Off by default, so voice keeps
+         * speaking the whole reply at once.
+         */
+        default boolean streams() { return false; }
+
+        /** One sentence of a reply that is still being written. */
+        default void speakPartial(Owner player, String sentence) { speak(player, sentence); }
     }
 
     /** The original behaviour: everything goes to the chat box. */
@@ -58,6 +69,7 @@ public class IntentPipeline {
         @Override public void feedback(Owner player, String line) {
             player.message(line);
         }
+        @Override public boolean streams() { return true; }
     };
 
     /**
@@ -269,10 +281,30 @@ public class IntentPipeline {
 
     private void parseAndDispatch(Owner player, String message, String worldContext,
                                   Source source, Responder sink, ThinkingFeedback thinking) {
+        // FB-05: sentences of the reply reach the player while the model writes.
+        // Only replies the pipeline won't rewrite are streamed (see unaskedAction).
+        final java.util.concurrent.atomic.AtomicBoolean spoke = new java.util.concurrent.atomic.AtomicBoolean();
+        StreamAssembler.Sink stream = !sink.streams() ? null : new StreamAssembler.Sink() {
+            @Override public boolean accepts(String actionType) {
+                // "unknown" goes to the keyword fallback, which must still be able to answer.
+                return !actionType.isBlank() && !actionType.equals("unknown")
+                        && !unaskedAction(actionType, message);
+            }
+            @Override public void sentence(String text) {
+                spoke.set(true);
+                scheduler().sync(() -> {
+                    thinking.stop();
+                    sink.speakPartial(player, text);
+                });
+            }
+            @Override public void abandoned() {
+                spoke.set(false); // the retry's reply is spoken whole
+            }
+        };
         try {
             String context  = worldContext + buildMemoryContext(player);
             String response = ai.parseNaturalLanguage(message, player.name(), context,
-                    core.knowledge().render());
+                    core.knowledge().render(), stream);
 
             JSONObject action     = new JSONObject(extractJson(response));
             String actionType     = action.optString("action", "unknown");
@@ -292,16 +324,19 @@ public class IntentPipeline {
             String chosen = keptPrivate ? "chat" : actionType;
             String reply = keptPrivate ? privateReply(actionType, parameters, aiResponse) : aiResponse;
 
+            final boolean alreadySpoken = spoke.get();
             scheduler().sync(() -> {
                 thinking.stop();
-                executeAction(player, chosen, parameters, reply, message, source, sink);
+                executeAction(player, chosen, parameters, reply, message, source, sink, alreadySpoken);
             });
 
         } catch (Exception e) {
             platform.log().warn("Natural language parse failed: " + e.getMessage());
+            final boolean alreadySpoken = spoke.get();
             scheduler().sync(() -> {
                 thinking.stop();
-                executeFallbackAction(player, message, sink);
+                // He already answered out loud; only the action part was unreadable.
+                if (!alreadySpoken) executeFallbackAction(player, message, sink);
             });
         }
     }
@@ -384,9 +419,16 @@ public class IntentPipeline {
     private void executeAction(Owner player, String actionType, JSONObject parameters,
                                String aiResponse, String originalMessage,
                                Source source, Responder sink) {
+        executeAction(player, actionType, parameters, aiResponse, originalMessage, source, sink, false);
+    }
+
+    /** @param alreadySpoken the reply was streamed to the player already (FB-05); don't say it twice */
+    private void executeAction(Owner player, String actionType, JSONObject parameters,
+                               String aiResponse, String originalMessage,
+                               Source source, Responder sink, boolean alreadySpoken) {
 
         // Always show Jarvis's witty response first
-        if (!aiResponse.isEmpty()) {
+        if (!aiResponse.isEmpty() && !alreadySpoken) {
             sink.speak(player, aiResponse);
         }
 
