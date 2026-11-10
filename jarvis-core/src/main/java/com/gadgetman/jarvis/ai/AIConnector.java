@@ -368,7 +368,8 @@ public class AIConnector {
               tables and counters; trapdoors make shutters. A tower has a way up: ladders or stairs.
             - Every window opening holds glass or glass_pane, never a trapdoor or plank. Shutters are
               open trapdoors on the outside of the wall BESIDE the window, not in it.
-            - A stair used as a chair stands alone, one high, next to a table and facing away from it.
+            - A stair used as a chair stands alone, one high, next to a table, its facing pointing AWAY
+              from the table (chair west of the table: facing=west); facing the table puts its back to it.
               A flight of stairs exists only to reach another floor; never stack stairs in a one-storey room.
             - No cobwebs unless the request asks for something abandoned, haunted, ruined or old.
             - Outside: a path of a different block to the door, and a lantern or two by it.
@@ -494,6 +495,10 @@ public class AIConnector {
             for (let i = 0; i < 5; i++) setBlock(x+i, y+i, z, "stone_brick_stairs[facing=east]");
             Fill the space under the flight if it shows, and clear the floor above the top
             steps (and two blocks of headroom over every step) so it leads somewhere.
+            Count the steps: the top step sits at the SAME height as the upper floor's own
+            blocks, so a flight from a room whose floor you stand on at height y up to a
+            floor laid at height f has f - y + 1 steps. One fewer and the player has to jump
+            the last block. e.g. upper floor at y+4: steps at y, y+1, y+2, y+3 and y+4.
 
             Each course must be a full-length `fill` along the ridge axis, one block higher
             and one block inward from the course below. The FIRST course sits directly on
@@ -566,10 +571,16 @@ public class AIConnector {
             different block leads to the door, with a lantern or two beside it. A bare box with
             a door is not finished.
 
-            A stair used as a chair stands alone, one block high, on the floor beside a table,
-            with its tall back away from the table: a table at (x, y, z) gets a chair
-            oak_stairs[facing=east] at (x+1, y, z). A flight of stairs exists only to reach
-            another floor: in a one-storey room, never put one stair on top of another.
+            A stair used as a chair stands alone, one block high, on the floor beside a table.
+            Its `facing` names the side its tall BACK is on, so it points AWAY from the table:
+            for a table at (x, y, z),
+              chair west of it:  setBlock(x-1, y, z, "oak_stairs[facing=west]");
+              chair east of it:  setBlock(x+1, y, z, "oak_stairs[facing=east]");
+              chair north of it: setBlock(x, y, z-1, "oak_stairs[facing=north]");
+              chair south of it: setBlock(x, y, z+1, "oak_stairs[facing=south]");
+            A chair whose facing points at the table has its back pressed against it.
+            A flight of stairs exists only to reach another floor: in a one-storey room, never
+            put one stair on top of another.
 
             No cobwebs unless the request asks for something abandoned, haunted, ruined or
             old. In a lived-in house they read as a mistake: a "seaside shanty" gets none, an
