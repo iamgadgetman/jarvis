@@ -75,11 +75,22 @@ public class IntentPipeline {
                     + "|the (whole )?server|server[- ]wide|discord|tell (them|all)|let (everyone|all)"
                     + "|remind (everyone|all|people)|in (global|public) chat)\\b");
 
-    /** True when the model picked a whole-server action the player never asked for. */
+    /** Words that show the player asked for the status briefing. */
+    private static final java.util.regex.Pattern ASKED_FOR_REPORT = java.util.regex.Pattern.compile(
+            "\\b(report|status|briefing|brief me|tps|lag\\w*|how('s| is) the (server|estate)"
+                    + "|server (health|performance))\\b");
+
+    /**
+     * True when the model picked an action the player never asked for: a
+     * whole-server action without an announcement request, or the status
+     * briefing without a request for one ("what should I do next?" is a
+     * question, not a report). Such a pick is answered as plain chat instead.
+     */
     static boolean publicActionWithoutAsking(String actionType, String message) {
-        if (!PUBLIC_ACTIONS.contains(actionType)) return false;
         String m = message == null ? "" : message.toLowerCase(Locale.ROOT);
-        return !ASKED_TO_ANNOUNCE.matcher(m).find();
+        if (PUBLIC_ACTIONS.contains(actionType)) return !ASKED_TO_ANNOUNCE.matcher(m).find();
+        if ("report".equals(actionType)) return !ASKED_FOR_REPORT.matcher(m).find();
+        return false;
     }
 
     /** What to say privately in place of a public action: its message if it has one. */
@@ -129,7 +140,10 @@ public class IntentPipeline {
             // Literal commands are answered locally, before any model is asked.
             if (tryFastPath(player, utterance, source, sink)) return;
             final String worldContext = buildContext(player);
-            scheduler().async(() -> parseAndDispatch(player, utterance, worldContext, source, sink));
+            // The model can take seconds; show that he is on it (FB-02).
+            final ThinkingFeedback thinking = ThinkingFeedback.start(
+                    player, core.butlers().butler(player), platform.config(), scheduler());
+            scheduler().async(() -> parseAndDispatch(player, utterance, worldContext, source, sink, thinking));
         });
     }
 
@@ -227,7 +241,7 @@ public class IntentPipeline {
     // ==================== PARSE ====================
 
     private void parseAndDispatch(Owner player, String message, String worldContext,
-                                  Source source, Responder sink) {
+                                  Source source, Responder sink, ThinkingFeedback thinking) {
         try {
             String context  = worldContext + buildMemoryContext(player);
             String response = ai.parseNaturalLanguage(message, player.name(), context);
@@ -250,11 +264,17 @@ public class IntentPipeline {
             String chosen = keptPrivate ? "chat" : actionType;
             String reply = keptPrivate ? privateReply(parameters, aiResponse) : aiResponse;
 
-            scheduler().sync(() -> executeAction(player, chosen, parameters, reply, message, source, sink));
+            scheduler().sync(() -> {
+                thinking.stop();
+                executeAction(player, chosen, parameters, reply, message, source, sink);
+            });
 
         } catch (Exception e) {
             platform.log().warn("Natural language parse failed: " + e.getMessage());
-            scheduler().sync(() -> executeFallbackAction(player, message, sink));
+            scheduler().sync(() -> {
+                thinking.stop();
+                executeFallbackAction(player, message, sink);
+            });
         }
     }
 

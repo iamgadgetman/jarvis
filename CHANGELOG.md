@@ -8,6 +8,10 @@
   the like run instantly without an AI call; only sentences the local parser
   can't place go to the model. `intent.fast-path` in config; add your own
   aliases under `extra-phrases`.
+- **Jarvis shows he's thinking.** While a sentence is with the AI he turns to
+  you, swings an arm now and then, and an action-bar line reads "Jarvis is
+  thinking…". Off with `intent.thinking-feedback.enabled: false`; `animate`
+  and `action-bar` switch each half off.
 
 ### Fixed
 
@@ -20,6 +24,10 @@
   talk. He now has a plain `chat` action, and `server_say`, `broadcast`,
   `announce_all`, `schedule_broadcast` and `discord_broadcast` only run when
   the player asks for an announcement ("announce", "tell everyone", …).
+- **Questions get answers, not briefings.** "What should I do next?" made the
+  model run the status report and attach the whole estate briefing. The
+  report now runs only when asked for (report, status, briefing, TPS, lag);
+  anything else is answered as plain chat.
 
 ## v0.18.0 (unreleased — local test build)
 

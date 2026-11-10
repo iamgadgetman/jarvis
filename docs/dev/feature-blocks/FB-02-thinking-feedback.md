@@ -44,6 +44,17 @@ look frozen.
       text: "Jarvis is thinking"
   ```
 
+## As built (deviations)
+
+- **No sneak.** `Butler` has no crouch call, and adding one meant a new interface method in three
+  implementations plus Fabric/NeoForge rebuilds. The fidget is a look plus an arm swing every ~3 s,
+  using the existing `lookAt` and `swing`. The owner agreed to this on 2026-11-09.
+- **No platform changes.** `Owner.actionBar` already existed (via `Audience`), so the block is
+  core-only: new `intent/ThinkingFeedback.java`, hooked in `IntentPipeline`. The
+  "playThinking/actionBar" fakes the spec mentions weren't needed; tests read the existing
+  `FakeOwner.actionBars` and `FakeButlers.State.swings`.
+- **Safety cutoff:** feedback ends by itself after 90 s even if no reply or failure comes back.
+
 ## Files
 
 `core/platform/Butler.java`, `core/platform/Owner.java`, `platform/PaperOwner.java`,
@@ -70,6 +81,23 @@ Extend `FakeOwner`/`FakeButlers` in `core/testing/` to record `actionBar` and
 4. Kill the network to the provider and repeat. Expect: after the timeout the animation
    stops and the usual failure message appears — never a Jarvis stuck crouching.
 5. `animate: false` → only the action bar. `enabled: false` → nothing.
+
+### Results — 2026-11-09, GadgetCraft (Purpur 26.3), build `92feb41`
+
+Run from a headless test client; action-bar text read with hmc-specifics `render`, rotation with
+`/data get entity … Rotation`.
+
+| Step | Result |
+|---|---|
+| 1–2 action bar | **Pass.** "Jarvis is thinking.." then "Jarvis is thinking..." captured while the model worked. |
+| 3 reply | **Pass.** Bar cleared, reply printed (Ollama, 3–5 s). |
+| 2 turn to face | **Not seen.** Yaw stayed -90.4° (east) before, during and after; the player was to the west. Suspect Citizens' `rotationtrait` re-aims the NPC every tick and undoes `faceLocation`. Unverified. |
+| 2 arm swing | Not observable from the headless client. |
+| 4–5 | Not run (unit tests cover the failure path and the switches). |
+
+**Owner check, 2026-11-09, build `5de0157c` (`a066d0c`):** watched in-game. Jarvis faced the
+player and swung his arms while the bar showed. The headless "not seen" was a bad measurement
+(body yaw, possibly the other Jarvis NPC); `rotationtrait` doesn't interfere. Owner marked FB-02 `tested`.
 
 ## CHANGELOG line
 
