@@ -37,7 +37,8 @@
 - **"Where is…" no longer teleports you.** Asking where a place is could make
   the model pick `teleport` and move you on the spot. Teleport and warp now run
   only when you ask to be moved ("take me to", "tp me", "send me"); otherwise
-  Jarvis tells you the coordinates.
+  Jarvis tells you the coordinates. Teleport and warp also ask Confirm/Cancel
+  first now, so nobody is moved without saying yes.
 
 ## v0.18.0 (unreleased — local test build)
 
