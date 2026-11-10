@@ -243,4 +243,14 @@ class StreamAssemblerTest {
         a.finish();
         assertEquals(List.of("Plan made.", "Off we go."), rec.said);
     }
+
+    @Test
+    @DisplayName("an ellipsis mid-sentence doesn't split it")
+    void ellipsis() {
+        Rec rec = new Rec("chat");
+        StreamAssembler a = new StreamAssembler(StreamAssembler.Wire.OLLAMA_NDJSON, rec, 0, () -> 0);
+        a.text("{\"action\":\"chat\",\"response\":\"It sprang to life and... well, you know. The end.\"}");
+        a.finish();
+        assertEquals(List.of("It sprang to life and... well, you know.", "The end."), rec.said);
+    }
 }

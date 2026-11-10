@@ -295,7 +295,9 @@ public final class StreamAssembler {
         // A sentence ends at . ! or ? followed by a space: "3.5" and "e.g.x" don't split.
         if (Character.isWhitespace(c) && sentence.length() > 1) {
             char last = sentence.charAt(sentence.length() - 1);
-            if (last == '.' || last == '!' || last == '?') {
+            // "and... well" is a pause, not the end of a sentence.
+            boolean ellipsis = last == '.' && sentence.charAt(sentence.length() - 2) == '.';
+            if ((last == '.' || last == '!' || last == '?') && !ellipsis) {
                 String s = sentence.toString().strip();
                 sentence.setLength(0);
                 if (!s.isEmpty()) queue(s);
