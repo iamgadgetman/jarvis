@@ -27,7 +27,7 @@ says push.
 | [FB-09](FB-09-first-run.md) | Free-tier-first first run | D | — | S | planned |
 | [FB-10](FB-10-mcp-dev-server.md) | Jarvis MCP server for development | E | — | M | planned |
 | [FB-11](FB-11-onboarding.md) | First-join welcome, interactive tutorial, admin quick start | F | FB-09 merged | M | planned |
-| [FB-12](FB-12-build-polish.md) | Build polish from the GadgetCraft playtests | B + D | — | S | in progress |
+| [FB-12](FB-12-build-polish.md) | Build polish from the GadgetCraft playtests | B + D | — | S | built |
 
 Size: S = an afternoon, M = a day or two. Status values: `planned`, `in progress`,
 `built` (branch ready, unit tests green), `tested` (owner verified in-game), `shipped`.
