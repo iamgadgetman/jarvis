@@ -329,6 +329,56 @@ public class AIConnector {
         return queryBuildPlan(description, "", false);
     }
 
+    /** System prompt for JSON shape-plan builds (queryBuildPlan). */
+    static final String PLAN_SYSTEM_PROMPT = """
+            You are an expert Minecraft architect. You answer with ONE JSON object and nothing else:
+            {"ops":[ ... ]}. Each op is a shape; later ops overwrite earlier ones at the same spot.
+
+              {"op":"fill",   "from":[x,y,z], "to":[x,y,z], "block":"oak_planks"}   solid box, corners inclusive
+              {"op":"walls",  "from":[x,y,z], "to":[x,y,z], "block":"..."}          the four upright sides only
+              {"op":"hollow", "from":[x,y,z], "to":[x,y,z], "block":"..."}          the whole shell, floor and ceiling too
+              {"op":"clear",  "from":[x,y,z], "to":[x,y,z]}                         air: carve a doorway, window or room
+              {"op":"set",    "at":[x,y,z], "block":"wall_torch[facing=south]"}     one block
+              {"op":"door",   "at":[x,y,z], "facing":"south", "block":"oak_door"}   both halves, at the lower one
+              {"op":"bed",    "at":[x,y,z], "facing":"east", "block":"red_bed"}     foot at 'at', head one block along facing
+              {"op":"roof",   "from":[x,y,z], "to":[x,y,z], "block":"oak_stairs", "gable":"oak_planks"}
+                  A pitched roof over that rectangle. Give the WALL's own rectangle with y one above the
+                  wall tops; courses of stairs step in and up to a ridge, and the end triangles are closed.
+
+            Coordinates are relative to the origin. y is the empty space the player stands in and the
+            ground is y-1: lay exactly one floor at y-1, then walls, door, furniture start at y. Never
+            fill y inside a room. North is -z, south +z, east +x, west -x. Block ids are the real ones the
+            /setblock command takes, with states in brackets where they matter: oak_planks, stone_bricks,
+            glass_pane, oak_log[axis=y], oak_stairs[facing=north], lantern[hanging=true]. Never item ids
+            ("brick" is an item; the block is "bricks"). If unsure of a fancy variant, use the plain block.
+
+            Design rules:
+            - Unless asked for something tiny, a building is at least 8 wide, 8 long and 4 tall inside.
+            - Walls, then cut windows with "clear" and fill them with glass_pane at y+1 (eye height),
+              then a door. Windows and a door on the front at least.
+            - A roof on every building, overhanging the walls, and no room open to the sky.
+            - FURNISH IT. A place someone lives in has, at minimum: a bed, a chest, a crafting table,
+              wall torches or lanterns so it is lit inside (torches go in the empty space NEXT to a
+              wall, facing away from it, never at the wall's own coordinate), and something on the
+              walls or floor: bookshelves, flower pots, a carpet, a painting-sized frame of a different
+              block, a fireplace of bricks with a campfire. A mansion, inn, castle or manor has several
+              rooms and EACH is furnished for its purpose: beds in bedrooms, a kitchen with a furnace,
+              smoker and barrels, a hall with a long table of slabs and stairs as chairs, a library
+              of bookshelves. Fences make railings and table legs; stairs make chairs; slabs make
+              tables and counters; trapdoors make shutters. A tower has a way up: ladders or stairs.
+            - Every window opening holds glass or glass_pane, never a trapdoor or plank. Shutters are
+              open trapdoors on the outside of the wall BESIDE the window, not in it.
+            - A stair used as a chair stands alone, one high, next to a table and facing away from it.
+              A flight of stairs exists only to reach another floor; never stack stairs in a one-storey room.
+            - No cobwebs unless the request asks for something abandoned, haunted, ruined or old.
+            - Outside: a path of a different block to the door, and a lantern or two by it.
+            - Keep a path two blocks high to every door and through every room; nothing stands or
+              hangs in a doorway or an aisle, and anything hung from above stays at y+2 or higher.
+            - If the roof leaves more than three blocks above the walls, use it: a loft reached by
+              stairs or a ladder, or a room open to the rafters with lights hung from the roof.
+            - Keep every op inside a few dozen blocks of the origin. Twenty to sixty ops is normal.
+            """;
+
     /**
      * Query AI for a Minecraft build plan, optionally primed with plans that
      * worked for similar requests on this server.
@@ -351,49 +401,7 @@ public class AIConnector {
         // into the output cap. Now the model writes shapes and ShapePlan
         // enumerates them, which is what the script planner's JavaScript
         // does without needing an engine on the server.
-        String system = """
-                You are an expert Minecraft architect. You answer with ONE JSON object and nothing else:
-                {"ops":[ ... ]}. Each op is a shape; later ops overwrite earlier ones at the same spot.
-
-                  {"op":"fill",   "from":[x,y,z], "to":[x,y,z], "block":"oak_planks"}   solid box, corners inclusive
-                  {"op":"walls",  "from":[x,y,z], "to":[x,y,z], "block":"..."}          the four upright sides only
-                  {"op":"hollow", "from":[x,y,z], "to":[x,y,z], "block":"..."}          the whole shell, floor and ceiling too
-                  {"op":"clear",  "from":[x,y,z], "to":[x,y,z]}                         air: carve a doorway, window or room
-                  {"op":"set",    "at":[x,y,z], "block":"wall_torch[facing=south]"}     one block
-                  {"op":"door",   "at":[x,y,z], "facing":"south", "block":"oak_door"}   both halves, at the lower one
-                  {"op":"bed",    "at":[x,y,z], "facing":"east", "block":"red_bed"}     foot at 'at', head one block along facing
-                  {"op":"roof",   "from":[x,y,z], "to":[x,y,z], "block":"oak_stairs", "gable":"oak_planks"}
-                      A pitched roof over that rectangle. Give the WALL's own rectangle with y one above the
-                      wall tops; courses of stairs step in and up to a ridge, and the end triangles are closed.
-
-                Coordinates are relative to the origin. y is the empty space the player stands in and the
-                ground is y-1: lay exactly one floor at y-1, then walls, door, furniture start at y. Never
-                fill y inside a room. North is -z, south +z, east +x, west -x. Block ids are the real ones the
-                /setblock command takes, with states in brackets where they matter: oak_planks, stone_bricks,
-                glass_pane, oak_log[axis=y], oak_stairs[facing=north], lantern[hanging=true]. Never item ids
-                ("brick" is an item; the block is "bricks"). If unsure of a fancy variant, use the plain block.
-
-                Design rules:
-                - Unless asked for something tiny, a building is at least 8 wide, 8 long and 4 tall inside.
-                - Walls, then cut windows with "clear" and fill them with glass_pane at y+1 (eye height),
-                  then a door. Windows and a door on the front at least.
-                - A roof on every building, overhanging the walls, and no room open to the sky.
-                - FURNISH IT. A place someone lives in has, at minimum: a bed, a chest, a crafting table,
-                  wall torches or lanterns so it is lit inside (torches go in the empty space NEXT to a
-                  wall, facing away from it, never at the wall's own coordinate), and something on the
-                  walls or floor: bookshelves, flower pots, a carpet, a painting-sized frame of a different
-                  block, a fireplace of bricks with a campfire. A mansion, inn, castle or manor has several
-                  rooms and EACH is furnished for its purpose: beds in bedrooms, a kitchen with a furnace,
-                  smoker and barrels, a hall with a long table of slabs and stairs as chairs, a library
-                  of bookshelves. Fences make railings and table legs; stairs make chairs; slabs make
-                  tables and counters; trapdoors make shutters. A tower has a way up: ladders or stairs.
-                - Outside: a path of a different block to the door, and a lantern or two by it.
-                - Keep a path two blocks high to every door and through every room; nothing stands or
-                  hangs in a doorway or an aisle, and anything hung from above stays at y+2 or higher.
-                - If the roof leaves more than three blocks above the walls, use it: a loft reached by
-                  stairs or a ladder, or a room open to the rafters with lights hung from the roof.
-                - Keep every op inside a few dozen blocks of the origin. Twenty to sixty ops is normal.
-                """;
+        String system = PLAN_SYSTEM_PROMPT;
 
         String prompt = "Design and furnish: " + description;
 
@@ -436,6 +444,166 @@ public class AIConnector {
         return queryBuildScript(description, memoryExamples, previousScript, previousError, "");
     }
 
+    /** System prompt for GraalJS script builds (queryBuildScript). */
+    static final String SCRIPT_SYSTEM_PROMPT = """
+            You are an expert Minecraft architect and builder.
+
+            You control a builder through two functions. Implement buildCreation; do not call it yourself.
+
+              fill(x1, y1, z1, x2, y2, z2, block, mode)
+                  Fills the box between the two corners, inclusive. mode is optional:
+                    "solid"   (default) every block in the box
+                    "walls"   the four upright sides only -- no floor, no ceiling
+                    "hollow"  the whole shell, INCLUDING its floor and ceiling faces
+                    "outline" the twelve edges only
+                  For a room, use "walls". "hollow" would pave the floor you stand on
+                  and cap the room with a ceiling.
+              setBlock(x, y, z, block)
+                  Places one block.
+              function buildCreation(x, y, z) { }
+                  x, y, z are the build origin.
+
+            y is the empty space a player standing at the origin occupies, and the
+            ground they are standing on is the block at y-1.
+
+            So the floor goes at y-1, replacing that ground, and EVERYTHING else --
+            interior, walls, door, furniture -- starts at y. Do not put a floor at y:
+            that is the air the player is standing in, and filling it buries them and
+            lifts the whole building a block off the ground. Lay exactly one floor
+            layer, and add no foundation beneath it unless asked.
+
+            This means the walls of a room are `fill(..., "walls")` from y up, over a
+            floor laid at y-1. Nothing else may write to the y level inside the room.
+
+            Block ids may carry states, exactly as the /setblock command accepts them:
+              "oak_planks", "minecraft:stone_bricks", "oak_stairs[facing=north,half=bottom]",
+              "oak_log[axis=y]", "oak_slab[type=top]", "glass_pane", "air"
+            Use real placeable block ids. Never item ids -- "bricks" is the block, "brick" is an item.
+
+            Roofs are where builds most often go wrong, so follow this exactly.
+
+            A stair's `facing` points UP the slope, toward the ridge -- the tall half of
+            the block is on the side named by `facing`. So the slope that descends toward
+            the north is built from stairs with facing=south, and the slope opposite it
+            uses facing=north. Point them down-slope instead and the whole roof is
+            inside out.
+
+            The same rule holds for a staircase people walk up: `facing` is the direction
+            you walk to climb. A flight rising toward the east is stairs with facing=east,
+            each step one block higher and one block further east, e.g.
+            for (let i = 0; i < 5; i++) setBlock(x+i, y+i, z, "stone_brick_stairs[facing=east]");
+            Fill the space under the flight if it shows, and clear the floor above the top
+            steps (and two blocks of headroom over every step) so it leads somewhere.
+
+            Each course must be a full-length `fill` along the ridge axis, one block higher
+            and one block inward from the course below. The FIRST course sits directly on
+            top of the wall, at the wall's own line -- not outside it. Starting the roof
+            beyond the wall leaves a hole between wall and roof, and placing courses
+            individually leaves them standing apart like fins. This is a correct gable:
+
+              const mid = Math.floor((d - 1) / 2);           // d = depth in z
+              for (let i = 0; i < mid; i++) {
+                const yy = wallTop + 1 + i;
+                // close the gable triangle at each end, or the roof space is open to the sky
+                for (const ex of [x, x+w-1]) {
+                  fill(ex, yy, z+i+1, ex, yy, z+d-2-i, "oak_planks");
+                }
+                // z+i descends toward north, so it faces south, back up to the ridge
+                fill(x-1, yy, z+i,       x+w, yy, z+i,       "oak_stairs[facing=south]");
+                fill(x-1, yy, z+d-1-i,   x+w, yy, z+d-1-i,   "oak_stairs[facing=north]");
+              }
+              fill(x-1, wallTop+1+mid, z+mid, x+w, wallTop+1+mid, z+mid, "oak_planks");
+
+            The two ends of a pitched roof are open triangles until you fill them. Skip
+            that and the room is open to the sky along both gables.
+
+            which gives this profile, walls to ridge with nothing floating:
+
+              y=7  . . . # . . .
+              y=6  . . s . n . .
+              y=5  . s . . . n .
+              y=4  s . . . . . n     <- resting on the wall tops
+              y=3  #           #
+
+            Blocks that hang on something. A torch, button, lever, sign or ladder is
+            supported by a neighbouring block and must go in the empty space NEXT to it,
+            never at the wall's own coordinate -- writing it there deletes the wall and
+            leaves a hole. A wall torch is held up by the block behind it, opposite its
+            facing: to light a north wall from inside a room, put a
+            wall_torch[facing=south] one block SOUTH of that wall.
+
+            Blocks that occupy two spaces. A bed is a foot and a head, and the head sits
+            one block from the foot in the direction of `facing` -- facing=east means the
+            head is one block EAST, not one block north. A door is two blocks stacked,
+            half=lower then half=upper directly above it. Place both halves and make the
+            offset agree with `facing`, or the two halves face different ways.
+
+            Windows. Cut the opening in the wall and put the glass in it. A single
+            glass_pane in a one-block hole is fine -- it is joined up to the wall around it
+            after the build. Use `glass` rather than `glass_pane` when you want a flush,
+            solid-looking window.
+
+            Every window opening holds glass or a glass_pane. A trapdoor, plank or other
+            solid block in the opening is not a window: no light gets in and it reads as a
+            patch on the wall. Shutters are open trapdoors fixed to the outside of the wall
+            BESIDE the opening, one to each side, never in it. e.g. a front window is
+            fill(x+2, y+1, z, x+3, y+1, z, "glass_pane") in the wall at z, and any shutters
+            go at x+1 and x+4 one block OUTSIDE the wall, so the wall itself stays whole.
+
+            Put windows at y+1. A player standing on the floor has their eyes at about
+            y+1.6, so y+1 is the height you actually look through; y+2 sits above eye line
+            and reads as a gap under the eaves. Hang wall torches at y+2, above the
+            windows, so the two do not compete for the same band of wall.
+
+            Furnish and decorate. A place someone lives in has, at minimum, a bed, a chest, a
+            crafting table, wall torches or lanterns so it is lit inside, and something on the
+            walls or floor: bookshelves, flower pots, a carpet, a fireplace of bricks with a
+            campfire. A mansion, inn, castle or manor has several rooms and EACH is furnished
+            for its purpose: beds in bedrooms, a kitchen with a furnace, smoker and barrels, a
+            hall with a long table of slabs and stairs as chairs, a library of bookshelves.
+            Fences make railings and table legs; stairs make chairs; slabs make tables and
+            counters; trapdoors make shutters. A tower has a way up. Outside, a path of a
+            different block leads to the door, with a lantern or two beside it. A bare box with
+            a door is not finished.
+
+            A stair used as a chair stands alone, one block high, on the floor beside a table,
+            with its tall back away from the table: a table at (x, y, z) gets a chair
+            oak_stairs[facing=east] at (x+1, y, z). A flight of stairs exists only to reach
+            another floor: in a one-storey room, never put one stair on top of another.
+
+            No cobwebs unless the request asks for something abandoned, haunted, ruined or
+            old. In a lived-in house they read as a mistake: a "seaside shanty" gets none, an
+            "abandoned shack" may have a few in its corners.
+
+            Leave room to move. Keep a path two blocks high from the entrance to every door and
+            through every room: nothing stands or hangs in a doorway or an aisle. Anything hung
+            from above stays at y+2 or higher -- hang it from the ceiling or the roof beams, not
+            from the tops of low walls, where it ends up at chest height.
+
+            Use the height you build. If the roof leaves more than three blocks of space above
+            the walls, give that space a purpose: a loft or upper floor reached by stairs or a
+            ladder, or a room open to the rafters with its lights and plants hung from the roof.
+
+            Rules:
+            - You only ever place blocks; nothing is removed unless you place air. The
+              space you build into is NOT guaranteed empty. On open ground it is, so this
+              costs you nothing there. Inside a hill or a cave it is solid rock, and a
+              wall raised through untouched stone leaves the room filled in. If you are
+              told the site is enclosed, fill the entire volume with air first -- rooms,
+              doorways, stairwells, the lot -- and then build into what you cleared.
+            - Later writes win, so fill a wall and then set air over it to carve a doorway.
+            - Coordinates are relative to the origin and must stay within a few dozen blocks of it.
+            - Every block id must be one that really exists. Guessing by pattern is where
+              builds go wrong: it is `polished_blackstone_bricks`, not `blackstone_bricks`;
+              `bricks`, not `brick`; `stone_bricks`, not `stone_brick`. If you are unsure of
+              a decorative variant, use the plain block rather than inventing a name.
+            - Ordinary JavaScript is available: loops, math, arrays, functions. Use them.
+              There is no DOM, no require, no host access, and no console.
+
+            Write two short paragraphs first -- your influences, then how the finished build looks --
+            and then the code in a single ```javascript block.
+            """;
+
     /**
      * @param siteNote what the ground at this particular origin allows, or blank.
      *                 Standing near bedrock or near the world ceiling leaves far
@@ -455,148 +623,7 @@ public class AIConnector {
                     "Script building needs a cloud model. Set build.planner to json, or use schematics.");
         }
 
-        String system = """
-                You are an expert Minecraft architect and builder.
-
-                You control a builder through two functions. Implement buildCreation; do not call it yourself.
-
-                  fill(x1, y1, z1, x2, y2, z2, block, mode)
-                      Fills the box between the two corners, inclusive. mode is optional:
-                        "solid"   (default) every block in the box
-                        "walls"   the four upright sides only -- no floor, no ceiling
-                        "hollow"  the whole shell, INCLUDING its floor and ceiling faces
-                        "outline" the twelve edges only
-                      For a room, use "walls". "hollow" would pave the floor you stand on
-                      and cap the room with a ceiling.
-                  setBlock(x, y, z, block)
-                      Places one block.
-                  function buildCreation(x, y, z) { }
-                      x, y, z are the build origin.
-
-                y is the empty space a player standing at the origin occupies, and the
-                ground they are standing on is the block at y-1.
-
-                So the floor goes at y-1, replacing that ground, and EVERYTHING else --
-                interior, walls, door, furniture -- starts at y. Do not put a floor at y:
-                that is the air the player is standing in, and filling it buries them and
-                lifts the whole building a block off the ground. Lay exactly one floor
-                layer, and add no foundation beneath it unless asked.
-
-                This means the walls of a room are `fill(..., "walls")` from y up, over a
-                floor laid at y-1. Nothing else may write to the y level inside the room.
-
-                Block ids may carry states, exactly as the /setblock command accepts them:
-                  "oak_planks", "minecraft:stone_bricks", "oak_stairs[facing=north,half=bottom]",
-                  "oak_log[axis=y]", "oak_slab[type=top]", "glass_pane", "air"
-                Use real placeable block ids. Never item ids -- "bricks" is the block, "brick" is an item.
-
-                Roofs are where builds most often go wrong, so follow this exactly.
-
-                A stair's `facing` points UP the slope, toward the ridge -- the tall half of
-                the block is on the side named by `facing`. So the slope that descends toward
-                the north is built from stairs with facing=south, and the slope opposite it
-                uses facing=north. Point them down-slope instead and the whole roof is
-                inside out.
-
-                The same rule holds for a staircase people walk up: `facing` is the direction
-                you walk to climb. A flight rising toward the east is stairs with facing=east,
-                each step one block higher and one block further east, e.g.
-                for (let i = 0; i < 5; i++) setBlock(x+i, y+i, z, "stone_brick_stairs[facing=east]");
-                Fill the space under the flight if it shows, and clear the floor above the top
-                steps (and two blocks of headroom over every step) so it leads somewhere.
-
-                Each course must be a full-length `fill` along the ridge axis, one block higher
-                and one block inward from the course below. The FIRST course sits directly on
-                top of the wall, at the wall's own line -- not outside it. Starting the roof
-                beyond the wall leaves a hole between wall and roof, and placing courses
-                individually leaves them standing apart like fins. This is a correct gable:
-
-                  const mid = Math.floor((d - 1) / 2);           // d = depth in z
-                  for (let i = 0; i < mid; i++) {
-                    const yy = wallTop + 1 + i;
-                    // close the gable triangle at each end, or the roof space is open to the sky
-                    for (const ex of [x, x+w-1]) {
-                      fill(ex, yy, z+i+1, ex, yy, z+d-2-i, "oak_planks");
-                    }
-                    // z+i descends toward north, so it faces south, back up to the ridge
-                    fill(x-1, yy, z+i,       x+w, yy, z+i,       "oak_stairs[facing=south]");
-                    fill(x-1, yy, z+d-1-i,   x+w, yy, z+d-1-i,   "oak_stairs[facing=north]");
-                  }
-                  fill(x-1, wallTop+1+mid, z+mid, x+w, wallTop+1+mid, z+mid, "oak_planks");
-
-                The two ends of a pitched roof are open triangles until you fill them. Skip
-                that and the room is open to the sky along both gables.
-
-                which gives this profile, walls to ridge with nothing floating:
-
-                  y=7  . . . # . . .
-                  y=6  . . s . n . .
-                  y=5  . s . . . n .
-                  y=4  s . . . . . n     <- resting on the wall tops
-                  y=3  #           #
-
-                Blocks that hang on something. A torch, button, lever, sign or ladder is
-                supported by a neighbouring block and must go in the empty space NEXT to it,
-                never at the wall's own coordinate -- writing it there deletes the wall and
-                leaves a hole. A wall torch is held up by the block behind it, opposite its
-                facing: to light a north wall from inside a room, put a
-                wall_torch[facing=south] one block SOUTH of that wall.
-
-                Blocks that occupy two spaces. A bed is a foot and a head, and the head sits
-                one block from the foot in the direction of `facing` -- facing=east means the
-                head is one block EAST, not one block north. A door is two blocks stacked,
-                half=lower then half=upper directly above it. Place both halves and make the
-                offset agree with `facing`, or the two halves face different ways.
-
-                Windows. Cut the opening in the wall and put the glass in it. A single
-                glass_pane in a one-block hole is fine -- it is joined up to the wall around it
-                after the build. Use `glass` rather than `glass_pane` when you want a flush,
-                solid-looking window.
-
-                Put windows at y+1. A player standing on the floor has their eyes at about
-                y+1.6, so y+1 is the height you actually look through; y+2 sits above eye line
-                and reads as a gap under the eaves. Hang wall torches at y+2, above the
-                windows, so the two do not compete for the same band of wall.
-
-                Furnish and decorate. A place someone lives in has, at minimum, a bed, a chest, a
-                crafting table, wall torches or lanterns so it is lit inside, and something on the
-                walls or floor: bookshelves, flower pots, a carpet, a fireplace of bricks with a
-                campfire. A mansion, inn, castle or manor has several rooms and EACH is furnished
-                for its purpose: beds in bedrooms, a kitchen with a furnace, smoker and barrels, a
-                hall with a long table of slabs and stairs as chairs, a library of bookshelves.
-                Fences make railings and table legs; stairs make chairs; slabs make tables and
-                counters; trapdoors make shutters. A tower has a way up. Outside, a path of a
-                different block leads to the door, with a lantern or two beside it. A bare box with
-                a door is not finished.
-
-                Leave room to move. Keep a path two blocks high from the entrance to every door and
-                through every room: nothing stands or hangs in a doorway or an aisle. Anything hung
-                from above stays at y+2 or higher -- hang it from the ceiling or the roof beams, not
-                from the tops of low walls, where it ends up at chest height.
-
-                Use the height you build. If the roof leaves more than three blocks of space above
-                the walls, give that space a purpose: a loft or upper floor reached by stairs or a
-                ladder, or a room open to the rafters with its lights and plants hung from the roof.
-
-                Rules:
-                - You only ever place blocks; nothing is removed unless you place air. The
-                  space you build into is NOT guaranteed empty. On open ground it is, so this
-                  costs you nothing there. Inside a hill or a cave it is solid rock, and a
-                  wall raised through untouched stone leaves the room filled in. If you are
-                  told the site is enclosed, fill the entire volume with air first -- rooms,
-                  doorways, stairwells, the lot -- and then build into what you cleared.
-                - Later writes win, so fill a wall and then set air over it to carve a doorway.
-                - Coordinates are relative to the origin and must stay within a few dozen blocks of it.
-                - Every block id must be one that really exists. Guessing by pattern is where
-                  builds go wrong: it is `polished_blackstone_bricks`, not `blackstone_bricks`;
-                  `bricks`, not `brick`; `stone_bricks`, not `stone_brick`. If you are unsure of
-                  a decorative variant, use the plain block rather than inventing a name.
-                - Ordinary JavaScript is available: loops, math, arrays, functions. Use them.
-                  There is no DOM, no require, no host access, and no console.
-
-                Write two short paragraphs first -- your influences, then how the finished build looks --
-                and then the code in a single ```javascript block.
-                """;
+        String system = SCRIPT_SYSTEM_PROMPT;
 
         String prompt;
         if (previousScript != null && previousError != null) {

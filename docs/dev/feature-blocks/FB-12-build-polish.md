@@ -69,3 +69,19 @@ The things still wrong in the shanty, the first build that otherwise looked righ
    blocks stacked in the middle of a room.
 4. `/jarvis build abandoned shack` → cobwebs allowed.
 5. Server log: no "Build script attempt 1 failed: 'chain'".
+
+## As built
+
+- The three rules are in both build prompts: the script prompt (now `AIConnector.SCRIPT_SYSTEM_PROMPT`)
+  and the JSON plan prompt (`PLAN_SYSTEM_PROMPT`). Both prompts moved from inline strings to
+  constants so `BuildPromptTest` can check them; the text is otherwise unchanged.
+- **No `WindowFiller` yet.** Whether the prompt is enough only shows in a real build; the cleaner
+  is built only if the in-game shanty still has solid windows.
+- a71b61c (`chain` → `iron_chain`) is already on `release/0.18.0` and in every GadgetCraft jar since
+  2026-11-09, so step 1's precondition holds.
+
+## Results
+
+| Step | Result |
+|---|---|
+| 1–5 | Not run yet. |
