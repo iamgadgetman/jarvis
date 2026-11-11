@@ -79,25 +79,38 @@ class EmptyReplyTest {
     }
 
     @Test
-    @DisplayName("an asked-for broadcast with an empty message asks what to announce, and posts nothing")
+    @DisplayName("\"announce that\" with nothing after it and an empty message: asks, posts nothing")
     void emptyBroadcastAsks() throws IOException {
         f = withModel("{\"action\":\"broadcast\",\"parameters\":{\"message\":\"\"},\"response\":\"Right away, sir.\"}");
         FakeOwner p = f.player("alice");
-        f.core.intents().submit(p, "announce that the market opens at noon", IntentPipeline.Source.CONSOLE);
+        f.core.intents().submit(p, "announce that", IntentPipeline.Source.CONSOLE);
         assertFalse(f.actions.executed.contains("broadcast"), f.actions.executed.toString());
         assertTrue(p.messages.stream().anyMatch(m -> m.contains("What would you like me to announce")),
                 p.messages.toString());
     }
 
     @Test
-    @DisplayName("a broadcast with no parameters at all is caught too")
+    @DisplayName("a broadcast with no parameters and nothing to announce is caught too")
     void missingParametersAsks() throws IOException {
         f = withModel("{\"action\":\"server_say\",\"response\":\"Done.\"}");
         FakeOwner p = f.player("alice");
-        f.core.intents().submit(p, "tell everyone hello", IntentPipeline.Source.CONSOLE);
+        f.core.intents().submit(p, "tell everyone", IntentPipeline.Source.CONSOLE);
         assertFalse(f.actions.executed.contains("server_say"), f.actions.executed.toString());
         assertTrue(p.messages.stream().anyMatch(m -> m.contains("What would you like me to announce")),
                 p.messages.toString());
+    }
+
+    @Test
+    @DisplayName("the model left message empty but the player said what: the player's words are announced")
+    void messageTakenFromRequest() throws IOException {
+        // The reply qwen2.5:7b really gave on GadgetCraft, 2026-11-10.
+        f = withModel("{\"action\":\"broadcast\",\"parameters\":{\"message\":\"\"},"
+                + "\"response\":\"Broadcasting the message, sir. The market opens at noon.\"}");
+        FakeOwner p = f.player("alice");
+        f.core.intents().submit(p, "announce that the market opens at noon", IntentPipeline.Source.CONSOLE);
+        assertTrue(f.actions.executed.contains("broadcast"), f.actions.executed.toString());
+        assertEquals("the market opens at noon",
+                f.actions.executedParams.get(f.actions.executed.indexOf("broadcast")).getString("message"));
     }
 
     @Test
@@ -117,5 +130,18 @@ class EmptyReplyTest {
         assertTrue(IntentPipeline.blankMessage(new JSONObject()));
         assertTrue(IntentPipeline.blankMessage(new JSONObject().put("message", "  ")));
         assertFalse(IntentPipeline.blankMessage(new JSONObject().put("message", "hi")));
+    }
+
+    @Test
+    @DisplayName("messageFromRequest finds the text after the announce words")
+    void messageFromRequestCases() {
+        assertEquals("the market opens at noon", IntentPipeline.messageFromRequest("announce that the market opens at noon"));
+        assertEquals("PvP night at 8", IntentPipeline.messageFromRequest("jarvis broadcast: PvP night at 8"));
+        assertEquals("dinner is ready", IntentPipeline.messageFromRequest("tell everyone that dinner is ready"));
+        assertEquals("the server restarts soon", IntentPipeline.messageFromRequest("let everyone know the server restarts soon"));
+        assertEquals("hi", IntentPipeline.messageFromRequest("announce to everyone that hi"));
+        assertEquals("", IntentPipeline.messageFromRequest("announce that"));
+        assertEquals("", IntentPipeline.messageFromRequest("tell everyone"));
+        assertEquals("", IntentPipeline.messageFromRequest("what should I do next?"));
     }
 }

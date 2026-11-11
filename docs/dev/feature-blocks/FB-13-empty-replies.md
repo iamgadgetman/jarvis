@@ -17,8 +17,12 @@ Two empty-reply shapes reached players:
 In `IntentPipeline.parseAndDispatch`, after the ask-guard picks the final action:
 
 - A public action (`PUBLIC_ACTIONS`: `server_say`, `broadcast`, `announce_all`,
-  `schedule_broadcast`, `discord_broadcast`) with a missing or blank `message` is not run or
-  queued. Jarvis replies "What would you like me to announce, sir?" and a warning is logged.
+  `schedule_broadcast`, `discord_broadcast`) with a missing or blank `message` takes the text
+  from the player's own words ("announce that **X**", "tell everyone **X**", "let everyone know
+  **X**"), and Confirm/Cancel shows it as usual. qwen did exactly this on GadgetCraft: it put
+  "The market opens at noon." in its spoken reply and left `message` empty. Only when the
+  player's words hold nothing either ("announce that") is nothing run or queued: Jarvis asks
+  "What would you like me to announce, sir?" and a warning is logged.
 - A `chat`/`talk` result whose reply is blank (and wasn't already streamed) gets
   "I lost my train of thought there, sir. Ask me again?" and a warning naming the message.
   The keyword fallback is deliberately **not** used here: it would turn "what's the best way
@@ -31,7 +35,8 @@ No config keys. No platform interface changes, so the mods need no rebuild.
 `EmptyReplyTest` (fake Ollama): empty and whitespace chat replies say "Ask me again"; a normal
 chat reply is unchanged; an asked-for `broadcast` with an empty message and a `server_say`
 with no parameters ask what to announce and run nothing; a broadcast with a message still runs;
-`blankMessage` helper cases.
+`blankMessage` helper cases; an empty `message` with "announce that the market opens at noon"
+broadcasts the player's words; `messageFromRequest` cases.
 
 ## In-game test (GadgetCraft, callmegadget)
 
@@ -47,4 +52,16 @@ server log (`Model returned chat with an empty response`, `Model picked broadcas
 
 ## Results
 
-_Not run yet._
+Run 2026-11-10 with callmegadget, **using `/jarvis <sentence>`** so replies stay private. Plain
+`jarvis …` chat is public: every player sees the question.
+
+First jar (`dd7e6f1d`):
+
+| # | Result | Notes |
+|---|---|---|
+| 1 | PASS | Two asks, two answers. The empty reply did not recur, so the guard didn't fire. |
+| 2 | PASS (not via the guard) | "announce that" was answered as chat ("A broadcast at your service, sir."); nothing posted. |
+| 3 | **FAIL** | qwen left `message` empty and put the text in its reply; the guard asked "What would you like me to announce?" on a real request. Fixed: the player's words are used. |
+| 4 | PASS | Normal reply. |
+
+Second jar: see below.

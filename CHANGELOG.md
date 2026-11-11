@@ -31,8 +31,9 @@
 
 - **No more silent or blank replies.** When the model answers with an empty
   chat reply, Jarvis now says "Ask me again?" instead of nothing; when it picks
-  an announcement with no message, he asks what to announce instead of
-  offering to post a blank line to everyone.
+  an announcement with no message, he uses the text from your request
+  ("announce that the market opens at noon"), and asks what to announce only
+  when there is none, instead of offering to post a blank line to everyone.
 
 - **One order, one answer.** A chat order such as "follow me" or "stop" got
   two replies: Jarvis's answer and then the action's own "Right behind you,

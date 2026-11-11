@@ -123,6 +123,26 @@ public class IntentPipeline {
         return parameters == null || parameters.optString("message", "").isBlank();
     }
 
+    /** "announce that X", "tell everyone X", "let everyone know X": X is the announcement. */
+    private static final java.util.regex.Pattern ANNOUNCE_WHAT = java.util.regex.Pattern.compile(
+            "(?i)\\b(?:announce|broadcast|(?:tell|remind|let) (?:everyone|everybody|all(?: the)?(?: players)?|the (?:whole )?server)"
+                    + "(?: know)?|say to (?:everyone|everybody|all))"
+                    + "(?: to (?:everyone|everybody|all(?: the)?(?: players)?|the (?:whole )?server))?"
+                    + "\\s*(?:that\\b|:)?\\s*(.*)$");
+
+    /**
+     * The announcement text in the player's own words, or "" (FB-13). qwen
+     * sometimes puts the text in its spoken reply and leaves {@code message}
+     * empty; the player's sentence is the safer source, and Confirm still
+     * shows it before anything is posted.
+     */
+    static String messageFromRequest(String request) {
+        if (request == null) return "";
+        java.util.regex.Matcher m = ANNOUNCE_WHAT.matcher(request.trim());
+        if (!m.find()) return "";
+        return m.group(1).trim();
+    }
+
     /**
      * What to say in place of an action that was not asked for: its message if
      * it has one, the coordinates a teleport was aimed at, else the model's reply
@@ -332,8 +352,19 @@ public class IntentPipeline {
             final boolean alreadySpoken = spoke.get();
 
             // FB-13: an announcement with no message would post a blank line to
-            // everyone (qwen did this for "announce that ..."): ask instead.
-            if (PUBLIC_ACTIONS.contains(chosen) && blankMessage(parameters)) {
+            // everyone (qwen did this for "announce that ..."). Take the text from
+            // the player's words; if there is none there either, ask.
+            JSONObject params = parameters;
+            if (PUBLIC_ACTIONS.contains(chosen) && blankMessage(params)) {
+                String fromRequest = messageFromRequest(message);
+                if (!fromRequest.isEmpty()) {
+                    params = params == null ? new JSONObject() : new JSONObject(params.toString());
+                    params.put("message", fromRequest);
+                    platform.log().warn("Model picked " + chosen + " with no message; using the player's words.");
+                }
+            }
+            final JSONObject finalParams = params;
+            if (PUBLIC_ACTIONS.contains(chosen) && blankMessage(finalParams)) {
                 platform.log().warn("Model picked " + chosen + " with no message; asking the player.");
                 scheduler().sync(() -> {
                     thinking.stop();
@@ -354,7 +385,7 @@ public class IntentPipeline {
 
             scheduler().sync(() -> {
                 thinking.stop();
-                executeAction(player, chosen, parameters, reply, message, source, sink, alreadySpoken);
+                executeAction(player, chosen, finalParams, reply, message, source, sink, alreadySpoken);
             });
 
         } catch (Exception e) {
