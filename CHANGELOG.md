@@ -29,6 +29,11 @@
 
 ### Fixed
 
+- **No free gifts nobody asked for.** Asked "what should I do next?", a small
+  model would hand over a diamond sword or heal you to full. Items, heals,
+  food, enchantments and potion effects now need the player to ask ("give
+  me…", "I'm hungry", "heal me"); otherwise Jarvis offers instead.
+
 - **No more silent or blank replies.** When the model answers with an empty
   chat reply, Jarvis now says "Ask me again?" instead of nothing; when it picks
   an announcement with no message, he uses the text from your request
