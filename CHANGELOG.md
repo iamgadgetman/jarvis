@@ -47,6 +47,10 @@
   only when you ask to be moved ("take me to", "tp me", "send me"); otherwise
   Jarvis tells you the coordinates. Teleport and warp also ask Confirm/Cancel
   first now, so nobody is moved without saying yes.
+- **Builds: real windows, no stray cobwebs, sensible chairs.** Every window
+  opening now gets glass (shutters go beside it, not in it), cobwebs appear only
+  when you ask for something abandoned or haunted, and a stair used as a chair
+  stands alone by the table instead of stacking into stairs to nowhere.
 
 ## v0.18.0 (unreleased — local test build)
 

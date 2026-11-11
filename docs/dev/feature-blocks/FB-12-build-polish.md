@@ -69,3 +69,32 @@ The things still wrong in the shanty, the first build that otherwise looked righ
    blocks stacked in the middle of a room.
 4. `/jarvis build abandoned shack` → cobwebs allowed.
 5. Server log: no "Build script attempt 1 failed: 'chain'".
+
+## As built
+
+- The three rules are in both build prompts: the script prompt (now `AIConnector.SCRIPT_SYSTEM_PROMPT`)
+  and the JSON plan prompt (`PLAN_SYSTEM_PROMPT`). Both prompts moved from inline strings to
+  constants so `BuildPromptTest` can check them; the text is otherwise unchanged.
+- **No `WindowFiller` yet.** Whether the prompt is enough only shows in a real build; the cleaner
+  is built only if the in-game shanty still has solid windows.
+- a71b61c (`chain` → `iron_chain`) is already on `release/0.18.0` and in every GadgetCraft jar since
+  2026-11-09, so step 1's precondition holds.
+
+## Results
+
+Run 2026-11-10 from the headless client (callmegadget) around x -3040, z 3130, Sonnet 5.5 through
+Jarvis Cloud; each check read from the script Jarvis stored (`build_experiences.plan`).
+
+| Step | Result |
+|---|---|
+| 1 deploy | Builds `ec4a5ccf` (`359f192`), then `f0bfc075` (`21830d8`). a71b61c included. |
+| 2 two-storey cottage | **First try PARTIAL** (build 8): stairs climb the right way (`facing=north` for a flight rising north) but stop one step short of the upper floor, and both chairs had their backs to the table. `21830d8` lists all four chair placements and gives the step count. **Retest PASS** (build 11, -3041 87 3200): five steps, top one level with the floor, headroom over each; chairs on both floors face away from the table. |
+| 3 seaside shanty | **PASS** (build 9): glass_pane in every window, open trapdoor shutters one block outside the wall beside them, no cobwebs, no stacked stairs. (Its chairs had the backwards facing fixed in `21830d8`.) |
+| 4 abandoned shack | **PASS** (build 10): four cobwebs in the interior corners. |
+| 5 log | **PASS**: no "Build script attempt 1 failed: 'chain'". |
+
+`WindowFiller` not needed: both houses put glass in every opening from the prompt alone.
+Test builds left in place for the owner to look at: 8 (cottage, overbuilt by 9), 9 (shanty) at
+-3044 75 3127, 10 (shack, on the seabed) at -3004 43 3127, 11 (cottage) at -3041 87 3200.
+
+**Owner, 2026-11-10:** accepted the headless build results and marked FB-12 `tested`.
