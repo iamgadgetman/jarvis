@@ -103,6 +103,25 @@ public class IntentPipeline {
     static final Set<String> MOVE_ACTIONS = Set.of("teleport", "warp");
 
     /**
+     * Free things for the player, each with the words that show it was asked
+     * for (FB-14). qwen answered "what should I do next?" by handing over a
+     * diamond sword, or healing to full: on a survival server that is a cheat
+     * nobody requested.
+     */
+    static final java.util.Map<String, java.util.regex.Pattern> GIFT_ACTIONS = java.util.Map.of(
+            "give_item", java.util.regex.Pattern.compile(
+                    "\\b(give|gimme|hand|lend|spare|need|want|wanna|fetch|bring|get me|grab me"
+                            + "|(can|could|may) i (have|get|borrow)|i'?d like|i would like|got any|have any|do you have)\\b"),
+            "enchant", java.util.regex.Pattern.compile("\\benchant\\w*"),
+            "potion_effect", java.util.regex.Pattern.compile(
+                    "\\b(give|effects?|potions?|buff\\w*|night vision|speed|haste|strength|regen\\w*|resistance"
+                            + "|water breathing|invisib\\w*|jump boost|slow falling)\\b"),
+            "heal", java.util.regex.Pattern.compile(
+                    "\\b(heal\\w*|cure|hurt|injur\\w*|wound\\w*|dying|health|hp|hearts?|patch me up)\\b"),
+            "feed", java.util.regex.Pattern.compile(
+                    "\\b(feed|hungry|hunger|starv\\w*|food|eat|famished|peckish)\\b"));
+
+    /**
      * True when the model picked an action the player never asked for: a
      * whole-server action without an announcement request, the status
      * briefing without a request for one ("what should I do next?" is a
@@ -115,6 +134,8 @@ public class IntentPipeline {
         if (PUBLIC_ACTIONS.contains(actionType)) return !ASKED_TO_ANNOUNCE.matcher(m).find();
         if ("report".equals(actionType)) return !ASKED_FOR_REPORT.matcher(m).find();
         if (MOVE_ACTIONS.contains(actionType)) return !ASKED_TO_MOVE.matcher(m).find();
+        java.util.regex.Pattern gift = GIFT_ACTIONS.get(actionType);
+        if (gift != null) return !gift.matcher(m).find();
         return false;
     }
 
@@ -160,7 +181,27 @@ public class IntentPipeline {
             if (!warp.isEmpty()) return "That's the " + warp + " warp, sir. Ask me to take you if you'd like a lift.";
             return "I'm not certain where that is, sir.";
         }
+        // FB-14: the model's reply ("Here's a sword.") is wrong once nothing is
+        // handed over, so make the offer instead; the player can take it up.
+        if (GIFT_ACTIONS.containsKey(actionType)) return giftOffer(actionType, parameters);
         return aiResponse;
+    }
+
+    /** "I'd suggest arming yourself, sir: say the word and a diamond sword is yours." */
+    static String giftOffer(String actionType, JSONObject parameters) {
+        return switch (actionType) {
+            case "give_item" -> {
+                String item = parameters == null ? "" : parameters.optString("item", "").trim();
+                item = item.replaceFirst("^minecraft:", "").replace('_', ' ');
+                if (item.isEmpty()) yield "Say the word if you need anything from the stores, sir.";
+                String a = "aeiou".indexOf(Character.toLowerCase(item.charAt(0))) >= 0 ? "an " : "a ";
+                yield "I'd suggest " + a + item + ", sir. Say \"give me " + a + item + "\" and it's yours.";
+            }
+            case "heal" -> "You're looking worse for wear, sir. Say \"heal me\" and I'll patch you up.";
+            case "feed" -> "You look peckish, sir. Say \"feed me\" and I'll see to it.";
+            case "enchant" -> "I could enchant that for you, sir. Just ask.";
+            default -> "A potion effect might help, sir. Just ask.";
+        };
     }
 
     private final JarvisCore core;
