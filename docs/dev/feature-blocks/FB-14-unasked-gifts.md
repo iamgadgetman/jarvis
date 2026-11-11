@@ -52,3 +52,5 @@ Run 2026-11-11 with callmegadget on jar `036e4702` (commit `8ec53b6`), inventory
 | 3 | PASS | After 6 damage, "I'm hurt" → "Healed callmegadget to full health." |
 
 The "market opens at noon" in the advice comes from conversation memory of the FB-13 test.
+
+**Owner, 2026-11-11:** accepted the headless results; marked `tested`.
