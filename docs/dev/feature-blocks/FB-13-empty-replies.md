@@ -64,4 +64,18 @@ First jar (`dd7e6f1d`):
 | 3 | **FAIL** | qwen left `message` empty and put the text in its reply; the guard asked "What would you like me to announce?" on a real request. Fixed: the player's words are used. |
 | 4 | PASS | Normal reply. |
 
-Second jar: see below.
+Second jar (`adab3814`, commit `874c064`):
+
+| # | Result | Notes |
+|---|---|---|
+| 1 | PASS | Answered (by handing over a diamond sword: the FB-03 "no weapon" warning; see note). |
+| 2 | PASS (not via the guard) | qwen gave a sword again instead of a broadcast; nothing posted. |
+| 3 | PASS | Confirm showed `Broadcast to all: "The market opens at noon, brave souls!"`; left to expire, nothing posted. |
+| 4 | PASS | (first jar) |
+
+The two guard paths (empty chat reply, empty message filled from the player's words) did not
+fire live: qwen didn't produce those shapes on this run. They are covered by `EmptyReplyTest`,
+which uses the exact reply qwen gave in the first run.
+
+Note, not in scope: for "what should I do next?" qwen ran `give_item` unasked. The ask-guard
+(`unaskedAction`) covers public actions, `report` and teleports, not item gifts.
