@@ -118,6 +118,11 @@ public class IntentPipeline {
         return false;
     }
 
+    /** True when a public action's {@code message} is missing or blank (FB-13). */
+    static boolean blankMessage(JSONObject parameters) {
+        return parameters == null || parameters.optString("message", "").isBlank();
+    }
+
     /**
      * What to say in place of an action that was not asked for: its message if
      * it has one, the coordinates a teleport was aimed at, else the model's reply
@@ -325,6 +330,28 @@ public class IntentPipeline {
             String reply = keptPrivate ? privateReply(actionType, parameters, aiResponse) : aiResponse;
 
             final boolean alreadySpoken = spoke.get();
+
+            // FB-13: an announcement with no message would post a blank line to
+            // everyone (qwen did this for "announce that ..."): ask instead.
+            if (PUBLIC_ACTIONS.contains(chosen) && blankMessage(parameters)) {
+                platform.log().warn("Model picked " + chosen + " with no message; asking the player.");
+                scheduler().sync(() -> {
+                    thinking.stop();
+                    sink.feedback(player, Colors.GRAY + "Jarvis: What would you like me to announce, sir?");
+                });
+                return;
+            }
+            // FB-13: a chat reply with no words used to say nothing at all.
+            if (("chat".equals(chosen) || "talk".equals(chosen)) && reply.isBlank() && !alreadySpoken) {
+                platform.log().warn("Model returned " + chosen + " with an empty response for \""
+                        + trim(message, 60) + "\".");
+                scheduler().sync(() -> {
+                    thinking.stop();
+                    sink.feedback(player, Colors.GRAY + "Jarvis: I lost my train of thought there, sir. Ask me again?");
+                });
+                return;
+            }
+
             scheduler().sync(() -> {
                 thinking.stop();
                 executeAction(player, chosen, parameters, reply, message, source, sink, alreadySpoken);

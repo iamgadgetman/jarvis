@@ -28,6 +28,7 @@ says push.
 | [FB-10](FB-10-mcp-dev-server.md) | Jarvis MCP server for development | E | — | M | planned |
 | [FB-11](FB-11-onboarding.md) | First-join welcome, interactive tutorial, admin quick start | F | FB-09 merged | M | planned |
 | [FB-12](FB-12-build-polish.md) | Build polish from the GadgetCraft playtests | B + D | — | S | tested |
+| [FB-13](FB-13-empty-replies.md) | Guards for empty model replies | A | — | S | built |
 
 Size: S = an afternoon, M = a day or two. Status values: `planned`, `in progress`,
 `built` (branch ready, unit tests green), `tested` (owner verified in-game), `shipped`.
