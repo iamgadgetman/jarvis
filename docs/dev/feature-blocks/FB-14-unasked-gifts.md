@@ -43,4 +43,12 @@ the asking words per action; offer text and article ("an iron sword").
 
 ## Results
 
-_Not run yet._
+Run 2026-11-11 with callmegadget on jar `036e4702` (commit `8ec53b6`), inventory cleared first.
+
+| # | Result | Notes |
+|---|---|---|
+| 1 | PASS | Three asks: advice each time ("Craft some tools, then head to the market"); no item, no heal. qwen didn't try a gift this run, so the guard itself didn't fire live; `GiftGuardTest` uses the exact sword reply from the earlier run. |
+| 2 | PASS | "Gave 1x stone_sword to callmegadget." |
+| 3 | PASS | After 6 damage, "I'm hurt" → "Healed callmegadget to full health." |
+
+The "market opens at noon" in the advice comes from conversation memory of the FB-13 test.
