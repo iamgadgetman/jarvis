@@ -96,3 +96,5 @@ Jarvis Cloud; each check read from the script Jarvis stored (`build_experiences.
 `WindowFiller` not needed: both houses put glass in every opening from the prompt alone.
 Test builds left in place for the owner to look at: 8 (cottage, overbuilt by 9), 9 (shanty) at
 -3044 75 3127, 10 (shack, on the seabed) at -3004 43 3127, 11 (cottage) at -3041 87 3200.
+
+**Owner, 2026-11-10:** accepted the headless build results and marked FB-12 `tested`.
