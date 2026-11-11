@@ -79,3 +79,5 @@ which uses the exact reply qwen gave in the first run.
 
 Note, not in scope: for "what should I do next?" qwen ran `give_item` unasked. The ask-guard
 (`unaskedAction`) covers public actions, `report` and teleports, not item gifts.
+
+**Owner, 2026-11-11:** accepted the headless results and said to merge; marked `tested`.
