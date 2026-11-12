@@ -18,6 +18,10 @@ It talks to the server over **RCON** (Minecraft's remote console) and reads
 
 1. In `server.properties`: `enable-rcon=true`, `rcon.port=25575`, and a long random
    `rcon.password`. Keep the RCON port off the internet; RCON is plain text.
+   Some panels (AMP, for one) already hold 25575 for something else; any free port
+   works, set `RCON_PORT` to match. Jarvis answers an RCON command over RCON and also
+   copies the answer to the server log, since AI replies often arrive after the
+   command has returned: read those with `server_log`.
 2. In `plugins/Jarvis/config.yml`: `dev.allow-say-as: true`. Only on a test server:
    with it on, anyone with console or RCON access can speak as any online player.
 3. Restart the server.

@@ -41,6 +41,19 @@ test("authenticates once and runs commands in order", async () => {
   server.close();
 });
 
+test("commands asked for at once share one connection and keep their order", async () => {
+  let connections = 0;
+  const { server, port, seen } = await fakeServer("pw", (cmd) => `ran ${cmd}`);
+  server.on("connection", () => connections++);
+  const r = new Rcon("127.0.0.1", port, "pw", 2000);
+  const out = await Promise.all([r.run("jarvis ai"), r.run("list"), r.run("tps")]);
+  assert.deepEqual(out, ["ran jarvis ai", "ran list", "ran tps"]);
+  assert.deepEqual(seen, ["jarvis ai", "list", "tps"]);
+  assert.equal(connections, 1);
+  r.close();
+  server.close();
+});
+
 test("a wrong password is an error, not a hang", async () => {
   const { server, port } = await fakeServer("pw", () => "");
   const r = new Rcon("127.0.0.1", port, "nope", 2000);

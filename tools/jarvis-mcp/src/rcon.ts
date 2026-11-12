@@ -43,11 +43,19 @@ export class Rcon implements CommandRunner {
   private nextId = 1;
   private pending = new Map<number, (body: string) => void>();
   private buffer: Buffer = Buffer.alloc(0);
+  private connecting?: Promise<void>;
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(private host: string, private port: number, private password: string, private timeoutMs = 10000) {}
 
-  private async connect(): Promise<void> {
-    if (this.socket && !this.socket.destroyed) return;
+  /** One connection however many callers ask at once. */
+  private connect(): Promise<void> {
+    if (this.socket && !this.socket.destroyed) return Promise.resolve();
+    this.connecting ??= this.open().finally(() => { this.connecting = undefined; });
+    return this.connecting;
+  }
+
+  private async open(): Promise<void> {
     this.socket = await new Promise<net.Socket>((resolve, reject) => {
       const s = net.connect({ host: this.host, port: this.port }, () => resolve(s));
       s.once("error", reject);
@@ -91,11 +99,16 @@ export class Rcon implements CommandRunner {
     });
   }
 
-  async run(command: string): Promise<string> {
-    await this.connect();
-    const out = await this.send(EXEC, command);
-    if (out === "\u0000CLOSED") throw new Error("RCON connection closed");
-    return out;
+  /** Commands go one at a time, in the order asked, so replies can't cross. */
+  run(command: string): Promise<string> {
+    const next = this.queue.then(async () => {
+      await this.connect();
+      const out = await this.send(EXEC, command);
+      if (out === "\u0000CLOSED") throw new Error("RCON connection closed");
+      return out;
+    });
+    this.queue = next.catch(() => undefined);
+    return next;
   }
 
   close(): void {
