@@ -32,7 +32,8 @@
 - **No world changes nobody asked for.** Time, weather, game mode, difficulty,
   game rules, summons and mob/item clears now need the player's words to ask
   for them ("make it day", "stop the rain", "spawn a cow"); otherwise Jarvis
-  offers instead of changing the world.
+  offers instead of changing the world. `/jarvis stop the rain` and the like
+  are now read as sentences instead of running `/jarvis stop`.
 
 - **No free gifts nobody asked for.** Asked "what should I do next?", a small
   model would hand over a diamond sword or heal you to full. Items, heals,

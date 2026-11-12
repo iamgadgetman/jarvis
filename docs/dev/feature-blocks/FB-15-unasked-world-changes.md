@@ -32,11 +32,19 @@ Confirm/permission handling. No config keys, no platform interface changes.
 
 `GiftGuardTest.askWords` used `summon` as its "untouched" example; it now uses `build`.
 
+Found in the first live run: `/jarvis stop the rain` ran the `stop` subcommand and dropped
+"the rain". `CommandService.BARE_SUBCOMMANDS` (summon, dismiss, return, attack, stop, follow,
+fish, dance, chest, deposit, loot, confirm, cancel, requests, quiet, hush) take no words; with
+words after them the whole input now goes to the pipeline as a sentence. Bare `/jarvis stop`
+is unchanged.
+
 ## Tests
 
 `WorldGuardTest`: a `set_time` reply to "what should I do next?" leaves the time and offers
 day; "make it day please" sets it; an unasked summon is offered and "spawn a cow" summons;
 the asking words per action; offer text ("set the weather to clear", "summon an iron golem").
+`CommandServiceTest.bareSubcommandWithWordsIsASentence`: "/jarvis stop the rain" goes to the
+pipeline; bare "/jarvis stop" doesn't.
 
 ## In-game test (GadgetCraft, callmegadget, **`/jarvis <sentence>` only**)
 
