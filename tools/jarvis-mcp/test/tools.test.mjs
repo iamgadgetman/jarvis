@@ -38,19 +38,34 @@ const LOG = [
 
 test("log tailer: only lines newer than since_seconds, and matching grep", () => {
   const now = new Date(2026, 10, 11, 12, 0, 30);
-  const last30 = recentLines(LOG, 30, undefined, now);
+  const written = new Date(2026, 10, 11, 12, 0, 25).getTime();   // the newest line
+  const last30 = recentLines(LOG, 30, undefined, now, written);
   assert.equal(last30.length, 5, "the stack trace lines take the stamp above them");
   assert.ok(!last30.some((l) => l.includes("old line")));
-  const said = recentLines(LOG, 30, "say-as", now);
+  const said = recentLines(LOG, 30, "say-as", now, written);
   assert.equal(said.length, 2);
   assert.ok(said[0].endsWith("[say-as Gadget] follow me"));
   assert.ok(said[1].endsWith("Jarvis: Right behind you, sir."));
-  assert.equal(recentLines(LOG, 8, undefined, now).length, 1);
+  assert.equal(recentLines(LOG, 8, undefined, now, written).length, 1);
 });
 
-test("log tailer: a stamp later than now is yesterday", () => {
+test("log tailer: going back over midnight", () => {
   const now = new Date(2026, 10, 11, 0, 0, 10);
+  const written = new Date(2026, 10, 11, 0, 0, 5).getTime();
   const log = "[23:59:55] [Server thread/INFO]: before midnight\n[00:00:05] [Server thread/INFO]: after";
-  assert.equal(recentLines(log, 30, undefined, now).length, 2);
-  assert.equal(recentLines(log, 6, undefined, now).length, 1);
+  assert.equal(recentLines(log, 30, undefined, now, written).length, 2);
+  assert.equal(recentLines(log, 6, undefined, now, written).length, 1);
+});
+
+test("log tailer: a server in another time zone (stamps 8 hours ahead of us)", () => {
+  const now = new Date(2026, 10, 12, 0, 12, 0);          // 00:12 here
+  const written = now.getTime() - 30_000;                 // last line half a minute ago
+  const log = [
+    "[08:01:00] [Server thread/INFO]: an hour of nothing ago",
+    "[08:11:26] [Server thread/INFO]: [Jarvis] [say-as callmegadget] what time of day is it?",
+    "[08:11:30] [Server thread/INFO]: [Jarvis] [say-as callmegadget] Jarvis: The time is daybreak, sir.",
+  ].join("\n");
+  const said = recentLines(log, 60, "say-as", now, written);
+  assert.equal(said.length, 2);
+  assert.equal(recentLines(log, 60, undefined, now, written).length, 2, "the 08:01 line is ten minutes older");
 });

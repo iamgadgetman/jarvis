@@ -102,8 +102,7 @@ the terminal. Not part of the plugin jar.
   `[say-as <player>] Jarvis: …`, because otherwise a log-reading tool can't see them (replies
   are private chat).
 - RCON chosen over the AMP API: AMP login needs an account, password and TOTP, and is AMP-only.
-  RCON is built in. GadgetCraft has `enable-rcon=false`; turning it on is a change on Chance's
-  server (a new listener with a password), so it is **not done** — the live steps wait for his OK.
+  RCON is built in. GadgetCraft had `enable-rcon=false`; Chance OK'd turning it on (2026-11-12).
 - RCON is a 100-line client in `src/rcon.ts` instead of the `rcon-client` package (one fewer
   dependency). Dependencies: `@modelcontextprotocol/sdk` 1.32.2 and `zod` 4.6.7; dev:
   `typescript` 7.0.2, `@types/node`. None ship in the plugin.
@@ -117,10 +116,34 @@ the terminal. Not part of the plugin jar.
 `tools/jarvis-mcp/` (`src/index.ts`, `src/rcon.ts`, `src/tools.ts`, tests, README),
 `.mcp.json` (env references only), `.gitignore`, `docs/dev/testing-with-mcp.md`,
 `CommandService` say-as + `dev.allow-say-as` in `config.yml`.
-Tests: `npm test` (8, including RCON against a fake local server and the log tailer);
+Tests: `npm test` (10 after the live fixes, including RCON against a fake local server and the log tailer);
 `CommandServiceTest.sayAs`. A stdio smoke test listed all five tools and `server_command`
 refused while `JARVIS_MCP_ALLOW_ANY` was unset.
 
 ## Results
 
-_Not run yet: needs RCON enabled on a test server (Chance's call for GadgetCraft)._
+Run 2026-11-12 on GadgetCraft (RCON on, port 25576; AMP holds 25575 for `server-portv6`),
+driving `dist/index.js` over stdio from a dev machine with the SDK client, callmegadget online.
+
+| Step | Result |
+|---|---|
+| tools listed | all five |
+| `jarvis_status` | **failed at first**: "RCON connection closed". Fixed, then: AI status, player list and TPS |
+| `jarvis_command "jarvis reload"` | "Systems reloaded, sir." |
+| `jarvis_command "jarvis setup"` | **empty at first** (replies went to Bukkit's console, not the RCON sender). Fixed: the first line comes back over RCON, and the probe results that arrive later land in the log |
+| `jarvis_command "op me"` | refused: only /jarvis commands |
+| `jarvis_say callmegadget "what time of day is it?"` | Jarvis: "The time is daybreak, sir. A fine morning for mining or fishing." (log) |
+| `jarvis_say nobodyhere "hi"` | "nobodyhere isn't online." |
+| `server_log` (log copied from the server host) | **empty at first**: the server logs in UTC, the dev machine is on PST, so every line looked 8 h old. Fixed: lines are dated from the file's mtime. Then: the say-as lines and the setup results |
+| `server_command list`, unset / `JARVIS_MCP_ALLOW_ANY=1` | refused / "There are 1 of a max of 20 players online: callmegadget" |
+| wrong `RCON_PASSWORD` | "RCON authentication failed (check RCON_PASSWORD)" |
+
+Fixes from the live run, both on this branch:
+- `JarvisCommands`: a non-player, non-console sender (RCON, a command block) gets the reply,
+  and each line is copied to the server log.
+- `rcon.ts`: commands queue on one connection (`jarvis_status` sent three at once; each opened
+  its own socket and the replaced one's close handler failed the others).
+- `tools.ts` `recentLines`: stamps compared with each other and anchored at the log's mtime,
+  not read as local time.
+
+Node tests: 10 (adds concurrent commands share one connection; a log 8 hours ahead of us).

@@ -4,7 +4,7 @@
 // Configuration is environment only, so nothing private sits in the repo:
 //   RCON_HOST, RCON_PORT (default 25575), RCON_PASSWORD, MC_LOG_PATH,
 //   JARVIS_MCP_ALLOW_ANY=1 to enable server_command.
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -79,7 +79,8 @@ server.registerTool("server_log", {
   try {
     const path = env.MC_LOG_PATH;
     if (!path) throw new Error("set MC_LOG_PATH to the server's logs/latest.log");
-    const lines = recentLines(await readFile(path, "utf8"), since_seconds, grep, new Date());
+    const [log, info] = await Promise.all([readFile(path, "utf8"), stat(path)]);
+    const lines = recentLines(log, since_seconds, grep, new Date(), info.mtimeMs);
     return text(lines.join("\n"));
   } catch (e) { return fail(e); }
 });

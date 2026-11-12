@@ -39,28 +39,42 @@ const STAMP = /^\[(\d{2}):(\d{2}):(\d{2})\]/;
 
 /**
  * Lines of latest.log from the last `sinceSeconds`, optionally only those
- * matching `grep` (a regular expression, case-insensitive). The log stamps
- * only the time of day, in the server's local time, so a stamp later than
- * `now` is read as yesterday. Lines without a stamp (stack traces) take the
- * stamp of the line above them.
+ * matching `grep` (a regular expression, case-insensitive). The log stamps only
+ * the time of day, in the server's own time zone, which needn't be ours (a
+ * remote server's log, mounted or copied). So the stamps are only compared with
+ * each other: the newest stamped line was written at `writtenAt` (the file's
+ * modification time), and every other line is that much older than it, going
+ * back over midnight when a stamp jumps forward. Lines without a stamp (stack
+ * traces) take the stamp of the line above them.
  */
-export function recentLines(log: string, sinceSeconds: number, grep: string | undefined, now: Date, maxLines = 400): string[] {
+export function recentLines(log: string, sinceSeconds: number, grep: string | undefined, now: Date,
+                            writtenAt: number = now.getTime(), maxLines = 400): string[] {
   const cutoff = now.getTime() - sinceSeconds * 1000;
   const pattern = grep ? new RegExp(grep, "i") : undefined;
-  let lastTime = -Infinity;
-  const out: string[] = [];
-  for (const line of log.split(/\r?\n/)) {
-    if (!line) continue;
+  const lines = log.split(/\r?\n/).filter(Boolean);
+  // Seconds of the day for each line, carried down to unstamped lines.
+  const secs: (number | undefined)[] = [];
+  let carry: number | undefined;
+  for (const line of lines) {
     const m = STAMP.exec(line);
-    if (m) {
-      const t = new Date(now);
-      t.setHours(Number(m[1]), Number(m[2]), Number(m[3]), 0);
-      if (t.getTime() > now.getTime() + 1000) t.setDate(t.getDate() - 1);
-      lastTime = t.getTime();
-    }
-    if (lastTime < cutoff) continue;
-    if (pattern && !pattern.test(line)) continue;
-    out.push(line);
+    if (m) carry = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+    secs.push(carry);
   }
+  const out: string[] = [];
+  let newest: number | undefined;
+  let prev: number | undefined;
+  let days = 0;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const sec = secs[i];
+    if (sec === undefined) continue;          // above the first stamp: no time to give it
+    newest ??= sec;
+    if (prev !== undefined && sec > prev) days++;   // going back past midnight
+    prev = sec;
+    const at = writtenAt - ((newest - sec) + days * 86400) * 1000;
+    if (at < cutoff) break;
+    if (pattern && !pattern.test(lines[i])) continue;
+    out.push(lines[i]);
+  }
+  out.reverse();
   return out.length > maxLines ? out.slice(out.length - maxLines) : out;
 }
