@@ -81,3 +81,34 @@ bring-your-own-key path is shown first, Jarvis Cloud second.
 usable and, if none are, prints the three fastest ways to get one (Ollama, a free
 Gemini key, the Jarvis Cloud trial). `/jarvis setup` re-checks. Free providers now lead
 the default priority list.
+
+
+## Audit findings (2026-11-11)
+
+- No startup check existed: with no provider, Jarvis logged nothing about AI at boot.
+- **`env:VAR` keys were not implemented.** The draft `wiki/Getting-Started.md` and the project
+  guide both say `api-key: "env:GEMINI_API_KEY"` works; nothing resolved it. FB-09 adds
+  `ai/ApiKeys.java`: `env:NAME` reads that variable, and a blank key reads the provider's usual
+  variable (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`) unless the new
+  `ai.env-keys: false`. The implicit read can spend money if those variables are set for something
+  else, hence the switch and the "(key from GEMINI_API_KEY)" in the status line.
+- Jarvis Cloud is detected by a `gc_` key on the claude provider (`CloudActivation.isActive`).
+  The status line says "jarvis-cloud OK" without the plan: the plan needs a network call, and
+  `/jarvis cloud status` already shows it.
+- `ollama` was already first in the default priority; `gemini` moves from last to second
+  (`config.yml` and `AIConnector.KNOWN_PROVIDERS`, which also seeds the hard-coded default list).
+  Existing installs keep their own `provider-priority`.
+- The spec's `commands/JarvisCommands.java` is `commands/CommandService.java` in this tree.
+
+## Built
+
+- `ai/ApiKeys.java`, `ai/ProviderProbe.java` (status per provider, status line, no-provider box,
+  op join line), `JarvisCore.probeProviders` (startup, `/jarvis reload`, `/jarvis setup`), op join
+  line when nothing is usable, `/jarvis setup` and `/jarvis setup pull [model]` (admin, console, or
+  singleplayer), help and docs.
+- Tests: `ProviderProbeTest` (9). `Fixture` now gives the connector an empty environment so no
+  test reads real keys. `AiSettingsTest` follows the new default order.
+
+## Results
+
+_Not run yet._

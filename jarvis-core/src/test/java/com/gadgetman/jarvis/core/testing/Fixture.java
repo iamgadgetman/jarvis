@@ -115,6 +115,8 @@ public final class Fixture implements AutoCloseable {
         world = platform.addWorld(FakeWorld.overworld().flatFloor(48));
         core = new JarvisCore(platform, "test", platform.butlers(), actions);
         core.start();
+        // FB-09: keys can come from the environment; tests never read the real one.
+        core.ai().useEnvironment(java.util.Map.of());
     }
 
     /** An online player standing on the floor at the origin. */

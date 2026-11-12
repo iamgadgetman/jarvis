@@ -4,6 +4,14 @@
 
 ### Added
 
+- **Five-minute free start.** On boot Jarvis reports which AI providers are
+  usable and, if none are, prints the three fastest ways to get one (Ollama, a
+  free Gemini key, the Jarvis Cloud trial); an op who joins gets the same in
+  chat. `/jarvis setup` re-checks. Free providers now lead the default priority
+  list. API keys can be `env:NAME` to read an environment variable, and a blank
+  key reads the provider's usual variable (`GEMINI_API_KEY`, …) unless
+  `ai.env-keys` is off.
+
 - **Fast path for simple commands.** "follow me", "stop", "mine 10 iron" and
   the like run instantly without an AI call; only sentences the local parser
   can't place go to the model. `intent.fast-path` in config; add your own
