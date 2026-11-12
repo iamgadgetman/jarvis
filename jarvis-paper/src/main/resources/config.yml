@@ -330,6 +330,29 @@ combat:
 
 # ========== BUILDING CONFIGURATION ==========
 build:
+  # ---- Guardrails (FB-07) ----
+  # Checked on every AI-designed build after it is planned and before anything
+  # is placed. Players with jarvis.build.bypass (ops, by default) skip them.
+  guardrails:
+    # Never placed by an AI build. Empty = these defaults; [none] = nothing blocked.
+    blocked-blocks: [tnt, lava, lava_bucket, command_block, chain_command_block,
+                     repeating_command_block, structure_block, barrier, bedrock,
+                     end_portal_frame, spawner, fire]
+    max-blocks: 8000        # Largest plan, in blocks. A real AI mansion here was 4229.
+    max-size: 48            # Longest edge of the build's bounding box
+    max-distance: 64        # From the player to the nearest edge of the build
+    # A particle outline shows the plan, and nothing is placed until the player
+    # says yes (or clicks [Build it]); no, [Cancel] or the timeout drops it.
+    # 0 = no preview: build as soon as it is planned.
+    preview-seconds: 20
+  # Rationing per permission group. jarvis.build.limit.<group> puts a player in
+  # <group> (first match, in this order); everyone else is "default". Only builds
+  # that finish count, and the counts survive a restart. Days are server-local.
+  # -1 = no limit for that number.
+  limits:
+    default: { cooldown-seconds: 120, daily-builds: 5, daily-blocks: 6000 }
+    trusted: { cooldown-seconds: 30, daily-builds: 30, daily-blocks: 60000 }
+
   # Performance
   blocks-per-tick: 50            # Blocks to place per tick
   progress-update-interval: 100  # Show progress every N blocks

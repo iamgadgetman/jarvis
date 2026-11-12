@@ -99,3 +99,36 @@ timeout places nothing and clears particles; `yes` places and the batch appears 
 dangerous blocks are refused, size and distance are capped, and each permission group
 gets a cooldown and daily budget that only successful builds spend. `building.guardrails`
 and `building.limits`.
+
+
+## Audit findings (2026-11-11)
+
+- The config section is `build:`, not `building:`; the keys are `build.guardrails.*` and `build.limits.*`.
+- `World.particle(at, id, count, spread)` already exists (Paper, the shared vanilla adapter, FakeWorld),
+  so no platform change: the preview uses `end_rod` particles. They are world-wide, not per player.
+- **No WorldGuard check exists anywhere in Java** (only `mining.integrations.worldguard` keys and a
+  plugin.yml soft-depend). In-game step 7 ("still refused") has nothing behind it; out of scope here.
+- The cleaners run only inside the script planner; JSON plans get none. Both planners meet in the
+  `sync` block at the end of `startBuild`, which is where the policy, block budget and preview go.
+- AI builds only. `/jarvis build wall|floor|pillar|cube`, schematic pastes and undo/redo don't go
+  through it (they aren't AI-designed).
+- `max-blocks` default is **8000, not 4000**: the largest real AI build on GadgetCraft (a redstone
+  mansion) was 4229 blocks, and the spec says a legitimate large build must pass.
+- No plain "yes"/"no" handling existed. `IntentPipeline.submit` now answers a waiting preview first
+  (yes/yeah/ok/do it/build it; no/nope/cancel/stop/never mind), before the fast path. In chat that
+  still needs the wake word ("jarvis yes"); `/jarvis confirm`, `/jarvis cancel`, `/jarvis build cancel`
+  and the [Build it]/[Cancel] links work too.
+- `jarvis.build.bypass` (default op) skips the policy and limits, not the preview.
+
+## Built
+
+`building/BuildPolicy.java`, `building/BuildQuota.java` (table `build_quota(player_id, day, builds,
+blocks, last_build_at)`), the preview in `BuildingAssistant` (pending plans, outline task, expiry,
+`confirmPending`/`cancelPending`, `CONFIRM_ACTION` through `ConfirmationManager`), quota spent in
+`completeBuild` only, `plugin.yml` permissions, `config.yml`, docs.
+Tests: `BuildPolicyTest` (6), `BuildQuotaTest` (5), `BuildGuardrailsTest` (5: preview then confirm
+and undo history, no, spoken yes, TNT refused, preview off). 353 pass.
+
+## Results
+
+_Not run yet._

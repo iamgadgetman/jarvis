@@ -961,6 +961,13 @@ public class CommandService implements CommandSink {
         JSONObject params   = cm.getPendingParameters(player.id());
         cm.clearPending(player.id());
 
+        if (BuildingAssistant.CONFIRM_ACTION.equals(actionType)) {   // FB-07: a previewed build
+            if (!core.building().confirmPending(player)) {
+                player.message(Colors.YELLOW + "Jarvis: That plan has gone, sir. Ask again.");
+            }
+            return;
+        }
+
         String result = core.actions().execute(actionType, params, player);
         if (result != null) {
             player.message(Colors.GREEN + "[Jarvis] " + result);
@@ -969,6 +976,7 @@ public class CommandService implements CommandSink {
 
     private void handleCancel(Owner player) {
         ConfirmationManager cm = core.confirmations();
+        if (core.building() != null && core.building().cancelPending(player)) return;   // FB-07
         if (!cm.hasPending(player.id())) {
             player.message(Colors.YELLOW + "Jarvis: Nothing to cancel.");
             return;

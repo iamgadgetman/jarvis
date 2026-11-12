@@ -4,6 +4,13 @@
 
 ### Added
 
+- **Build guardrails.** AI builds show a particle preview and wait for yes
+  (say yes/no, or click [Build it]/[Cancel]); dangerous blocks are refused,
+  size and distance are capped, and each permission group gets a cooldown and
+  daily budget that only finished builds spend. Ops (`jarvis.build.bypass`)
+  skip the limits but still get the preview. `build.guardrails` and
+  `build.limits`; `preview-seconds: 0` turns the preview off.
+
 - **Fast path for simple commands.** "follow me", "stop", "mine 10 iron" and
   the like run instantly without an AI call; only sentences the local parser
   can't place go to the model. `intent.fast-path` in config; add your own

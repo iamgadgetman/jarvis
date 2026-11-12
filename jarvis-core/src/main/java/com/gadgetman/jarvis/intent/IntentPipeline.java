@@ -242,6 +242,8 @@ public class IntentPipeline {
         // Build the world context on the SERVER thread first, then do the
         // slow AI call async.
         scheduler().sync(() -> {
+            // FB-07: a build preview is waiting; "yes" or "no" answers it.
+            if (answersBuildPreview(player, utterance)) return;
             // Literal commands are answered locally, before any model is asked.
             if (tryFastPath(player, utterance, source, sink)) return;
             final String worldContext = buildContext(player);
@@ -250,6 +252,20 @@ public class IntentPipeline {
                     player, core.butlers().butler(player), platform.config(), scheduler());
             scheduler().async(() -> parseAndDispatch(player, utterance, worldContext, source, sink, thinking));
         });
+    }
+
+    private static final java.util.regex.Pattern YES = java.util.regex.Pattern.compile(
+            "(?i)^\\s*(yes|y|yeah|yep|yup|sure|ok|okay|do it|go ahead|build it|confirm)[.! ]*$");
+    private static final java.util.regex.Pattern NO = java.util.regex.Pattern.compile(
+            "(?i)^\\s*(no|n|nope|nah|cancel|don'?t|stop|never mind|nevermind)[.! ]*$");
+
+    /** True when the player answered a waiting build preview (FB-07). */
+    private boolean answersBuildPreview(Owner player, String utterance) {
+        var building = core.building();
+        if (building == null || !building.hasPending(player) || utterance == null) return false;
+        if (YES.matcher(utterance).matches()) return building.confirmPending(player);
+        if (NO.matcher(utterance).matches()) return building.cancelPending(player);
+        return false;
     }
 
     /** Convenience for the chat path, which always answers in chat. */

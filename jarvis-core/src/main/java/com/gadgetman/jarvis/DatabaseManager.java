@@ -167,6 +167,19 @@ public class DatabaseManager {
             ps.executeUpdate();
         }
 
+        // Build quota (FB-07) — see building.BuildQuota. One row per player per
+        // server-local day; only finished AI builds are counted.
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS build_quota (" +
+                "player_id VARCHAR(36) NOT NULL, " +
+                "day VARCHAR(10) NOT NULL, " +
+                "builds INTEGER NOT NULL, " +
+                "blocks INTEGER NOT NULL, " +
+                "last_build_at BIGINT NOT NULL, " +
+                "PRIMARY KEY (player_id, day))")) {
+            ps.executeUpdate();
+        }
+
         log.info("Database tables initialized successfully");
     }
 
