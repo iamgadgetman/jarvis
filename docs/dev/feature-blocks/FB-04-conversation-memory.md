@@ -122,4 +122,14 @@ under `memory.conversation`.
 
 ## Results
 
-_Not run yet._
+Run 2026-11-11 on GadgetCraft with callmegadget, jar `f19c44e0` (a test build of FB-04 + FB-09 +
+FB-15 + FB-16), qwen2.5:7b.
+
+| # | Result | Notes |
+|---|---|---|
+| 1 | PASS | `/jarvis my base is at the big oak by the river`, then `/jarvis memory` listed it under "You said, most recently". |
+| 2 | PASS | After an AMP restart: "where did I say my base was?" → "The big oak by the river, you say? Best get there quickly…" |
+| 3 | PASS | `/kill callmegadget`, respawn: `/jarvis memory` showed "Lately: - Died (callmegadget was killed) at -3028 70 3160 in world". |
+| 4 | not run | Needs a second player; `ConversationMemoryTest.forgetIsPerPlayer` covers it. |
+| 5 | not run | Would need `summarize-after` changed in the live config; `summarizesOnceThenKeepsRecent` covers it. |
+| 6 | PASS | `/jarvis memory forget` → Confirm/Cancel → `/jarvis confirm` → "Forgotten, sir." → `/jarvis memory`: "A clean slate." |
