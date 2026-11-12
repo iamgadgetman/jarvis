@@ -1020,6 +1020,19 @@ public class AIConnector {
     }
 
     /**
+     * Condense a player's older conversation with Jarvis into a few lines of
+     * facts (FB-04), on the light tier. Plain text back, no JSON.
+     */
+    public String summarizeConversation(String transcript) throws Exception {
+        String systemPrompt = "You keep notes for Jarvis, a butler in a Minecraft world. Condense the "
+                + "earlier notes and the conversation below into at most six short plain sentences of "
+                + "facts worth remembering about this player: places and coordinates they named, their "
+                + "base, plans, preferences, names, things that happened. Keep earlier facts unless the "
+                + "conversation replaces them. No greetings, no commentary, no lists, no JSON.";
+        return sendTiered(Tier.LIGHT, transcript, systemPrompt, false);
+    }
+
+    /**
      * Send a simple request to AI (for general questions)
      */
     public String sendSimpleRequest(String prompt) throws Exception {

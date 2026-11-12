@@ -69,6 +69,8 @@
 | `/jarvis voice bench [threads]`, `/jarvis voice threads <n>` | Time the embedded recogniser at several thread counts and name the fastest; keep a count (0 = automatic) | `jarvis.admin` |
 | `/jarvis ai [status]` | Which AI providers are on, and their models | `jarvis.use` |
 | `/jarvis ai enable\|disable\|key\|endpoint\|model\|models\|test ...` | Set up a provider from the console | `jarvis.admin` |
+| `/jarvis memory` | What Jarvis remembers of you: his notes, recent events, your last lines | `jarvis.use` |
+| `/jarvis memory forget` | Wipe that memory (Confirm/Cancel first) | `jarvis.use` |
 | `/jarvis <anything>` | Natural language — Jarvis figures it out | `jarvis.use` |
 
 On Fabric and NeoForge there are no permission nodes: `jarvis.admin` means

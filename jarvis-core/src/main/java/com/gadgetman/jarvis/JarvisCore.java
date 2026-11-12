@@ -19,10 +19,13 @@ import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Subscription;
 import com.gadgetman.jarvis.core.platform.Task;
+import com.gadgetman.jarvis.core.platform.events.DeathEvent;
+import com.gadgetman.jarvis.core.platform.events.PortalEvent;
 import com.gadgetman.jarvis.core.platform.events.QuitEvent;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.intent.ChatTrigger;
 import com.gadgetman.jarvis.intent.IntentPipeline;
+import com.gadgetman.jarvis.memory.ConversationMemory;
 import com.gadgetman.jarvis.memory.ExperienceMemory;
 import com.gadgetman.jarvis.npc.ButlerService;
 import com.gadgetman.jarvis.npc.portal.PortalScout;
@@ -68,6 +71,7 @@ public final class JarvisCore {
     private volatile ServerKnowledge knowledge = ServerKnowledge.EMPTY;
     private DatabaseManager database;
     private ExperienceMemory memory;
+    private ConversationMemory conversation;
     private TaskRecoveryHandler recovery;
     private ButlerService butlers;
     private ProgressionManager progression;
@@ -122,6 +126,23 @@ public final class JarvisCore {
         database.initializeDatabaseConnections();
 
         memory = new ExperienceMemory(config, log, platform.scheduler(), database);
+
+        // What he remembers of each player (FB-04): condensed conversation and
+        // notable events. All database work is off the server thread.
+        conversation = new ConversationMemory(platform, database, ai::summarizeConversation);
+        subscriptions.add(platform.events().on(DeathEvent.class, e -> {
+            if (!conversation.recordsEvents()) return;
+            String line = ConversationMemory.deathLine(e.message(), e.where());
+            platform.scheduler().async(() -> conversation.recordEvent(e.who().id(), line));
+        }));
+        subscriptions.add(platform.events().on(PortalEvent.class, e -> {
+            if (!conversation.recordsEvents()) return;
+            String line = ConversationMemory.portalLine(e.from(), e.to());
+            platform.scheduler().async(() -> conversation.recordEvent(e.who().id(), line));
+        }));
+        platform.scheduler().async(() -> conversation.prune(System.currentTimeMillis()));
+        tasks.add(platform.scheduler().every(1_728_000L, 1_728_000L,   // daily
+                self -> platform.scheduler().async(() -> conversation.prune(System.currentTimeMillis()))));
         recovery = new TaskRecoveryHandler(config, log, platform.scheduler(), ai);
 
         butlers = new ButlerService(platform, butlerBackend, recovery);
@@ -228,6 +249,7 @@ public final class JarvisCore {
         if (ai != null) ai.reloadConfig();
         loadKnowledge();
         if (memory != null) memory.reload();
+        if (conversation != null) conversation.reload();
         if (recovery != null) recovery.reload();
         if (requestDecomposer != null) requestDecomposer.reload();
         if (remarks != null) remarks.reload();
@@ -287,6 +309,7 @@ public final class JarvisCore {
     public RequestDecomposer requestDecomposer() { return requestDecomposer; }
     public ActionExecutor actions() { return actions; }
     public ConfirmationManager confirmations() { return confirmations; }
+    public ConversationMemory conversation() { return conversation; }
     public PlayerRequestManager requests() { return requests; }
     public DutyScheduler duties() { return duties; }
     public MorningReport morningReport() { return morningReport; }

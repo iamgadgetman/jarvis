@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Jarvis remembers.** Conversations and notable events (deaths, portal
+  trips) are kept per player in the database, condensed by the light model as
+  they grow, and brought into every reply, so "where did I say my base was?"
+  works after a restart. `/jarvis memory` shows what he knows; `/jarvis memory
+  forget` wipes it. Settings under `memory.conversation`.
+
 - **Fast path for simple commands.** "follow me", "stop", "mine 10 iron" and
   the like run instantly without an AI call; only sentences the local parser
   can't place go to the model. `intent.fast-path` in config; add your own

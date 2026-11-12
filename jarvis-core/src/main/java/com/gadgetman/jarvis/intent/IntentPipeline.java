@@ -456,27 +456,13 @@ public class IntentPipeline {
     }
 
     /**
-     * Butler memory: fold the player's recent exchanges into the prompt so
-     * Jarvis remembers the conversation. Reduced (Ollama-only) mode keeps the
-     * context short for small local models.
+     * Butler memory (FB-04): the condensed summary, recent events and the
+     * last few exchanges, so Jarvis remembers the player across restarts.
+     * Reduced (Ollama-only) mode keeps it short for small local models.
      */
     private String buildMemoryContext(Owner player) {
-        if (core.database() == null) return "";
-        int turns = ai.isReducedMode() ? 2 : 5;
-        var recent = core.database().getRecentInteractions(player.id().toString(), turns);
-        if (recent.isEmpty()) return "";
-        StringBuilder sb = new StringBuilder("\nRecent conversation (oldest first):\n");
-        for (String[] row : recent) {
-            sb.append("  Player: ").append(trim(row[0], 100)).append("\n");
-            if (row[2] != null && !row[2].isEmpty()) {
-                sb.append("  Jarvis did: ").append(row[2]);
-            }
-            if (row[1] != null && !row[1].isEmpty()) {
-                sb.append(" — said: ").append(trim(row[1], 100));
-            }
-            sb.append("\n");
-        }
-        return sb.toString();
+        if (core.conversation() == null) return "";
+        return core.conversation().contextFor(player.id(), ai.isReducedMode());
     }
 
     private String trim(String text, int max) {
@@ -534,8 +520,11 @@ public class IntentPipeline {
         // Butler memory: remember this exchange (async — DB writes off-thread)
         if (core.database() != null) {
             String finalAction = actionType;
-            scheduler().async(() -> core.database().logChatInteraction(
-                    player.id().toString(), originalMessage, aiResponse, finalAction));
+            scheduler().async(() -> {
+                core.database().logChatInteraction(player.id().toString(), originalMessage, aiResponse, finalAction);
+                // FB-04: condense older turns once there are enough of them.
+                if (core.conversation() != null) core.conversation().summarizeIfNeeded(player.id());
+            });
         }
 
         // Reduced (Ollama-only) mode: decline high-risk actions parsed by a small local model
