@@ -932,11 +932,14 @@ public class BuildingAssistant {
                     "build " + placements.size() + " blocks");
         }
         int w = box[1].x() - box[0].x() + 1, h = box[1].y() - box[0].y() + 1, d = box[1].z() - box[0].z() + 1;
-        player.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + placements.size() + " blocks, " + w + "x" + h + "x" + d
+        // Plans also clear their insides with air; say how many real blocks go in.
+        int solid = 0;
+        for (BlockPlacement p : placements) if (!BuildPolicy.isAir(p.spec)) solid++;
+        player.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + solid + " blocks, " + w + "x" + h + "x" + d
                 + ". Say " + Colors.GREEN + "yes" + Colors.WHITE + " to build or " + Colors.RED + "no" + Colors.WHITE
                 + " to cancel.");
         player.rich(new com.gadgetman.jarvis.core.text.RichLine()
-                .link(Colors.GREEN + "[Build it]", "/jarvis confirm", "Place the " + placements.size() + " blocks")
+                .link(Colors.GREEN + "[Build it]", "/jarvis confirm", "Place the " + solid + " blocks")
                 .link(Colors.RED + " [Cancel]", "/jarvis cancel", "Drop this plan"));
         player.message(Colors.GRAY + "The outline shows for " + previewSeconds + "s.");
     }

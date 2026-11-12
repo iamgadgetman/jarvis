@@ -131,4 +131,14 @@ and undo history, no, spoken yes, TNT refused, preview off). 353 pass.
 
 ## Results
 
-_Not run yet._
+Run 2026-11-11 on GadgetCraft with callmegadget (an op, so `jarvis.build.bypass`: limits and the
+policy are skipped, the preview is not), jar `3b4210d1` (test build of FB-04/07/09/10/15/16).
+
+| # | Result | Notes |
+|---|---|---|
+| 1 | PASS | `/jarvis build a small stone hut` → "1361 blocks, 11x11x14. Say yes to build or no to cancel." + [Build it] [Cancel]; `/jarvis no` → "Plan dropped, sir. Nothing was built."; `/jarvis undo list` → "No builds to undo". First try found `/jarvis no` caught as a typo ("No such command: no"); fixed (`yes`/`no` are subcommands). Particles can't be seen headless. |
+| 2 | PASS | Again, `/jarvis yes` → placed; undo list "AI build: a small stone hut — 274 blocks"; `/jarvis undo` → "Restored 274 blocks." The preview said 1479: plans count the air they clear with. Fixed after the run: the preview now counts solid blocks only (not in the live jar). |
+| — | PASS | Timeout: left alone for 20 s → "The preview ran out; nothing was built." |
+| 3–6 | not run | callmegadget is op (bypass). Covered by `BuildPolicyTest`, `BuildQuotaTest`, `BuildGuardrailsTest.tntRefused`. Needs a non-op player. |
+| 7 | n/a | No WorldGuard check exists to regress (see audit). |
+| 8 | not run | The fish market is 587–1158 placed blocks, the largest real AI build 4229; both under `max-blocks: 8000`. |

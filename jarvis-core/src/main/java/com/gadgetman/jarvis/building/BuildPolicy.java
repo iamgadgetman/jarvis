@@ -45,6 +45,12 @@ public final class BuildPolicy {
                 cfg.getInt("build.guardrails.max-distance", 64));
     }
 
+    /** Air of any kind: a plan's way of clearing space, not a block it adds. */
+    public static boolean isAir(String spec) {
+        String id = bareId(spec);
+        return id.equals("air") || id.equals("cave_air") || id.equals("void_air");
+    }
+
     /** "minecraft:oak_stairs[facing=north]" -> "oak_stairs". */
     static String bareId(String spec) {
         String s = spec == null ? "" : spec.trim().toLowerCase(Locale.ROOT);

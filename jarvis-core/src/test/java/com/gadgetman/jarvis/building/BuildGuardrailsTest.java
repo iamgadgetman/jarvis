@@ -110,6 +110,17 @@ class BuildGuardrailsTest {
     }
 
     @Test
+    @DisplayName("the preview counts real blocks, not the air a plan uses to clear space")
+    void previewCountsSolid() throws IOException {
+        JSONArray blocks = new JSONArray();
+        for (int i = 0; i < 3; i++) blocks.put(new JSONObject().put("x", 2 + i).put("y", 0).put("z", 2).put("material", "minecraft:stone_bricks"));
+        for (int i = 0; i < 4; i++) blocks.put(new JSONObject().put("x", 2 + i).put("y", 1).put("z", 2).put("material", "minecraft:air"));
+        FakeOwner p = withPlan(new JSONObject().put("blocks", blocks).toString(), "");
+        f.core.building().startBuild(p, "a little wall");
+        assertTrue(p.wasTold("3 blocks, 4x2x1"), String.join("\n", p.plainMessages()));
+    }
+
+    @Test
     @DisplayName("spoken yes builds")
     void spokenYes() throws IOException {
         FakeOwner p = withPlan(plan("minecraft:stone_bricks", 3), "");
