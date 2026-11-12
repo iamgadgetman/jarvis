@@ -29,6 +29,13 @@
 
 ### Fixed
 
+- **No more spare Jarvises.** Citizens keeps NPCs in `saves.yml`, so after a
+  crash or hard stop the old butler came back on the next start while Jarvis
+  spawned a new one, and extras piled up. Every butler is now tagged with its
+  owner, and tagged leftovers are removed when Citizens finishes loading.
+  Untagged NPCs named "Jarvis" (from older versions) are listed in the log
+  with their ids for `/npc remove`.
+
 - **No world changes nobody asked for.** Time, weather, game mode, difficulty,
   game rules, summons and mob/item clears now need the player's words to ask
   for them ("make it day", "stop the rain", "spawn a cow"); otherwise Jarvis
