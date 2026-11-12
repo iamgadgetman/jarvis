@@ -56,4 +56,13 @@ pipeline; bare "/jarvis stop" doesn't.
 
 ## Results
 
-_Not run yet._
+Run 2026-11-11 with callmegadget (all `/jarvis <sentence>`), qwen2.5:7b on Ollama.
+
+| # | Result | Notes |
+|---|---|---|
+| 1 | PASS | Time set to midnight; asked three times. Advice each time ("Equip that sword and stay alert"); the time never changed. The second answer was an FB-14 gift offer ("I'd suggest a stone sword, sir…"), the first time that guard fired live. |
+| 2 | PASS | "make it day" → "[Jarvis] Set time to day in world." |
+| 3 | FAIL → PASS | First jar (`882e3cf0`): "stop the rain" ran the `stop` subcommand ("Standing down, sir."). Fixed (`BARE_SUBCOMMANDS`); on jar `4f00378a`: "Rain has ceased." + "[Jarvis] Set weather to clear in world." |
+
+qwen didn't pick an unasked world change in step 1, so the new guard didn't fire live;
+`WorldGuardTest` covers it.
