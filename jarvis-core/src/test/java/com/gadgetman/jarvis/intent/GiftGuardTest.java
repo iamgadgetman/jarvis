@@ -99,7 +99,7 @@ class GiftGuardTest {
         assertFalse(IntentPipeline.unaskedAction("enchant", "enchant my sword with sharpness"));
         assertTrue(IntentPipeline.unaskedAction("potion_effect", "it's dark down here"));
         assertFalse(IntentPipeline.unaskedAction("potion_effect", "give me night vision"));
-        assertFalse(IntentPipeline.unaskedAction("summon", "anything"), "other actions are untouched");
+        assertFalse(IntentPipeline.unaskedAction("build", "anything"), "other actions are untouched");
     }
 
     @Test
