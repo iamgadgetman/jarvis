@@ -91,3 +91,36 @@ from console with flag off is refused; with flag on routes to `IntentPipeline` a
 `tools/jarvis-mcp` lets Claude Code drive a running server over RCON — status, `/jarvis`
 commands, chat-as-player, log tailing — so feature blocks can be exercised in-game from
 the terminal. Not part of the plugin jar.
+
+
+## Audit findings (2026-11-11)
+
+- No say-as command existed, so this block adds `/jarvis say-as <player> <text…>`: server
+  console only (refused from any player, op or not), off unless `dev.allow-say-as: true`. The
+  named player must be online; the text goes through `IntentPipeline` as `Source.CONSOLE`.
+  Jarvis's replies go to the player as usual **and** to the server log as
+  `[say-as <player>] Jarvis: …`, because otherwise a log-reading tool can't see them (replies
+  are private chat).
+- RCON chosen over the AMP API: AMP login needs an account, password and TOTP, and is AMP-only.
+  RCON is built in. GadgetCraft has `enable-rcon=false`; turning it on is a change on Chance's
+  server (a new listener with a password), so it is **not done** — the live steps wait for his OK.
+- RCON is a 100-line client in `src/rcon.ts` instead of the `rcon-client` package (one fewer
+  dependency). Dependencies: `@modelcontextprotocol/sdk` 1.32.2 and `zod` 4.6.7; dev:
+  `typescript` 7.0.2, `@types/node`. None ship in the plugin.
+- `jarvis_command` takes the whole command and requires it to start with `jarvis`
+  (refuses `op me` rather than turning it into `jarvis op me`).
+- Most `/jarvis` subcommands are player-only; console ones (`ai`, `setup`, `reload`, `cloud`,
+  `say-as`) work through `jarvis_command`, player ones through `jarvis_say`.
+
+## Built
+
+`tools/jarvis-mcp/` (`src/index.ts`, `src/rcon.ts`, `src/tools.ts`, tests, README),
+`.mcp.json` (env references only), `.gitignore`, `docs/dev/testing-with-mcp.md`,
+`CommandService` say-as + `dev.allow-say-as` in `config.yml`.
+Tests: `npm test` (8, including RCON against a fake local server and the log tailer);
+`CommandServiceTest.sayAs`. A stdio smoke test listed all five tools and `server_command`
+refused while `JARVIS_MCP_ALLOW_ANY` was unset.
+
+## Results
+
+_Not run yet: needs RCON enabled on a test server (Chance's call for GadgetCraft)._

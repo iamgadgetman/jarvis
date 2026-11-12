@@ -1,0 +1,22 @@
+{
+  "name": "jarvis-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Developer tool: an MCP server that drives a running Jarvis test server over RCON. Not part of the plugin.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": { "jarvis-mcp": "dist/index.js" },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2"
+  }
+}
