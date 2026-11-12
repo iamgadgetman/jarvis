@@ -111,4 +111,19 @@ the default priority list.
 
 ## Results
 
-_Not run yet._
+Run 2026-11-11 on GadgetCraft, jar `b0246d98` (a test build of FB-09 + FB-15 + FB-16), with
+callmegadget. GadgetCraft's real providers were left alone (it runs Jarvis Cloud then Ollama, and
+other people use that Ollama box), so the "nothing usable" steps were not run live; the unit tests
+cover them.
+
+| # | Result | Notes |
+|---|---|---|
+| 1 | not run | Needs a fresh config and no providers. `ProviderProbeTest.nothingUsable` covers the box. |
+| 2 | not run | Same; the op join line only shows when nothing is usable. |
+| 3 | PASS (adapted) | Startup log: "AI providers: jarvis-cloud OK · ollama OK (qwen2.5:7b) · openai no key · grok no key · gemini no key". `/jarvis setup` listed the same with ✔/✘ and "Ready to talk, sir."; `/jarvis setup pull` printed `ollama pull qwen2.5:7b`. "hello, how are you today?" got a normal reply. |
+| 4 | not run | No Gemini key here. `ProviderProbeTest.geminiFromEnv` and `connectorReadsEnv` cover it. |
+| 5 | PASS (adapted) | Cloud already active: shown as "jarvis-cloud OK". |
+| 6 | PASS | The startup log has the one status line. |
+
+Steps 1, 2 and 4 want a throwaway server (or Chance's say-so to switch providers off on
+GadgetCraft for a few minutes).
