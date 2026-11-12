@@ -43,4 +43,11 @@ be seen by checking `saves.yml` for `jarvis-owner` after step 1 (Citizens autosa
 
 ## Results
 
-_Not run yet._
+Run 2026-11-11 on GadgetCraft. Before the block, the three untagged orphans (17, 19, 20) were
+removed by hand with `/npc remove` (backup `saves.yml.bak-20261111-orphans`).
+
+| # | Result | Notes |
+|---|---|---|
+| 1 | PASS | `/jarvis summon` → `/npc list` shows one Jarvis (id 35); after `/citizens save`, `saves.yml` has `jarvis-owner: d0b28b71-…` (callmegadget). |
+| 2 | PASS | Simulated a crash without a kill: AMP Stop, put back the `saves.yml` saved with the butler out (`saves.yml.fb16-crashsim`), AMP Start. Log: "Removed 1 leftover Jarvis NPC(s) from an earlier run."; `/npc list` empty after joining. |
+| 3 | PASS | Normal restarts (03:40, butler dismissed) logged no leftovers and no "named Jarvis" warning. Not re-run with the butler out. |
