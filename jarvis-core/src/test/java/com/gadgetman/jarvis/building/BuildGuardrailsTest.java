@@ -96,6 +96,20 @@ class BuildGuardrailsTest {
     }
 
     @Test
+    @DisplayName("/jarvis no and /jarvis yes are commands, not typos (found live: \"No such command: no\")")
+    void slashYesNo() throws IOException {
+        FakeOwner p = withPlan(plan("minecraft:stone_bricks", 3), "");
+        f.core.building().startBuild(p, "a little wall");
+        say(p, "no");
+        assertFalse(f.core.building().hasPending(p));
+        assertTrue(p.wasTold("Nothing was built"), String.join("\n", p.plainMessages()));
+        f.core.building().startBuild(p, "a little wall");
+        say(p, "yes");
+        f.tick(20);
+        assertEquals(3, f.world.count("minecraft:stone_bricks"));
+    }
+
+    @Test
     @DisplayName("spoken yes builds")
     void spokenYes() throws IOException {
         FakeOwner p = withPlan(plan("minecraft:stone_bricks", 3), "");

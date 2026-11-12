@@ -344,8 +344,8 @@ public class CommandService implements CommandSink {
                     npc.getEscortService().takeHome(player);
                 }
             }
-            case "confirm"   -> handleConfirm(player);
-            case "cancel"    -> handleCancel(player);
+            case "confirm", "yes" -> handleConfirm(player);   // "yes"/"no" answer a build preview (FB-07)
+            case "cancel", "no"   -> handleCancel(player);
             case "requests"  -> handleRequests(player);
             case "approve", "deny" -> {
                 if (!player.hasPermission("jarvis.admin")) {
@@ -1068,7 +1068,7 @@ public class CommandService implements CommandSink {
             "report", "requests", "return", "rotate", "save", "scan", "schematic", "schematics", "sentry",
             "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather",
             "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "undo", "ver", "version", "voice",
-            "warp", "watch");
+            "warp", "watch", "yes", "no");
 
     /** The top-level words worth offering on tab. */
     private static final List<String> COMPLETIONS = List.of(
