@@ -230,7 +230,29 @@ Tests: `WelcomeTest` (7) and `TutorialTest` (8); full suite 394 core + 26 paper,
 
 ## Results
 
-_Not run yet: the owner's in-game run, after FB-08 and FB-11 are both merged for the live test._
+Run 2026-11-12 on GadgetCraft with the headless bot (an op, an existing player), FB-08 + FB-11
+combined, AI working (Jarvis Cloud + Ollama), `onboarding.tutorial.reminder-minutes: 1` for the
+run only.
+
+| Step | Result |
+|---|---|
+| existing player joins (no row yet) | no welcome, no bell: only the usual greeting and briefing (the review fix) |
+| 1. `/jarvis tutorial reset callmegadget` (RCON), rejoin | "Good day, callmegadget. I'm Jarvis…", "That bell is my controls…", "[Start the tutorial] [Maybe later]" |
+| 1. `/jarvis tutorial later`, rejoin | "Whenever you like, sir…"; next join silent |
+| 2. `/jarvis tutorial start` | "seven steps…", step 1 (ring the bell): skipped, the bot can't right-click |
+| step 2 `/jarvis summon` | "At your service. That's me." → step 3 |
+| step 3 `/jarvis follow` | "Right behind you. You can say most things in plain words." → step 4 |
+| 3. idle 140 s at step 4 (reminder 1 min) | one reminder, then quiet |
+| step 4 (chest) | skipped: the bot can't aim at a chest |
+| step 5 `/jarvis mine iron` | "Off I go…" → step 6 |
+| step 6 `stop`, `deposit` | no chest on record (step 4 was skipped), so not counted; skipped |
+| step 7 build a small hut → yes → `/jarvis undo` | 212 blocks placed, 212 restored, "Gone again…", then "That's the lot…" |
+| `/jarvis setup ollama`, `/jarvis setup gemini` (the admin buttons' commands) | both print their steps |
+| 4. admin with no AI (three buttons), 5. non-op on a server with no AI, 6. voice | not run: need every provider off, a second account, a voice player. Unit tests cover 4 and 5 |
+
+Not checked live: the bell itself arriving (my inventory check used `clear`, which on that
+server is EssentialsX's clear-inventory and emptied the bot's inventory) and the bell menu's
+Tutorial button. Note: the greeting says "Good day" at any hour.
 
 ### Review fix (2026-11-12): existing servers
 
