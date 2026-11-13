@@ -171,6 +171,15 @@ public class CommandService implements CommandSink {
                 handleAiSetup(sender, args);
                 return;
             }
+            // FB-09: which AI providers can answer, and how to get one if none can.
+            case "setup" -> {
+                if (!isAdmin(sender, asPlayer) && !platform.singleplayer()) {
+                    sender.message(Colors.RED + "You don't have permission.");
+                    return;
+                }
+                handleSetup(sender, args);
+                return;
+            }
             // Jarvis Cloud. The console, an admin, or the player in a
             // single-player game (who may not have cheats on) can set it up.
             case "cloud" -> {
@@ -423,6 +432,38 @@ public class CommandService implements CommandSink {
                 core.intents().submit(player, nlInput, IntentPipeline.Source.CONSOLE);
             }
         }
+    }
+
+    // ==================== SETUP (FB-09) ====================
+
+    /**
+     * /jarvis setup — run the provider probe and print where each stands.
+     * /jarvis setup pull [model] — the exact command to run on the Ollama host;
+     * nothing is run from here.
+     */
+    private void handleSetup(Audience sender, List<String> args) {
+        if (args.size() > 1 && args.get(1).equalsIgnoreCase("pull")) {
+            String model = args.size() > 2 ? args.get(2)
+                    : platform.config().getString("ai.ollama.model", "mistral");
+            sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "On the machine that runs Ollama, run:");
+            sender.message(Colors.AQUA + "  ollama pull " + model);
+            sender.message(Colors.GRAY + "Then " + Colors.WHITE + "/jarvis setup" + Colors.GRAY + " to check again.");
+            return;
+        }
+        sender.message(Colors.GRAY + "Jarvis: Checking the AI providers, sir...");
+        core.probeProviders(statuses -> {
+            for (com.gadgetman.jarvis.ai.ProviderProbe.Status st : statuses) {
+                sender.message((st.usable() ? Colors.GREEN + "  ✔ " : Colors.GRAY + "  ✘ ") + st.text());
+            }
+            if (com.gadgetman.jarvis.ai.ProviderProbe.usable(statuses).isEmpty()) {
+                for (String line : com.gadgetman.jarvis.ai.ProviderProbe.noProviderBox(
+                        platform.config().getString("ai.ollama.model", "mistral"))) {
+                    sender.message(Colors.YELLOW + line);
+                }
+            } else {
+                sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "Ready to talk, sir.");
+            }
+        });
     }
 
     // ==================== BUILDING ====================
@@ -1075,7 +1116,7 @@ public class CommandService implements CommandSink {
             "load", "loot", "lp_group_add", "lp_group_remove", "lumber", "mine", "mine_here", "mining",
             "paste", "paste_schematic", "patrol", "potion_effect", "protect", "recover", "redo", "reload", "remove",
             "report", "requests", "return", "rotate", "save", "scan", "schematic", "schematics", "sentry",
-            "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather",
+            "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather", "setup",
             "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "undo", "ver", "version", "voice",
             "warp", "watch");
 
@@ -1083,7 +1124,7 @@ public class CommandService implements CommandSink {
     private static final List<String> COMPLETIONS = List.of(
             "summon", "dismiss", "return", "follow", "stop", "attack", "guard", "watch", "mine", "dig",
             "tunnel", "farm", "tend", "chop", "fish", "dance", "light", "patrol", "chest", "deposit", "loot",
-            "clearloot", "bell", "build", "paste", "undo", "redo", "cancelbuild", "schematic", "ask", "ai", "cloud", "report", "duties",
+            "clearloot", "bell", "build", "paste", "undo", "redo", "cancelbuild", "schematic", "ask", "ai", "cloud", "setup", "report", "duties",
             "duty", "recover", "home", "confirm", "cancel", "requests", "approve", "deny", "portal", "portals",
             "quiet", "rank", "queue", "version", "voice", "help", "reload", "debug", "export-dataset");
 
@@ -1341,6 +1382,9 @@ public class CommandService implements CommandSink {
             player.message(Colors.WHITE + "  /jarvis schematic convertall" + Colors.GRAY + " - Convert all litematics");
         }
 
+        player.message(Colors.YELLOW + "AI setup:");
+        player.message(Colors.WHITE + "  /jarvis setup" + Colors.GRAY + " - Which AI providers can answer, and free ways to get one");
+        player.message(Colors.WHITE + "  /jarvis setup pull [model]" + Colors.GRAY + " - The Ollama command to run on its host");
         player.message(Colors.YELLOW + "Jarvis Cloud (AI without your own API key):");
         player.message(Colors.WHITE + "  /jarvis cloud activate [name]" + Colors.GRAY + " - Get a link, click it, done");
         player.message(Colors.WHITE + "  /jarvis cloud status" + Colors.GRAY + " - Plan and requests used this month");

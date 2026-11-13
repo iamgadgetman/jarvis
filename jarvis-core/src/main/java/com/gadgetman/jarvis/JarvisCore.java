@@ -6,6 +6,7 @@ import com.gadgetman.jarvis.ai.WorldContext;
 import com.gadgetman.jarvis.ai.AiSettings;
 import com.gadgetman.jarvis.ai.CloudActivation;
 import com.gadgetman.jarvis.ai.InstallId;
+import com.gadgetman.jarvis.ai.ProviderProbe;
 import com.gadgetman.jarvis.building.BuildingAssistant;
 import com.gadgetman.jarvis.building.UndoService;
 import com.gadgetman.jarvis.commands.ActionExecutor;
@@ -19,6 +20,7 @@ import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Subscription;
 import com.gadgetman.jarvis.core.platform.Task;
+import com.gadgetman.jarvis.core.platform.events.JoinEvent;
 import com.gadgetman.jarvis.core.platform.events.QuitEvent;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.intent.ChatTrigger;
@@ -158,6 +160,20 @@ public final class JarvisCore {
         prompts = new Prompts(platform);
         aiSettings = new AiSettings(platform, ai);
         cloud = new CloudActivation(platform, aiSettings, installId, new CloudActivation.HttpApi());
+
+        // FB-09: say on boot which AI providers can answer; if none, how to get one.
+        probeProviders(statuses -> {
+            log.info(ProviderProbe.statusLine(statuses));
+            if (ProviderProbe.usable(statuses).isEmpty()) {
+                for (String line : ProviderProbe.noProviderBox(platform.config().getString("ai.ollama.model", "mistral"))) log.warn(line);
+            }
+        });
+        subscriptions.add(platform.events().on(JoinEvent.class, e -> {
+            List<ProviderProbe.Status> last = providerStatus;
+            if (last != null && ProviderProbe.usable(last).isEmpty() && e.who().hasPermission("jarvis.admin")) {
+                e.who().message(Colors.YELLOW + ProviderProbe.joinLine(platform.config().getString("ai.ollama.model", "mistral")));
+            }
+        }));
         chatTrigger = new ChatTrigger(platform, intents, prompts);
         chatTrigger.start();
         courtesies = new Courtesies(platform, ai);
@@ -197,6 +213,23 @@ public final class JarvisCore {
         }));
     }
 
+    /** The last provider probe (FB-09), or null before the first one finishes. */
+    private volatile List<ProviderProbe.Status> providerStatus;
+
+    /**
+     * Check which AI providers can answer, off the server thread; the result
+     * comes back on it, and is kept for the op's join line.
+     */
+    public void probeProviders(java.util.function.Consumer<List<ProviderProbe.Status>> then) {
+        ProviderProbe probe = ProviderProbe.of(platform.config(), ai, aiSettings.enabled());
+        platform.scheduler().async(probe::run, statuses -> {
+            providerStatus = statuses;
+            if (then != null) then.accept(statuses);
+        });
+    }
+
+    public List<ProviderProbe.Status> providerStatus() { return providerStatus; }
+
     /** Stop everything, in the reverse of the order it started. */
     public void shutdown() {
         if (cloud != null) cloud.stop();
@@ -233,6 +266,7 @@ public final class JarvisCore {
         if (remarks != null) remarks.reload();
         if (portalScout != null) portalScout.reload();
         voiceStatus.settingsChanged();
+        if (aiSettings != null) probeProviders(statuses -> log.info(ProviderProbe.statusLine(statuses)));
         log.info("Jarvis v" + version + " reloaded!");
     }
 

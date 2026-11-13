@@ -9,12 +9,16 @@
 
 ai:
   provider: auto            # openai | claude | grok | gemini | ollama | auto
-  provider-priority:        # auto-failover order; ollama first is free and local
+  provider-priority:        # auto-failover order; free first: ollama (local), gemini (free tier)
     - ollama
+    - gemini
     - claude
     - openai
     - grok
-    - gemini
+  env-keys: true            # blank api-key reads GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / XAI_API_KEY (0.18.1)
+  gemini:
+    api-key: "env:GEMINI_API_KEY"   # a key, or env:NAME to read an environment variable
+    model: gemini-3.7-flash
   claude:
     api-key: ""
     model: claude-haiku-4-5
@@ -93,13 +97,32 @@ Ask `jarvis where is the market?` and he quotes the coordinates. Run
 `/jarvis reload` after editing. A missing or broken file just means no facts
 (a broken one logs a warning).
 
-### Getting an AI API key
+### Getting an AI provider (free first)
 
-Pick one provider and put its key in `config.yml`. Jarvis will fall back through
-the others in `fallback-order` if the primary fails.
+On startup Jarvis logs one line saying which providers can answer, e.g.
+`AI providers: ollama OK (mistral) · gemini no key · jarvis-cloud not activated · …`.
+If none can, it prints the three quickest free ways to get one, and an op who
+joins gets the same in chat. `/jarvis setup` checks again at any time.
 
-| Provider | Where to get a key | Key looks like |
-|---|---|---|
+| Provider | Cost to start | Where to get a key | Environment variable |
+|---|---|---|---|
+| **Ollama** | free, local | none: install [ollama.com](https://ollama.com), `ollama pull mistral` (`/jarvis setup pull` prints the command) | n/a |
+| **Google Gemini** | free tier | [aistudio.google.com](https://aistudio.google.com/) | `GEMINI_API_KEY` |
+| **Jarvis Cloud** | free trial | none: `/jarvis cloud activate` | n/a |
+| **Claude** | paid | [console.anthropic.com](https://console.anthropic.com/) → API Keys (`sk-ant-...`) | `ANTHROPIC_API_KEY` |
+| **OpenAI** | paid | [platform.openai.com](https://platform.openai.com/) → API Keys (`sk-...`) | `OPENAI_API_KEY` |
+| **xAI Grok** | paid | [x.ai](https://x.ai/) | `XAI_API_KEY` |
+
+A key goes in `ai.<provider>.api-key`, either as the key itself or as
+`"env:NAME"` to read an environment variable. With `ai.env-keys: true` (the
+default) a blank `api-key` reads the variable in the table, so exporting
+`GEMINI_API_KEY` before starting the server is enough. In `auto` mode Jarvis
+falls through `provider-priority` when one fails.
+
+Ollama keeps everything on your own hardware, at the cost of slower and less
+accurate answers than the cloud models.
+
+---|---|---|
 | **Claude** (recommended) | [console.anthropic.com](https://console.anthropic.com/) → API Keys | `sk-ant-...` |
 | **OpenAI** | [platform.openai.com](https://platform.openai.com/) → API Keys | `sk-...` |
 | **xAI Grok** | [x.ai](https://x.ai/) → request API access | — |

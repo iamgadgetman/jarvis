@@ -166,10 +166,31 @@ public class AIConnector {
         }
     }
 
+    /** Where {@code env:NAME} keys and the default key variables are read from (FB-09). */
+    private Map<String, String> env = System.getenv();
+    /** {@code ai.env-keys}: a blank api-key may be read from the provider's usual variable. */
+    private boolean envKeys = true;
+
     public AIConnector(Config config, Log log) {
         this.config = config;
         this.log = log;
         reloadConfig();
+    }
+
+    /** Tests: read keys from this map instead of the real environment, and reload. */
+    public void useEnvironment(Map<String, String> env) {
+        this.env = env;
+        reloadConfig();
+    }
+
+    /** The environment keys are read from (for {@link ProviderProbe}). */
+    public Map<String, String> environment() {
+        return env;
+    }
+
+    /** Whether a blank api-key falls back to the provider's usual variable. */
+    public boolean envKeys() {
+        return envKeys;
     }
 
     public void reloadConfig() {
@@ -184,7 +205,7 @@ public class AIConnector {
 
         // Load provider priority for auto mode
         providerPriority.clear();
-        List<String> defaultPriority = Arrays.asList("ollama", "claude", "openai", "grok", "gemini");
+        List<String> defaultPriority = KNOWN_PROVIDERS;
         List<String> configPriority = ai.getStringList("provider-priority");
         if (configPriority != null && !configPriority.isEmpty()) {
             providerPriority.addAll(configPriority);
@@ -193,6 +214,7 @@ public class AIConnector {
         }
 
         // Load all provider configurations
+        this.envKeys = ai.getBoolean("env-keys", true);
         loadProviderConfig(ai, "openai", "https://api.openai.com/v1/chat/completions", "gpt-5.6-terra");
         loadProviderConfig(ai, "claude", "https://api.anthropic.com/v1/messages", "claude-haiku-4-5");
         loadProviderConfig(ai, "grok", "https://api.x.ai/v1/chat/completions", "grok-4.6");
@@ -282,13 +304,14 @@ public class AIConnector {
 
         if (ai.isSection(name)) {
             Config section = ai.section(name);
-            config.apiKey = section.getString("api-key", "");
+            config.apiKey = ApiKeys.resolve(section.getString("api-key", ""), name, env, envKeys);
             config.model = section.getString("model", defaultModel);
             String configEndpoint = section.getString("endpoint");
             config.endpoint = (configEndpoint != null && !configEndpoint.isBlank()) ? configEndpoint : defaultEndpoint;
             config.keepAlive = section.getString("keep-alive", "5m");
             config.timeoutSeconds = section.getInt("timeout-seconds", 30);
         } else {
+            config.apiKey = ApiKeys.resolve("", name, env, envKeys);
             config.model = defaultModel;
             config.endpoint = defaultEndpoint;
         }
@@ -1503,7 +1526,8 @@ public class AIConnector {
     // ==================== SETUP SUPPORT ====================
 
     /** Every provider this connector knows how to talk to, in the default priority order. */
-    public static final List<String> KNOWN_PROVIDERS = List.of("ollama", "claude", "openai", "grok", "gemini");
+    /** Free first (FB-09): local Ollama, then Gemini's free tier, then the paid ones. */
+    public static final List<String> KNOWN_PROVIDERS = List.of("ollama", "gemini", "claude", "openai", "grok");
 
     /** True when the provider is in the priority list, the connector's idea of "enabled". */
     public boolean isEnabled(String providerName) {

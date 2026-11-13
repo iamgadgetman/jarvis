@@ -58,14 +58,30 @@ mod on Fabric and NeoForge). Nothing else: speech recognition and his voice
 run inside the server, and their models are fetched the first time voice is
 turned on.
 
+### Zero-cost start
+
+Jarvis talks with no spend at all. Pick one, in this order:
+
+1. **Ollama on your own box** (free, local): install [Ollama](https://ollama.com),
+   then `ollama pull mistral`. Jarvis looks for it at `localhost:11434`.
+2. **A free Gemini key**: get one at [aistudio.google.com](https://aistudio.google.com/),
+   then `export GEMINI_API_KEY=...` before starting the server.
+3. **The Jarvis Cloud trial**: `/jarvis cloud activate` in-game, no key to manage.
+
+On startup the console says which providers can answer
+(`AI providers: ollama OK (mistral) · gemini no key · …`), and if none can it
+prints these three options. `/jarvis setup` checks again.
+
 ### Paper / Purpur
 
 1. Drop `jarvis-paper-<version>.jar` and `Citizens.jar` into `plugins/`.
    [WorldEdit](https://enginehub.org/worldedit/) too if you want the
    schematic library.
-2. Start the server. Jarvis writes `plugins/Jarvis/config.yml`.
-3. `/jarvis bell`, ring it, **Admin > AI setup**, and pick a provider. Or set
-   the keys in `config.yml` and `/jarvis reload`.
+2. Start the server. Jarvis writes `plugins/Jarvis/config.yml` and logs which
+   AI providers it found.
+3. If none: one of the free options above, then `/jarvis setup`. Paid keys work
+   too: `/jarvis bell`, ring it, **Admin > AI setup**, or set them in
+   `config.yml` and `/jarvis reload`.
 
 Optional but recommended for experience memory: `ollama pull nomic-embed-text`
 on your Ollama box. Without it memory still works, on the weaker
