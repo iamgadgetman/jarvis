@@ -122,6 +122,26 @@ public class IntentPipeline {
                     "\\b(feed|hungry|hunger|starv\\w*|food|eat|famished|peckish)\\b"));
 
     /**
+     * Changes to the whole world, each with the words that show it was asked
+     * for (FB-15). Like FB-14's gifts: "what should I do next?" is not a
+     * request to make it day, stop the rain or spawn a cow.
+     */
+    static final java.util.Map<String, java.util.regex.Pattern> WORLD_ACTIONS = java.util.Map.of(
+            "set_time", java.util.regex.Pattern.compile(
+                    "\\b(time|day\\w*|night\\w*|noon|midnight|morning|sunrise|sunset|dawn|dusk|evening)\\b"),
+            "set_weather", java.util.regex.Pattern.compile(
+                    "\\b(weather|rain\\w*|storm\\w*|thunder\\w*|lightning|sunny|sunshine|clear (skies|sky|the sky)|skies)\\b"),
+            "set_gamemode", java.util.regex.Pattern.compile(
+                    "\\b(game ?mode|creative|survival|adventure|spectator|gm ?[0-3])\\b"),
+            "set_gamerule", java.util.regex.Pattern.compile("\\b(game ?rules?|rules?)\\b"),
+            "set_difficulty", java.util.regex.Pattern.compile("\\b(difficulty|peaceful|easy|normal|hard)\\b"),
+            "summon", java.util.regex.Pattern.compile("\\b(summon\\w*|spawn\\w*|conjure|create an?|make an?)\\b"),
+            "clear_mobs", java.util.regex.Pattern.compile(
+                    "\\b(clear|kill|remove|get rid|purge|wipe|despawn|butcher)\\b"),
+            "clear_drops", java.util.regex.Pattern.compile(
+                    "\\b(clear|remove|clean\\w*|purge|wipe|pick up)\\b"));
+
+    /**
      * True when the model picked an action the player never asked for: a
      * whole-server action without an announcement request, the status
      * briefing without a request for one ("what should I do next?" is a
@@ -136,6 +156,8 @@ public class IntentPipeline {
         if (MOVE_ACTIONS.contains(actionType)) return !ASKED_TO_MOVE.matcher(m).find();
         java.util.regex.Pattern gift = GIFT_ACTIONS.get(actionType);
         if (gift != null) return !gift.matcher(m).find();
+        java.util.regex.Pattern world = WORLD_ACTIONS.get(actionType);
+        if (world != null) return !world.matcher(m).find();
         return false;
     }
 
@@ -184,6 +206,8 @@ public class IntentPipeline {
         // FB-14: the model's reply ("Here's a sword.") is wrong once nothing is
         // handed over, so make the offer instead; the player can take it up.
         if (GIFT_ACTIONS.containsKey(actionType)) return giftOffer(actionType, parameters);
+        // FB-15: likewise "Daylight it is." is wrong when the sun stays put.
+        if (WORLD_ACTIONS.containsKey(actionType)) return worldOffer(actionType, parameters);
         return aiResponse;
     }
 
@@ -201,6 +225,34 @@ public class IntentPipeline {
             case "feed" -> "You look peckish, sir. Say \"feed me\" and I'll see to it.";
             case "enchant" -> "I could enchant that for you, sir. Just ask.";
             default -> "A potion effect might help, sir. Just ask.";
+        };
+    }
+
+    /** "Shall I make it day, sir? Say "make it day" and it's done." */
+    static String worldOffer(String actionType, JSONObject parameters) {
+        JSONObject p = parameters == null ? new JSONObject() : parameters;
+        return switch (actionType) {
+            case "set_time" -> {
+                String v = p.optString("value", p.optString("time", "")).trim().toLowerCase(Locale.ROOT);
+                yield v.isEmpty() ? "I could change the time of day, sir. Just ask."
+                        : "Shall I make it " + v + ", sir? Say \"make it " + v + "\" and it's done.";
+            }
+            case "set_weather" -> {
+                String v = p.optString("type", p.optString("weather", "")).trim().toLowerCase(Locale.ROOT);
+                yield v.isEmpty() ? "I could change the weather, sir. Just ask."
+                        : "Shall I set the weather to " + v + ", sir? Say \"set the weather to " + v + "\".";
+            }
+            case "summon" -> {
+                String e = p.optString("entity", "").trim().replaceFirst("^minecraft:", "").replace('_', ' ');
+                if (e.isEmpty()) yield "I could summon something, sir. Just ask.";
+                String a = "aeiou".indexOf(Character.toLowerCase(e.charAt(0))) >= 0 ? "an " : "a ";
+                yield "I could summon " + a + e + ", sir. Say \"summon " + a + e + "\" if you'd like one.";
+            }
+            case "set_gamemode" -> "I could change your game mode, sir. Just ask.";
+            case "set_difficulty" -> "I could change the difficulty, sir. Just ask.";
+            case "set_gamerule" -> "I could change a game rule, sir. Just ask.";
+            case "clear_mobs" -> "I could clear the mobs nearby, sir. Just ask.";
+            default -> "I could tidy up the dropped items, sir. Just ask.";
         };
     }
 

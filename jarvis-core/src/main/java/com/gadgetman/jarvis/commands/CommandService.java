@@ -44,6 +44,15 @@ import java.util.Set;
  */
 public class CommandService implements CommandSink {
 
+    /**
+     * Subcommands that take no words after them. Followed by more words, the
+     * input is a sentence for the pipeline ("stop the rain", "follow the river").
+     */
+    static final java.util.Set<String> BARE_SUBCOMMANDS = java.util.Set.of(
+            "summon", "dismiss", "return", "attack", "stop", "follow", "fish", "dance",
+            "chest", "deposit", "loot", "confirm", "cancel", "requests", "quiet", "hush");
+
+
     /** Library match at or above this score answers the request directly. */
     private static final int SCHEMATIC_MATCH_THRESHOLD = 50;
 
@@ -210,6 +219,14 @@ public class CommandService implements CommandSink {
 
         if (args.isEmpty()) {
             showHelp(player);
+            return;
+        }
+
+        // "/jarvis stop the rain" is a sentence, not "/jarvis stop" with the rest
+        // thrown away (FB-15: it stood Jarvis down instead of clearing the weather).
+        if (args.size() > 1 && BARE_SUBCOMMANDS.contains(sub)) {
+            player.message(Colors.GOLD + "Jarvis: Very good, sir. On it...");
+            core.intents().submit(player, String.join(" ", args), IntentPipeline.Source.CONSOLE);
             return;
         }
 

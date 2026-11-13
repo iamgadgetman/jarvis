@@ -38,6 +38,17 @@ class CommandServiceTest {
     }
 
     @Test
+    @DisplayName("FB-15: \"/jarvis stop the rain\" is a sentence for the pipeline; bare \"/jarvis stop\" still stops")
+    void bareSubcommandWithWordsIsASentence() {
+        run(p, "stop", "the", "rain");
+        assertTrue(p.wasTold("On it"), String.join("\n", p.plainMessages()));
+
+        FakeOwner bob = f.player("bob");
+        run(bob, "stop");
+        assertFalse(bob.wasTold("On it"), String.join("\n", bob.plainMessages()));
+    }
+
+    @Test
     @DisplayName("/jarvis voice says so when there is no voice here, and defers to the plugin when there is")
     void voiceStatus() {
         run(p, "voice");
