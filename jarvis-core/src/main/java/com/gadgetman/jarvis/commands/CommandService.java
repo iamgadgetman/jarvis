@@ -181,6 +181,12 @@ public class CommandService implements CommandSink {
                 handleSetup(sender, args);
                 return;
             }
+            // FB-10: a development hook so a tool (tools/jarvis-mcp over RCON) can
+            // talk to Jarvis as a player. Console only, and off unless dev.allow-say-as.
+            case "say-as", "sayas" -> {
+                handleSayAs(sender, asPlayer, args);
+                return;
+            }
             // Jarvis Cloud. The console, an admin, or the player in a
             // single-player game (who may not have cheats on) can set it up.
             case "cloud" -> {
@@ -466,6 +472,63 @@ public class CommandService implements CommandSink {
                 sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "Ready to talk, sir.");
             }
         });
+    }
+
+    // ==================== DEVELOPMENT (FB-10) ====================
+
+    /**
+     * /jarvis say-as &lt;player&gt; &lt;text…&gt; — the named online player "says"
+     * the text to Jarvis, through the intent pipeline as a console source.
+     * Jarvis's replies go to that player as usual and are also written to the
+     * server log ("[say-as Gadget] Jarvis: …"), which is how a tool reading
+     * logs/latest.log sees them.
+     */
+    private void handleSayAs(Audience sender, Optional<Owner> asPlayer, List<String> args) {
+        if (asPlayer.isPresent()) {
+            sender.message(Colors.RED + "/jarvis say-as is for the server console only.");
+            return;
+        }
+        if (!platform.config().getBoolean("dev.allow-say-as", false)) {
+            sender.message(Colors.RED + "/jarvis say-as is off. Set dev.allow-say-as: true in config.yml "
+                    + "(development servers only), then /jarvis reload.");
+            return;
+        }
+        if (args.size() < 3) {
+            sender.message(Colors.RED + "Usage: /jarvis say-as <player> <what they say>");
+            return;
+        }
+        String name = args.get(1);
+        Optional<Owner> who = platform.players().online().stream()
+                .filter(o -> o.name().equalsIgnoreCase(name)).findFirst();
+        if (who.isEmpty()) {
+            sender.message(Colors.RED + name + " isn't online.");
+            return;
+        }
+        String text = rest(args, 2);
+        Owner player = who.get();
+        platform.log().info("[say-as " + player.name() + "] " + text);
+        core.intents().submit(player, text, IntentPipeline.Source.CONSOLE, sayAsResponder(player.name()));
+    }
+
+    /** The chat responder, plus a copy of every line in the server log. */
+    private IntentPipeline.Responder sayAsResponder(String name) {
+        IntentPipeline.Responder chat = IntentPipeline.CHAT_RESPONDER;
+        String tag = "[say-as " + name + "] ";
+        return new IntentPipeline.Responder() {
+            @Override public void speak(Owner p, String line) {
+                chat.speak(p, line);
+                platform.log().info(tag + "Jarvis: " + Colors.strip(line));
+            }
+            @Override public void feedback(Owner p, String line) {
+                chat.feedback(p, line);
+                platform.log().info(tag + Colors.strip(line));
+            }
+            @Override public boolean streams() { return chat.streams(); }
+            @Override public void speakPartial(Owner p, String sentence) {
+                chat.speakPartial(p, sentence);
+                platform.log().info(tag + "Jarvis: " + Colors.strip(sentence));
+            }
+        };
     }
 
     // ==================== BUILDING ====================
@@ -1174,7 +1237,7 @@ public class CommandService implements CommandSink {
             "load", "loot", "lp_group_add", "lp_group_remove", "lumber", "memory", "mine", "mine_here", "mining",
             "paste", "paste_schematic", "patrol", "potion_effect", "protect", "recover", "redo", "reload", "remove",
             "report", "requests", "return", "rotate", "save", "scan", "schematic", "schematics", "sentry",
-            "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather", "setup",
+            "say-as", "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather", "setup",
             "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "undo", "ver", "version", "voice",
             "warp", "watch", "yes", "no");
 

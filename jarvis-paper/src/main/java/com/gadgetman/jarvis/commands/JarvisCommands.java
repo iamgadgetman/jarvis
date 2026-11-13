@@ -6,8 +6,11 @@ import com.gadgetman.jarvis.core.platform.Owner;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.Bukkit;
 
 import java.util.Arrays;
 import java.util.List;
@@ -31,7 +34,17 @@ public class JarvisCommands implements CommandExecutor, TabCompleter {
 
     private Audience audience(CommandSender sender) {
         Optional<Owner> player = asPlayer(sender);
-        return player.isPresent() ? player.get() : plugin.getPlatform().players().console();
+        if (player.isPresent()) return player.get();
+        if (sender instanceof ConsoleCommandSender) return plugin.getPlatform().players().console();
+        // RCON or a command block: answer it, and copy the line to the server
+        // log, because RCON only carries what's said while the command runs
+        // and Jarvis often answers later (AI calls, probes).
+        Audience console = plugin.getPlatform().players().console();
+        return text -> {
+            if (text == null) return;
+            sender.sendMessage(LegacyComponentSerializer.legacySection().deserialize(text));
+            console.message(text);
+        };
     }
 
     @Override

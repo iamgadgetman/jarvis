@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "jarvis-mcp": {
+      "command": "node",
+      "args": ["tools/jarvis-mcp/dist/index.js"],
+      "env": {
+        "RCON_HOST": "${RCON_HOST:-}",
+        "RCON_PORT": "${RCON_PORT:-25575}",
+        "RCON_PASSWORD": "${RCON_PASSWORD:-}",
+        "MC_LOG_PATH": "${MC_LOG_PATH:-}",
+        "JARVIS_MCP_ALLOW_ANY": "${JARVIS_MCP_ALLOW_ANY:-}"
+      }
+    }
+  }
+}

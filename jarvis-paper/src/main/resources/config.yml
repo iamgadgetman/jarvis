@@ -643,6 +643,11 @@ dev:
   debug-mode: false              # Extra debug logging
   test-mode: false               # Skip some validations
   log-api-calls: false           # Log all API calls
+  # /jarvis say-as <player> <text> from the server console: the player "says" the
+  # text to Jarvis, and his replies are copied to the server log. For driving a
+  # test server from tools (tools/jarvis-mcp over RCON). Leave off on a real server:
+  # anyone with console or RCON access could speak as any online player.
+  allow-say-as: false
 
 # ========== BUTLER (v0.18.0) ==========
 butler:

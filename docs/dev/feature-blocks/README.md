@@ -25,7 +25,7 @@ says push.
 | [FB-07](FB-07-build-guardrails.md) | Build guardrails: blocked blocks, limits, preview | D | — | M | built |
 | [FB-08](FB-08-reward-tags.md) | Reward tags → admin-defined command bundles | D | FB-07 merged | S | planned |
 | [FB-09](FB-09-first-run.md) | Free-tier-first first run | D | — | S | built |
-| [FB-10](FB-10-mcp-dev-server.md) | Jarvis MCP server for development | E | — | M | planned |
+| [FB-10](FB-10-mcp-dev-server.md) | Jarvis MCP server for development | E | — | M | built |
 | [FB-11](FB-11-onboarding.md) | First-join welcome, interactive tutorial, admin quick start | F | FB-09 merged | M | planned |
 | [FB-12](FB-12-build-polish.md) | Build polish from the GadgetCraft playtests | B + D | — | S | tested |
 | [FB-13](FB-13-empty-replies.md) | Guards for empty model replies | A | — | S | tested |

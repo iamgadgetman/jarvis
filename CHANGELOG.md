@@ -38,6 +38,14 @@
   he treats as true ("where is the market?"). `ai.context.level` (0–3) sets
   how much is sent; `/jarvis reload` re-reads the file.
 
+### Developer tooling
+
+- **MCP server for testing.** `tools/jarvis-mcp` lets Claude Code drive a
+  running test server over RCON — status, `/jarvis` commands, chat-as-player,
+  log tailing — so feature blocks can be exercised in-game from the terminal.
+  New console-only `/jarvis say-as <player> <text>`, off unless
+  `dev.allow-say-as: true`. Not part of the plugin jar.
+
 ### Changed
 
 - **Replies stream.** Jarvis's sentences appear as the model writes them
