@@ -4,6 +4,16 @@
 
 ### Added
 
+- **A proper welcome.** New players get the controller bell and an offer of a
+  short interactive tutorial that walks them through the bell, summoning,
+  talking to Jarvis, chests, mining, deposits and undo, reacting to what they
+  actually do (one reminder per step, and it survives a restart). Admins who
+  join a server with no AI set up get three clickable ways to fix that: free
+  local Ollama, a free Gemini key, or Jarvis Cloud (also on the bell's AI setup
+  page, and as `/jarvis setup ollama|gemini`). Tracked per player in the
+  database, so wiping player data doesn't welcome everyone again.
+  `onboarding:` in config; `/jarvis tutorial`.
+
 - **Five-minute free start.** On boot Jarvis reports which AI providers are
   usable and, if none are, prints the three fastest ways to get one (Ollama, a
   free Gemini key, the Jarvis Cloud trial); an op who joins gets the same in

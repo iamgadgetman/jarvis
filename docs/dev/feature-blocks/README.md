@@ -26,7 +26,7 @@ says push.
 | [FB-08](FB-08-reward-tags.md) | Reward tags → admin-defined command bundles | D | FB-07 merged | S | planned |
 | [FB-09](FB-09-first-run.md) | Free-tier-first first run | D | — | S | tested |
 | [FB-10](FB-10-mcp-dev-server.md) | Jarvis MCP server for development | E | — | M | tested |
-| [FB-11](FB-11-onboarding.md) | First-join welcome, interactive tutorial, admin quick start | F | FB-09 merged | M | planned |
+| [FB-11](FB-11-onboarding.md) | First-join welcome, interactive tutorial, admin quick start | F | FB-09 merged | M | built |
 | [FB-12](FB-12-build-polish.md) | Build polish from the GadgetCraft playtests | B + D | — | S | tested |
 | [FB-13](FB-13-empty-replies.md) | Guards for empty model replies | A | — | S | tested |
 | [FB-14](FB-14-unasked-gifts.md) | No unasked items, heals or food | A | — | S | tested |

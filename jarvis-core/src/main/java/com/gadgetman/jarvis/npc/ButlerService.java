@@ -109,6 +109,14 @@ public class ButlerService implements ButlerHost {
         this.progression = progression;
     }
 
+    private com.gadgetman.jarvis.onboarding.Milestones milestones = com.gadgetman.jarvis.onboarding.Milestones.NONE;
+
+    /** Where summons, follow, mining and deposits are reported for the tutorial (FB-11). */
+    public void setMilestones(com.gadgetman.jarvis.onboarding.Milestones milestones) {
+        this.milestones = milestones == null ? com.gadgetman.jarvis.onboarding.Milestones.NONE : milestones;
+        depositManager.setMilestones(this.milestones);
+    }
+
     public void debug(String message) {
         if (debugMode) {
             platform.log().info("[Jarvis Debug] " + message);
@@ -184,6 +192,7 @@ public class ButlerService implements ButlerHost {
                 return;
             }
             say(owner, "I'm already here, sir.");
+            milestones.reached(owner, com.gadgetman.jarvis.onboarding.Milestone.SUMMONED);
             return;
         }
         if (b.exists()) {
@@ -195,6 +204,7 @@ public class ButlerService implements ButlerHost {
 
         spawnBeside(owner, b, world);
         confirm(owner, "At your service.");
+        if (b.isSpawned()) milestones.reached(owner, com.gadgetman.jarvis.onboarding.Milestone.SUMMONED);
     }
 
     /**
@@ -1013,6 +1023,11 @@ public class ButlerService implements ButlerHost {
     @Override
     public void beginTask(Owner owner, String taskType) {
         if (recovery != null) recovery.taskStarted(owner, taskType);
+        switch (taskType) {
+            case "follow" -> milestones.reached(owner, com.gadgetman.jarvis.onboarding.Milestone.FOLLOWING);
+            case "mine", "branch_mine" -> milestones.reached(owner, com.gadgetman.jarvis.onboarding.Milestone.MINING);
+            default -> { }
+        }
     }
 
     /**

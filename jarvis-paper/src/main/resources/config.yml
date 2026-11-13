@@ -713,6 +713,24 @@ steward:
     auto: false                  # true = fetch death drops without being asked
     max-distance: 192.0          # How far he'll travel for a recovery run
 
+# ========== ONBOARDING (FB-11) ==========
+# A player's first join, handled once: the controller bell, two written lines
+# (no model call) and an offer of a short tutorial. "First" means Jarvis has
+# no record of welcoming them (the onboarding_state table), so wiping player
+# data doesn't welcome everyone again. /jarvis tutorial reset <player> forgets one.
+onboarding:
+  welcome:
+    enabled: true
+    give-bell: true            # Hand the controller bell on a player's first join
+    offer-tutorial: true       # Ask once; /jarvis tutorial always works regardless
+  tutorial:
+    enabled: true              # /jarvis tutorial, and the Tutorial button on the bell
+    reminder-minutes: 10       # One nudge per step if they wander off; 0 = none
+  # Admins who join while no AI provider can answer get one line with three
+  # buttons (free local Ollama, a free Gemini key, Jarvis Cloud). Once per
+  # restart per admin, only while nothing works. never = say nothing.
+  admin-nag: once-per-restart
+
 # ========== NETHER PORTALS (v0.16.0) ==========
 # Three separate things, and only the first one costs anything:
 #

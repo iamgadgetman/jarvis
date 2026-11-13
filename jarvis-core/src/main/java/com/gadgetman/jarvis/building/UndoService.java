@@ -218,6 +218,13 @@ public class UndoService {
     private int limit = 10;
     private int blocksPerTick = 50;
 
+    private com.gadgetman.jarvis.onboarding.Milestones milestones = com.gadgetman.jarvis.onboarding.Milestones.NONE;
+
+    /** An undo that starts is reported here for the tutorial (FB-11). */
+    public void setMilestones(com.gadgetman.jarvis.onboarding.Milestones milestones) {
+        this.milestones = milestones == null ? com.gadgetman.jarvis.onboarding.Milestones.NONE : milestones;
+    }
+
     public UndoService(Platform platform, DatabaseManager database, ExperienceMemory memory) {
         this.platform = platform;
         this.log = platform.log();
@@ -326,6 +333,7 @@ public class UndoService {
             worlds.add(w);
         }
         if (batches.isEmpty()) return;
+        milestones.reached(owner, com.gadgetman.jarvis.onboarding.Milestone.UNDO);
 
         int total = batches.stream().mapToInt(Batch::size).sum();
         owner.message(Colors.YELLOW + "Jarvis: Putting back "

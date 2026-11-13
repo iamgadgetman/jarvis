@@ -20,7 +20,6 @@ import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Subscription;
 import com.gadgetman.jarvis.core.platform.Task;
-import com.gadgetman.jarvis.core.platform.events.JoinEvent;
 import com.gadgetman.jarvis.core.platform.events.DeathEvent;
 import com.gadgetman.jarvis.core.platform.events.PortalEvent;
 import com.gadgetman.jarvis.core.platform.events.QuitEvent;
@@ -30,6 +29,10 @@ import com.gadgetman.jarvis.intent.IntentPipeline;
 import com.gadgetman.jarvis.memory.ConversationMemory;
 import com.gadgetman.jarvis.memory.ExperienceMemory;
 import com.gadgetman.jarvis.npc.ButlerService;
+import com.gadgetman.jarvis.onboarding.Milestones;
+import com.gadgetman.jarvis.onboarding.OnboardingStore;
+import com.gadgetman.jarvis.onboarding.Tutorial;
+import com.gadgetman.jarvis.onboarding.Welcome;
 import com.gadgetman.jarvis.npc.portal.PortalScout;
 import com.gadgetman.jarvis.progression.ProgressionManager;
 import com.gadgetman.jarvis.recovery.TaskRecoveryHandler;
@@ -100,6 +103,11 @@ public final class JarvisCore {
     private TaskMonitor taskMonitor;
     private Menus menus;
     private CommandService commands;
+    private final Milestones milestones = new Milestones();
+    private Tutorial tutorial;
+    private Welcome welcome;
+    /** Whether an AI can answer, for onboarding: TRUE, FALSE, or null before the first probe. */
+    private java.util.function.Supplier<Boolean> aiCheck = this::aiUsableFromProbe;
 
     private final List<Subscription> subscriptions = new ArrayList<>();
     private final List<Task> tasks = new ArrayList<>();
@@ -148,6 +156,7 @@ public final class JarvisCore {
         recovery = new TaskRecoveryHandler(config, log, platform.scheduler(), ai);
 
         butlers = new ButlerService(platform, butlerBackend, recovery);
+        butlers.setMilestones(milestones);   // FB-11: the tutorial watches what he's asked to do
         log.info("NPC system initialized on " + butlerBackend.name() + ".");
 
         // Service record — created before anything can issue him a tool.
@@ -157,6 +166,7 @@ public final class JarvisCore {
 
         // One undo for everything he builds; the builders all record into it.
         undo = new UndoService(platform, database, memory);
+        undo.setMilestones(milestones);
         building = new BuildingAssistant(platform, butlers, ai, memory, database, progression, undo);
         schematics = new SchematicLibrary(platform, butlers, undo);
         requestDecomposer = new RequestDecomposer(config, log, ai, database);
@@ -190,12 +200,17 @@ public final class JarvisCore {
                 for (String line : ProviderProbe.noProviderBox(platform.config().getString("ai.ollama.model", "mistral"))) log.warn(line);
             }
         });
-        subscriptions.add(platform.events().on(JoinEvent.class, e -> {
-            List<ProviderProbe.Status> last = providerStatus;
-            if (last != null && ProviderProbe.usable(last).isEmpty() && e.who().hasPermission("jarvis.admin")) {
-                e.who().message(Colors.YELLOW + ProviderProbe.joinLine(platform.config().getString("ai.ollama.model", "mistral")));
-            }
-        }));
+        // FB-11: first-join welcome, the tutorial, and the admin's "no AI yet" buttons
+        // (which replace FB-09's one-line join notice).
+        OnboardingStore onboardingStore = new OnboardingStore(database, log);
+        java.util.function.BiConsumer<Owner, String> speak = (who, line) -> voiceStatus.speak(who, line);
+        tutorial = new Tutorial(platform, onboardingStore, milestones,
+                () -> !Boolean.FALSE.equals(aiCheck.get()),
+                () -> config.getBoolean("build.enable-undo", true),
+                who -> butlers.isSpawned(who), speak, System::currentTimeMillis);
+        tutorial.start();
+        welcome = new Welcome(platform, onboardingStore, tutorial, () -> aiCheck.get(), speak, System::currentTimeMillis);
+        welcome.start();
         chatTrigger = new ChatTrigger(platform, intents, prompts);
         chatTrigger.start();
         courtesies = new Courtesies(platform, ai);
@@ -252,6 +267,20 @@ public final class JarvisCore {
 
     public List<ProviderProbe.Status> providerStatus() { return providerStatus; }
 
+    private Boolean aiUsableFromProbe() {
+        List<ProviderProbe.Status> last = providerStatus;
+        return last == null ? null : !ProviderProbe.usable(last).isEmpty();
+    }
+
+    /**
+     * Replace how onboarding decides whether an AI can answer (TRUE, FALSE,
+     * or null for "not known yet"). Tests use it; the default reads the last
+     * provider probe.
+     */
+    public void setAiCheck(java.util.function.Supplier<Boolean> check) {
+        this.aiCheck = check == null ? this::aiUsableFromProbe : check;
+    }
+
     /** Stop everything, in the reverse of the order it started. */
     public void shutdown() {
         if (cloud != null) cloud.stop();
@@ -261,6 +290,8 @@ public final class JarvisCore {
         subscriptions.clear();
         if (progression != null) progression.saveAll();
         if (menus != null) menus.shutdown();
+        if (welcome != null) welcome.shutdown();
+        if (tutorial != null) tutorial.shutdown();
         if (taskMonitor != null) taskMonitor.shutdown();
         if (courtesies != null) courtesies.shutdown();
         if (chatTrigger != null) chatTrigger.shutdown();
@@ -361,6 +392,8 @@ public final class JarvisCore {
     public String installId() { return installId; }
     public TaskMonitor taskMonitor() { return taskMonitor; }
     public Menus menus() { return menus; }
+    public Milestones milestones() { return milestones; }
+    public Tutorial tutorial() { return tutorial; }
     public CommandSink commands() { return commands; }
 
     public void saveClipboard(Owner player, String name) {

@@ -9,6 +9,7 @@ import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Subscription;
 import com.gadgetman.jarvis.core.platform.events.ButlerInteractEvent;
 import com.gadgetman.jarvis.core.platform.events.ItemUseEvent;
+import com.gadgetman.jarvis.onboarding.Milestone;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.core.ui.Menu;
 import com.gadgetman.jarvis.core.ui.MenuClick;
@@ -63,12 +64,14 @@ public class Menus {
             if (!mayUseMenu(e.who())) return;
             platform.ui().open(e.who(), main(e.who()));
             e.who().sound(Ids.SOUND_BLOCK_BELL_USE, 1f, 1f);
+            core.milestones().reached(e.who(), Milestone.BELL);
         }));
         subscriptions.add(platform.events().on(ButlerInteractEvent.class, e -> {
             if (!e.ownerId().equals(e.clicker().id())) return;
             e.cancel().accept(true);
             if (!mayUseMenu(e.clicker())) return;
             platform.ui().open(e.clicker(), main(e.clicker()));
+            core.milestones().reached(e.clicker(), Milestone.BELL);
         }));
     }
 
@@ -145,6 +148,7 @@ public class Menus {
     public void openMainMenu(Owner p) {
         if (!mayUseMenu(p)) return;
         platform.ui().open(p, main(p));
+        core.milestones().reached(p, Milestone.BELL);
     }
 
     private void open(Owner p, Menu menu) {
@@ -254,9 +258,25 @@ public class Menus {
             m.put(45, item(Ids.COMMAND_BLOCK, Colors.DARK_RED + "Admin", Colors.GRAY + "Requests, reload, AI health"),
                     c -> { if (p.hasPermission("jarvis.admin")) open(p, admin(p)); });
         }
+        // FB-11: the tutorial sits on the front page until it's done, then
+        // moves to the Steward page.
+        if (tutorialOffered() && !core.tutorial().isDone(p)) {
+            m.put(49, tutorialButton(p), c -> run(p, "tutorial"));
+        }
         m.put(53, item(Ids.OAK_DOOR, Colors.WHITE + "Close"), c -> close(p));
 
         return m.build();
+    }
+
+    private boolean tutorialOffered() {
+        return core.tutorial() != null && cfg().getBoolean("onboarding.tutorial.enabled", true);
+    }
+
+    private Item tutorialButton(Owner p) {
+        boolean running = core.tutorial().current(p) != null;
+        return item(Ids.WRITABLE_BOOK, Colors.GREEN + "Tutorial",
+                Colors.GRAY + (running ? "Repeat the current step" : "Five minutes: the bell, talking, chests, mining"),
+                Colors.DARK_GRAY + "/jarvis tutorial");
     }
 
     // ==================== MINING ====================
@@ -532,6 +552,9 @@ public class Menus {
         m.put(14, item(Ids.NAME_TAG, Colors.WHITE + "Version", Colors.GRAY + "What is actually running"),
                 c -> run(p, "version"));
         m.put(15, cloudButton(), c -> open(p, cloud(p, who -> open(who, steward(who)))));
+        if (tutorialOffered() && core.tutorial().isDone(p)) {
+            m.put(16, tutorialButton(p), c -> run(p, "tutorial", "start"));
+        }
 
         m.put(31, back(), c -> open(p, main(p)));
         return m.build();
@@ -774,6 +797,16 @@ public class Menus {
         m.put(15, cloudButton(), c -> open(p, cloud(p, who -> open(who, aiSetup(who)))));
         m.put(16, item(Ids.BOOK, Colors.WHITE + "Routing status", Colors.GRAY + "Light and heavy routes, in chat"),
                 c -> run(p, "ai"));
+        // FB-11: the three free ways to get an AI answering, as on an admin's join line.
+        m.put(19, item(Ids.CAMPFIRE, Colors.GREEN + "Use a free local model",
+                Colors.GRAY + "Ollama on your own machine", Colors.DARK_GRAY + "/jarvis setup ollama"),
+                c -> run(p, "setup", "ollama"));
+        m.put(20, item(Ids.AMETHYST_SHARD, Colors.AQUA + "Use a free Gemini key",
+                Colors.GRAY + "Where to get it and where it goes", Colors.DARK_GRAY + "/jarvis setup gemini"),
+                c -> run(p, "setup", "gemini"));
+        m.put(21, item(Ids.SPYGLASS, Colors.WHITE + "Check providers",
+                Colors.GRAY + "Which can answer right now", Colors.DARK_GRAY + "/jarvis setup"),
+                c -> run(p, "setup"));
         m.put(22, backTo("the admin page"), c -> open(p, admin(p)));
         return m.build();
     }

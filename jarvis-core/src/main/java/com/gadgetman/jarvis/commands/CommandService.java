@@ -115,6 +115,10 @@ public class CommandService implements CommandSink {
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("engine") ? VoiceConfig.ENGINES
                         : args.size() == 3 && (args.get(1).equalsIgnoreCase("threads") || args.get(1).equalsIgnoreCase("bench")) ? List.of("0", "2", "4", "8")
                         : List.of();
+            } else if (args.get(0).equalsIgnoreCase("tutorial") && args.size() == 2) {
+                pool = List.of("start", "skip", "later", "stop", "reset");
+            } else if (args.get(0).equalsIgnoreCase("setup") && args.size() == 2) {
+                pool = List.of("ollama", "gemini", "pull");
             } else if (args.get(0).equalsIgnoreCase("undo") && args.size() == 2) {
                 pool = List.of("list", "2", "3", "5");
             } else {
@@ -214,6 +218,14 @@ public class CommandService implements CommandSink {
                             + Colors.WHITE + "/jarvis cloud upgrade" + Colors.GRAY + " opens plans and billing.");
                 }
                 return;
+            }
+            // FB-11: an admin (or the console) can make someone's next join a first join.
+            case "tutorial" -> {
+                if (args.size() > 1 && args.get(1).equalsIgnoreCase("reset")) {
+                    handleTutorialReset(sender, asPlayer, args);
+                    return;
+                }
+                // Everything else about the tutorial is the player's own: below.
             }
             // Console-friendly like reload and debug: an admin dumping training data
             // is far more likely to be at a terminal than standing in the world.
@@ -317,6 +329,7 @@ public class CommandService implements CommandSink {
                             + Colors.RED + " to proceed.");
                 }
             }
+            case "tutorial" -> handleTutorial(player, args);
             case "bell" -> {
                 player.give(ControllerBell.create());
                 player.message(Colors.GREEN + "Your controller bell, sir. Ring when needed.");
@@ -442,6 +455,47 @@ public class CommandService implements CommandSink {
         }
     }
 
+    // ==================== TUTORIAL (FB-11) ====================
+
+    /** /jarvis tutorial [start|skip|later|stop] — the player's own tutorial. */
+    private void handleTutorial(Owner player, List<String> args) {
+        var tutorial = core.tutorial();
+        String what = args.size() > 1 ? args.get(1).toLowerCase(Locale.ROOT) : "";
+        switch (what) {
+            case "" , "resume", "continue" -> tutorial.resume(player);
+            case "start", "restart" -> tutorial.startOver(player);
+            case "skip", "next" -> tutorial.skip(player);
+            case "later" -> tutorial.later(player);
+            case "stop", "end", "quit" -> tutorial.stop(player);
+            default -> player.message(Colors.RED + "Usage: /jarvis tutorial [start|skip|later|stop]"
+                    + (player.hasPermission("jarvis.tutorial.reset") ? " · /jarvis tutorial reset <player>" : ""));
+        }
+    }
+
+    /** /jarvis tutorial reset [player] — forget their welcome; the next join is a first join. */
+    private void handleTutorialReset(Audience sender, Optional<Owner> asPlayer, List<String> args) {
+        boolean allowed = asPlayer.map(o -> o.hasPermission("jarvis.tutorial.reset") || o.hasPermission("jarvis.admin"))
+                .orElse(true);
+        if (!allowed) { sender.message(Colors.RED + "You don't have permission."); return; }
+        Optional<Owner> target;
+        if (args.size() > 2) {
+            String name = args.get(2);
+            target = platform.players().online().stream().filter(o -> o.name().equalsIgnoreCase(name)).findFirst();
+            if (target.isEmpty()) {
+                sender.message(Colors.RED + name + " isn't online; reset them while they are.");
+                return;
+            }
+        } else if (asPlayer.isPresent()) {
+            target = asPlayer;
+        } else {
+            sender.message(Colors.RED + "Usage: /jarvis tutorial reset <player>");
+            return;
+        }
+        core.tutorial().reset(target.get().id());
+        sender.message(Colors.GREEN + "Jarvis: " + target.get().name()
+                + "'s welcome is forgotten, sir. Their next join is a first join.");
+    }
+
     // ==================== SETUP (FB-09) ====================
 
     /**
@@ -450,11 +504,35 @@ public class CommandService implements CommandSink {
      * nothing is run from here.
      */
     private void handleSetup(Audience sender, List<String> args) {
-        if (args.size() > 1 && args.get(1).equalsIgnoreCase("pull")) {
-            String model = args.size() > 2 ? args.get(2)
-                    : platform.config().getString("ai.ollama.model", "mistral");
+        String what = args.size() > 1 ? args.get(1).toLowerCase(Locale.ROOT) : "";
+        String model = platform.config().getString("ai.ollama.model", "mistral");
+        if (what.equals("ollama")) {   // FB-11: the admin's [Use a free local model] button
+            sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "A free model on your own machine, sir:");
+            sender.message(Colors.WHITE + "  1. Install Ollama from " + Colors.AQUA + "ollama.com" + Colors.WHITE
+                    + " on this server or a PC it can reach.");
+            sender.message(Colors.WHITE + "  2. On that machine run: " + Colors.AQUA + "ollama pull " + model);
+            sender.message(Colors.WHITE + "  3. In config.yml, " + Colors.AQUA + "ai.ollama.endpoint" + Colors.WHITE
+                    + " is where it listens (now " + Colors.AQUA
+                    + platform.config().getString("ai.ollama.endpoint", "http://localhost:11434") + Colors.WHITE + ").");
+            sender.message(Colors.GRAY + "Then " + Colors.WHITE + "/jarvis reload" + Colors.GRAY + " and "
+                    + Colors.WHITE + "/jarvis setup" + Colors.GRAY + " to check.");
+            return;
+        }
+        if (what.equals("gemini")) {   // FB-11: the admin's [Use a free Gemini key] button
+            sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "Google's free Gemini tier, sir:");
+            sender.message(Colors.WHITE + "  1. Get a key at " + Colors.AQUA + "aistudio.google.com/apikey" + Colors.WHITE + ".");
+            sender.message(Colors.WHITE + "  2. Either set " + Colors.AQUA + "GEMINI_API_KEY" + Colors.WHITE
+                    + " in the server's environment and restart, or put "
+                    + Colors.AQUA + "api-key: \"env:GEMINI_API_KEY\"" + Colors.WHITE + " under ai.gemini,");
+            sender.message(Colors.WHITE + "     or from the console: " + Colors.AQUA + "jarvis ai key gemini <key>"
+                    + Colors.GRAY + " (not in chat: chat is logged).");
+            sender.message(Colors.GRAY + "Then " + Colors.WHITE + "/jarvis setup" + Colors.GRAY + " to check.");
+            return;
+        }
+        if (what.equals("pull")) {
+            String pull = args.size() > 2 ? args.get(2) : model;
             sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "On the machine that runs Ollama, run:");
-            sender.message(Colors.AQUA + "  ollama pull " + model);
+            sender.message(Colors.AQUA + "  ollama pull " + pull);
             sender.message(Colors.GRAY + "Then " + Colors.WHITE + "/jarvis setup" + Colors.GRAY + " to check again.");
             return;
         }
@@ -1238,7 +1316,7 @@ public class CommandService implements CommandSink {
             "paste", "paste_schematic", "patrol", "potion_effect", "protect", "recover", "redo", "reload", "remove",
             "report", "requests", "return", "rotate", "save", "scan", "schematic", "schematics", "sentry",
             "say-as", "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather", "setup",
-            "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "undo", "ver", "version", "voice",
+            "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "tutorial", "undo", "ver", "version", "voice",
             "warp", "watch", "yes", "no");
 
     /** The top-level words worth offering on tab. */
@@ -1247,7 +1325,7 @@ public class CommandService implements CommandSink {
             "tunnel", "farm", "tend", "chop", "fish", "dance", "light", "patrol", "chest", "deposit", "loot",
             "clearloot", "bell", "build", "paste", "undo", "redo", "cancelbuild", "schematic", "ask", "ai", "cloud", "setup", "report", "duties",
             "duty", "recover", "home", "memory", "confirm", "cancel", "requests", "approve", "deny", "portal", "portals",
-            "quiet", "rank", "queue", "version", "voice", "help", "reload", "debug", "export-dataset");
+            "quiet", "rank", "queue", "version", "voice", "help", "tutorial", "reload", "debug", "export-dataset");
 
     /**
      * Closest command to a mistyped one, or null when nothing is close.
@@ -1506,6 +1584,10 @@ public class CommandService implements CommandSink {
         player.message(Colors.YELLOW + "AI setup:");
         player.message(Colors.WHITE + "  /jarvis setup" + Colors.GRAY + " - Which AI providers can answer, and free ways to get one");
         player.message(Colors.WHITE + "  /jarvis setup pull [model]" + Colors.GRAY + " - The Ollama command to run on its host");
+        player.message(Colors.WHITE + "  /jarvis setup ollama|gemini" + Colors.GRAY + " - How to set up a free local model or Gemini key");
+        player.message(Colors.YELLOW + "Getting started:");
+        player.message(Colors.WHITE + "  /jarvis tutorial" + Colors.GRAY + " - A five-minute walk through what Jarvis does");
+        player.message(Colors.WHITE + "  /jarvis tutorial skip|stop|start" + Colors.GRAY + " - Pass a step, end it, or start over");
         player.message(Colors.YELLOW + "Memory:");
         player.message(Colors.WHITE + "  /jarvis memory" + Colors.GRAY + " - What Jarvis remembers of you");
         player.message(Colors.WHITE + "  /jarvis memory forget" + Colors.GRAY + " - Wipe it (asks first)");

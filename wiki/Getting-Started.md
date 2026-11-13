@@ -1,9 +1,5 @@
 # Getting Started with Jarvis
 
-> **Draft (FB-11).** Written from `Commands-and-Permissions.md` and the 0.18.0 changelog.
-> Before publishing: run every command below on a test server, fix any that differ, and
-> remove this note.
-
 Ten minutes from "who is this?" to a butler that mines for you. Two tracks: **players**
 (you joined a server that has Jarvis) and **server owners** (you installed him and need
 him to start thinking).
@@ -14,9 +10,11 @@ him to start thinking).
 
 ### 1. The bell
 
-When you first join, Jarvis hands you a **controller bell** and says hello. Lost it?
-`/jarvis bell` gives you another. Right-click the bell to open his menu — every button is
-also a command, so use whichever you prefer.
+When you first join, Jarvis hands you a **controller bell**, says hello, and offers a
+short tutorial: click **[Start the tutorial]** to have him walk you through this page
+step by step, or **[Maybe later]** (he won't ask again; `/jarvis tutorial` starts it any
+time). Lost the bell? `/jarvis bell` gives you another. Right-click the bell to open his
+menu — every button is also a command, so use whichever you prefer.
 
 ### 2. Summon him
 
@@ -44,8 +42,9 @@ he's thinking.
 
 ### 4. Give him a chest
 
-Look at a chest and say `this is my chest` (or `/jarvis chest`). From now on,
-`deposit` empties his bags into it.
+Look at a chest and type `/jarvis chest`, or press **Set deposit chest** on the bell.
+(With an AI set up, saying `this is my chest` works too.) From now on, `deposit` empties
+his bags into it.
 
 ### 5. Put him to work
 
@@ -73,7 +72,8 @@ jobs that work the same way:
 build a small stone hut
 ```
 
-He designs it, places it block by block, and asks first if it's big. Don't like it?
+He designs it and shows you an outline in particles first; say `yes` (or click
+**[Build it]**) and he places it block by block. Don't like it?
 
 ```
 /jarvis undo
@@ -90,16 +90,37 @@ he can still revert.
 - `/jarvis quiet` — mute his idle remarks, for you only.
 - `/jarvis help` — the full list in game.
 
-Run the interactive version any time with `/jarvis tutorial`. It reacts to what you do,
-step by step.
+### The interactive version
+
+`/jarvis tutorial` runs steps 1 to 6 above as a guided tour that reacts to what you
+actually do: ring the bell, summon him, say `follow me`, set a chest, `mine 5 iron`,
+`stop` and `deposit`, and (if the server has an AI) build something and undo it. Each step
+waits for you; wander off and he reminds you once.
+
+| Command | Does |
+|---|---|
+| `/jarvis tutorial` | Start, or carry on from where you stopped (it survives a restart) |
+| `/jarvis tutorial start` | Start over from step 1 |
+| `/jarvis tutorial skip` | Pass the current step |
+| `/jarvis tutorial stop` | End it for now |
+
+Until you finish, the bell's front page has a **Tutorial** button; afterwards it lives on
+the **Steward** page.
 
 ---
 
 ## Server owners: make him think in five minutes
 
 Jarvis works out of the box for everything that doesn't need understanding —
-`/jarvis mine`, `/jarvis follow`, the bell menu. For sentences in chat he needs an AI.
-Three ways to get one, cheapest first. Pick one; you can add others later.
+`/jarvis mine`, `/jarvis follow`, plain orders like `follow me` and `mine 5 iron`, the
+bell menu. For other sentences, and for building, he needs an AI. Three ways to get one,
+cheapest first. Pick one; you can add others later.
+
+When you join as an op and no AI works yet, Jarvis says so with three buttons:
+**[Use a free local model]** (`/jarvis setup ollama`), **[Use a free Gemini key]**
+(`/jarvis setup gemini`) and **[Try Jarvis Cloud free]** (`/jarvis cloud activate`). The
+same three are on the bell under **Admin > AI setup**. He mentions it once per restart,
+and only until something works (`onboarding.admin-nag: never` turns it off).
 
 ### Option A — free, local: Ollama
 
@@ -115,8 +136,8 @@ now say `ollama OK (mistral)`. Say `hello` to Jarvis.
 
 ### Option B — free tier, cloud: Gemini
 
-1. Get a key at [aistudio.google.com](https://aistudio.google.com) (free tier is enough
-   to start).
+1. Get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (free
+   tier is enough to start).
 2. Either export it before starting the server:
    ```bash
    export GEMINI_API_KEY=your-key-here
@@ -149,7 +170,9 @@ for convenience, not because you have to.
 ### Then
 
 - `/jarvis setup` any time to see which providers are working.
-- `/jarvis bell` for your own bell; players get one automatically on first join.
+- `/jarvis bell` for your own bell; players get one automatically on first join
+  (`onboarding.welcome.give-bell`). `/jarvis tutorial reset <player>` makes someone's next
+  join a first join again.
 - `config.yml` is documented in place — every key has a comment next to it. The
   [Configuration](Configuration.md) page covers the big knobs.
 - Problems: [Troubleshooting](Troubleshooting.md), or the Discord in the README.
