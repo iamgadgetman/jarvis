@@ -263,3 +263,5 @@ whose platform says they have played before is noted quietly (row written, no we
 exists, so nothing). `/jarvis tutorial reset` therefore leaves a row with `welcomed_ts = 0`
 ("welcome again") instead of deleting it, so a reset regular is still welcomed, and the reset
 survives a restart. Tests: `WelcomeTest.existingPlayerQuiet`, `resetWelcomesAgain`.
+
+**Owner, 2026-11-12:** accepted the headless results; marked `tested`.

@@ -139,3 +139,5 @@ Fixed from the run: the prompt section above, and the model's celebrating reply 
 only when the bundle ran (live, "Well earned, sir." came before the refusal). With
 `ai.streaming` on the reply is out before the action is known, so there the refusal still
 follows it.
+
+**Owner, 2026-11-12:** accepted the headless results; marked `tested`.

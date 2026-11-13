@@ -23,10 +23,10 @@ says push.
 | [FB-05](FB-05-streaming-replies.md) | Streaming replies | B | FB-03 merged | M | tested |
 | [FB-06](FB-06-tool-calling.md) | Native tool calling for actions | B | FB-05 merged | M | planned |
 | [FB-07](FB-07-build-guardrails.md) | Build guardrails: blocked blocks, limits, preview | D | — | M | tested |
-| [FB-08](FB-08-reward-tags.md) | Reward tags → admin-defined command bundles | D | FB-07 merged | S | built |
+| [FB-08](FB-08-reward-tags.md) | Reward tags → admin-defined command bundles | D | FB-07 merged | S | tested |
 | [FB-09](FB-09-first-run.md) | Free-tier-first first run | D | — | S | tested |
 | [FB-10](FB-10-mcp-dev-server.md) | Jarvis MCP server for development | E | — | M | tested |
-| [FB-11](FB-11-onboarding.md) | First-join welcome, interactive tutorial, admin quick start | F | FB-09 merged | M | built |
+| [FB-11](FB-11-onboarding.md) | First-join welcome, interactive tutorial, admin quick start | F | FB-09 merged | M | tested |
 | [FB-12](FB-12-build-polish.md) | Build polish from the GadgetCraft playtests | B + D | — | S | tested |
 | [FB-13](FB-13-empty-replies.md) | Guards for empty model replies | A | — | S | tested |
 | [FB-14](FB-14-unasked-gifts.md) | No unasked items, heals or food | A | — | S | tested |
