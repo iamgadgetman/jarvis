@@ -1,5 +1,6 @@
 package com.gadgetman.jarvis.commands;
 
+import com.gadgetman.jarvis.memory.ConversationMemory;
 import com.gadgetman.jarvis.ConfirmationManager;
 import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.PlayerRequestManager;
@@ -370,6 +371,7 @@ public class CommandService implements CommandSink {
                     npc.getEscortService().takeHome(player);
                 }
             }
+            case "memory"    -> handleMemory(player, args);
             case "confirm"   -> handleConfirm(player);
             case "cancel"    -> handleCancel(player);
             case "requests"  -> handleRequests(player);
@@ -1019,10 +1021,59 @@ public class CommandService implements CommandSink {
         JSONObject params   = cm.getPendingParameters(player.id());
         cm.clearPending(player.id());
 
+        if (FORGET_ACTION.equals(actionType)) {   // FB-04: /jarvis memory forget
+            platform.scheduler().async(() -> { core.conversation().forget(player.id()); return Boolean.TRUE; },
+                    done -> player.message(Colors.GOLD + "Jarvis: " + Colors.WHITE
+                            + "Forgotten, sir. We have never met. Charmed, I'm sure."));
+            return;
+        }
+
         String result = core.actions().execute(actionType, params, player);
         if (result != null) {
             player.message(Colors.GREEN + "[Jarvis] " + result);
         }
+    }
+
+    /** The pending-confirmation action name for wiping a player's memory. */
+    static final String FORGET_ACTION = "memory_forget";
+
+    /**
+     * /jarvis memory — what Jarvis remembers of you: his notes, recent events
+     * and your last few lines. /jarvis memory forget — wipe it, after Confirm.
+     */
+    private void handleMemory(Owner player, List<String> args) {
+        ConversationMemory memory = core.conversation();
+        if (memory == null || !memory.isEnabled()) {
+            player.message(Colors.GRAY + "Jarvis: Conversation memory is off on this server (memory.conversation.enabled).");
+            return;
+        }
+        if (args.size() > 1 && args.get(1).equalsIgnoreCase("forget")) {
+            core.confirmations().setPending(player.id(), FORGET_ACTION, new JSONObject(),
+                    "forget everything you've told me, and what's happened to you");
+            player.message(Colors.YELLOW + "Jarvis: Forget everything you've told me, sir? This can't be undone.");
+            player.rich(new RichLine()
+                    .link(Colors.GREEN + "[Confirm]", "/jarvis confirm", "Wipe Jarvis's memory of you")
+                    .link(Colors.RED + " [Cancel]", "/jarvis cancel", "Keep it"));
+            player.message(Colors.GRAY + "Expires in " + core.confirmations().getTimeoutSeconds() + "s.");
+            return;
+        }
+        platform.scheduler().async(() -> memory.view(player.id()), view -> {
+            if (view.isEmpty()) {
+                player.message(Colors.GRAY + "Jarvis: I have nothing on you yet, sir. A clean slate.");
+                return;
+            }
+            player.message(Colors.GOLD + "Jarvis: What I remember, sir:");
+            if (!view.summary().isEmpty()) player.message(Colors.WHITE + "  " + view.summary());
+            if (!view.events().isEmpty()) {
+                player.message(Colors.YELLOW + "Lately:");
+                for (String e : view.events()) player.message(Colors.GRAY + "  - " + e);
+            }
+            if (!view.recent().isEmpty()) {
+                player.message(Colors.YELLOW + "You said, most recently:");
+                for (String r : view.recent()) player.message(Colors.GRAY + "  \"" + r + "\"");
+            }
+            player.message(Colors.DARK_GRAY + "/jarvis memory forget wipes it.");
+        });
     }
 
     private void handleCancel(Owner player) {
@@ -1113,7 +1164,7 @@ public class CommandService implements CommandSink {
             "dance", "defend", "delete", "deny", "deposit", "dig", "discord_broadcast", "dismiss", "duties",
             "duty", "enchant", "farm", "feed", "fight", "fish", "folder", "follow", "give_item", "guard",
             "heal", "help", "home", "inventory", "light", "light_area", "list", "litematic", "litematics",
-            "load", "loot", "lp_group_add", "lp_group_remove", "lumber", "mine", "mine_here", "mining",
+            "load", "loot", "lp_group_add", "lp_group_remove", "lumber", "memory", "mine", "mine_here", "mining",
             "paste", "paste_schematic", "patrol", "potion_effect", "protect", "recover", "redo", "reload", "remove",
             "report", "requests", "return", "rotate", "save", "scan", "schematic", "schematics", "sentry",
             "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather", "setup",
@@ -1125,7 +1176,7 @@ public class CommandService implements CommandSink {
             "summon", "dismiss", "return", "follow", "stop", "attack", "guard", "watch", "mine", "dig",
             "tunnel", "farm", "tend", "chop", "fish", "dance", "light", "patrol", "chest", "deposit", "loot",
             "clearloot", "bell", "build", "paste", "undo", "redo", "cancelbuild", "schematic", "ask", "ai", "cloud", "setup", "report", "duties",
-            "duty", "recover", "home", "confirm", "cancel", "requests", "approve", "deny", "portal", "portals",
+            "duty", "recover", "home", "memory", "confirm", "cancel", "requests", "approve", "deny", "portal", "portals",
             "quiet", "rank", "queue", "version", "voice", "help", "reload", "debug", "export-dataset");
 
     /**
@@ -1385,6 +1436,9 @@ public class CommandService implements CommandSink {
         player.message(Colors.YELLOW + "AI setup:");
         player.message(Colors.WHITE + "  /jarvis setup" + Colors.GRAY + " - Which AI providers can answer, and free ways to get one");
         player.message(Colors.WHITE + "  /jarvis setup pull [model]" + Colors.GRAY + " - The Ollama command to run on its host");
+        player.message(Colors.YELLOW + "Memory:");
+        player.message(Colors.WHITE + "  /jarvis memory" + Colors.GRAY + " - What Jarvis remembers of you");
+        player.message(Colors.WHITE + "  /jarvis memory forget" + Colors.GRAY + " - Wipe it (asks first)");
         player.message(Colors.YELLOW + "Jarvis Cloud (AI without your own API key):");
         player.message(Colors.WHITE + "  /jarvis cloud activate [name]" + Colors.GRAY + " - Get a link, click it, done");
         player.message(Colors.WHITE + "  /jarvis cloud status" + Colors.GRAY + " - Plan and requests used this month");

@@ -145,6 +145,20 @@ ai:
 memory:
   enabled: true
 
+  # ---- Conversation memory (FB-04) ----
+  # What Jarvis remembers of each player, across restarts: their recent lines,
+  # a summary of older ones written by the light-tier model, and notable events.
+  # Separate from the build memory below; memory.enabled doesn't switch it off.
+  # /jarvis memory shows a player what he knows; /jarvis memory forget wipes it.
+  conversation:
+    enabled: true
+    recent-turns: 8          # Verbatim turns sent with each request (3 on Ollama-only servers)
+    summarize-after: 30      # Unsummarized turns before the light model condenses them
+                             # (one light-tier call each time; the newest recent-turns stay verbatim)
+    keep-days: 90            # Raw turns older than this are pruned once summarized (0 = keep all).
+                             # The summary stays. Pruned turns also leave /jarvis export-dataset.
+    record-events: true      # Deaths and portal trips become memory lines
+
   # Pull it first:  ollama pull nomic-embed-text
   # Uses ai.ollama.endpoint above -- one box, one setting.
   embedding-model: "nomic-embed-text"

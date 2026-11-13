@@ -11,6 +11,11 @@
   list. API keys can be `env:NAME` to read an environment variable, and a blank
   key reads the provider's usual variable (`GEMINI_API_KEY`, …) unless
   `ai.env-keys` is off.
+- **Jarvis remembers.** Conversations and notable events (deaths, portal
+  trips) are kept per player in the database, condensed by the light model as
+  they grow, and brought into every reply, so "where did I say my base was?"
+  works after a restart. `/jarvis memory` shows what he knows; `/jarvis memory
+  forget` wipes it. Settings under `memory.conversation`.
 
 - **Fast path for simple commands.** "follow me", "stop", "mine 10 iron" and
   the like run instantly without an AI call; only sentences the local parser

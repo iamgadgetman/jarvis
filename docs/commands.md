@@ -71,6 +71,8 @@
 | `/jarvis ai enable\|disable\|key\|endpoint\|model\|models\|test ...` | Set up a provider from the console | `jarvis.admin` |
 | `/jarvis setup` | Check which AI providers can answer; if none, the free ways to get one | `jarvis.admin` |
 | `/jarvis setup pull [model]` | Print the `ollama pull` command to run on the Ollama host | `jarvis.admin` |
+| `/jarvis memory` | What Jarvis remembers of you: his notes, recent events, your last lines | `jarvis.use` |
+| `/jarvis memory forget` | Wipe that memory (Confirm/Cancel first) | `jarvis.use` |
 | `/jarvis <anything>` | Natural language — Jarvis figures it out | `jarvis.use` |
 
 On Fabric and NeoForge there are no permission nodes: `jarvis.admin` means

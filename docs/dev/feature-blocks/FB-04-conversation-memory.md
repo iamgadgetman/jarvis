@@ -87,3 +87,49 @@ and `FakeScheduler`:
 in the database, condensed by the light model as they grow, and brought into every
 reply. `/jarvis memory` shows what he knows; `/jarvis memory forget` wipes it. Settings
 under `memory.conversation`.
+
+
+## Audit findings (2026-11-11)
+
+- Half of this existed. `IntentPipeline` already saved every exchange to `chat_interactions`
+  (player line, Jarvis's reply, the action) and folded the last 5 (2 in reduced mode) into each
+  prompt as "Recent conversation", so short-range memory already survived restarts. What was
+  missing: summaries, events, the commands, pruning and the settings.
+- So the turns stay in `chat_interactions` instead of a new `conversation_turns` table: one copy,
+  and `/jarvis export-dataset` keeps reading the same rows. New tables:
+  `conversation_summaries(player_id, summary, covered_until, updated_at)` and
+  `conversation_events(id, player_id, text, timestamp)`, plus an index on
+  `chat_interactions(player_id, timestamp)`.
+- Events: `DeathEvent` and `PortalEvent` exist on the bus and are recorded. "Big finds" (OreMiner
+  diamonds) have no event; left out rather than adding one.
+- `memory.conversation.enabled: false` stops the summary, the events and the prompt block; the
+  `chat_interactions` log itself keeps going, as before, because the dataset export uses it.
+- Pruning only removes turns the summary already covers, so an old unsummarized turn is never
+  lost. Pruned turns also leave the dataset export (noted in config.yml).
+
+## Built
+
+- `memory/ConversationMemory.java`: `contextFor` (summary, "Lately" events from the last 7 days,
+  last `recent-turns` verbatim; 3 in reduced mode), `summarizeIfNeeded` (light tier via
+  `AIConnector.summarizeConversation`, one call in flight per player, a failure keeps the old
+  notes), `recordEvent`, `prune` (startup and daily), `forget`, `view`.
+- Hooks: `IntentPipeline.buildMemoryContext` now asks `ConversationMemory`; after each logged
+  exchange it calls `summarizeIfNeeded` on the same async task. `JarvisCore` records deaths and
+  portal trips.
+- `/jarvis memory`, `/jarvis memory forget` (Confirm/Cancel through `ConfirmationManager`;
+  `handleConfirm` runs the wipe), help lines, `config.yml` keys, docs.
+- Tests: `ConversationMemoryTest` (8). 345 pass.
+
+## Results
+
+Run 2026-11-11 on GadgetCraft with callmegadget, jar `f19c44e0` (a test build of FB-04 + FB-09 +
+FB-15 + FB-16), qwen2.5:7b.
+
+| # | Result | Notes |
+|---|---|---|
+| 1 | PASS | `/jarvis my base is at the big oak by the river`, then `/jarvis memory` listed it under "You said, most recently". |
+| 2 | PASS | After an AMP restart: "where did I say my base was?" → "The big oak by the river, you say? Best get there quickly…" |
+| 3 | PASS | `/kill callmegadget`, respawn: `/jarvis memory` showed "Lately: - Died (callmegadget was killed) at -3028 70 3160 in world". |
+| 4 | not run | Needs a second player; `ConversationMemoryTest.forgetIsPerPlayer` covers it. |
+| 5 | not run | Would need `summarize-after` changed in the live config; `summarizesOnceThenKeepsRecent` covers it. |
+| 6 | PASS | `/jarvis memory forget` → Confirm/Cancel → `/jarvis confirm` → "Forgotten, sir." → `/jarvis memory`: "A clean slate." |

@@ -40,6 +40,12 @@ ai:
 
 memory:                     # experience memory (0.8.0)
   enabled: true
+  conversation:             # what he remembers of each player (0.18.1)
+    enabled: true
+    recent-turns: 8         # verbatim turns per request (3 on Ollama-only servers)
+    summarize-after: 30     # unsummarized turns before the light model condenses them
+    keep-days: 90           # summarized raw turns older than this are pruned (0 = keep)
+    record-events: true     # deaths and portal trips become memory lines
   embedding-model: "nomic-embed-text"   # ollama pull nomic-embed-text
   max-examples-in-prompt: 3
   # Ollama-only servers unlock freeform builds after this many successes

@@ -167,6 +167,31 @@ public class DatabaseManager {
             ps.executeUpdate();
         }
 
+        // Conversation memory (FB-04) — see memory.ConversationMemory. The turns
+        // themselves are chat_interactions; these hold the condensed summary per
+        // player and the notable things that happened (deaths, portals).
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS conversation_summaries (" +
+                "player_id VARCHAR(36) PRIMARY KEY, " +
+                "summary TEXT NOT NULL, " +
+                "covered_until BIGINT NOT NULL, " +
+                "updated_at BIGINT NOT NULL)")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS conversation_events (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "player_id VARCHAR(36) NOT NULL, " +
+                "text TEXT NOT NULL, " +
+                "timestamp BIGINT NOT NULL)")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE INDEX IF NOT EXISTS idx_chat_player " +
+                "ON chat_interactions (player_id, timestamp)")) {
+            ps.executeUpdate();
+        }
+
         log.info("Database tables initialized successfully");
     }
 
