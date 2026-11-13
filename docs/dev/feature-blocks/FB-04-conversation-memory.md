@@ -133,3 +133,5 @@ FB-15 + FB-16), qwen2.5:7b.
 | 4 | not run | Needs a second player; `ConversationMemoryTest.forgetIsPerPlayer` covers it. |
 | 5 | not run | Would need `summarize-after` changed in the live config; `summarizesOnceThenKeepsRecent` covers it. |
 | 6 | PASS | `/jarvis memory forget` → Confirm/Cancel → `/jarvis confirm` → "Forgotten, sir." → `/jarvis memory`: "A clean slate." |
+
+**Owner, 2026-11-12:** accepted the headless results; marked `tested`.

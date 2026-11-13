@@ -142,3 +142,5 @@ policy are skipped, the preview is not), jar `3b4210d1` (test build of FB-04/07/
 | 3–6 | not run | callmegadget is op (bypass). Covered by `BuildPolicyTest`, `BuildQuotaTest`, `BuildGuardrailsTest.tntRefused`. Needs a non-op player. |
 | 7 | n/a | No WorldGuard check exists to regress (see audit). |
 | 8 | not run | The fish market is 587–1158 placed blocks, the largest real AI build 4229; both under `max-blocks: 8000`. |
+
+**Owner, 2026-11-12:** accepted the headless results; marked `tested`.

@@ -66,3 +66,5 @@ Run 2026-11-11 with callmegadget (all `/jarvis <sentence>`), qwen2.5:7b on Ollam
 
 qwen didn't pick an unasked world change in step 1, so the new guard didn't fire live;
 `WorldGuardTest` covers it.
+
+**Owner, 2026-11-12:** accepted the headless results; marked `tested`.

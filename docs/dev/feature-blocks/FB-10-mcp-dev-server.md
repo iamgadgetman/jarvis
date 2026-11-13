@@ -147,3 +147,5 @@ Fixes from the live run, both on this branch:
   not read as local time.
 
 Node tests: 10 (adds concurrent commands share one connection; a log 8 hours ahead of us).
+
+**Owner, 2026-11-12:** accepted the headless results; marked `tested`.

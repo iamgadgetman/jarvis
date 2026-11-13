@@ -127,3 +127,5 @@ cover them.
 
 Steps 1, 2 and 4 want a throwaway server (or Chance's say-so to switch providers off on
 GadgetCraft for a few minutes).
+
+**Owner, 2026-11-12:** accepted the headless results; marked `tested`.
