@@ -31,6 +31,7 @@ says push.
 | [FB-13](FB-13-empty-replies.md) | Guards for empty model replies | A | — | S | tested |
 | [FB-14](FB-14-unasked-gifts.md) | No unasked items, heals or food | A | — | S | tested |
 | [FB-15](FB-15-unasked-world-changes.md) | No unasked time, weather, summons or clears | A | — | S | built |
+| [FB-16](FB-16-orphan-npcs.md) | Remove leftover butler NPCs at startup | G | — | S | built |
 
 Size: S = an afternoon, M = a day or two. Status values: `planned`, `in progress`,
 `built` (branch ready, unit tests green), `tested` (owner verified in-game), `shipped`.
@@ -41,12 +42,13 @@ Blocks in different lanes touch different files, so they can run at the same tim
 without merge conflicts. Blocks in the same lane run in order.
 
 ```
-Lane A  intent/ + npc/ButlerService ......... FB-01 → FB-02
+Lane A  intent/ + npc/ButlerService ......... FB-01 → FB-02 → FB-13 → FB-14 → FB-15
 Lane B  ai/AIConnector + prompts ............ FB-03 → FB-05 → FB-06
 Lane C  memory/ + DatabaseManager ........... FB-04
 Lane D  building/ + commands/ + config.yml .. FB-07 → FB-08, FB-09
 Lane E  tools/ (new, no Java) ............... FB-10
 Lane F  onboarding/ (new) + steward/ + wiki . FB-11 (after FB-09)
+Lane G  jarvis-paper npc/provider (Citizens) . FB-16
 ```
 
 Three ways to split the work, from simplest to most parallel:

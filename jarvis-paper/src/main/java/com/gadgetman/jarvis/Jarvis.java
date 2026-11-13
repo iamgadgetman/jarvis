@@ -87,6 +87,9 @@ public class Jarvis extends JavaPlugin {
         getServer().getPluginManager().registerEvents(npcProvider.inventoryView(), this);
         getServer().getPluginManager().registerEvents(
                 new CitizensInteractListener(npcProvider, platform.paperEvents()), this);
+        // FB-16: if Citizens already loaded its NPCs (a plugin reload), sweep now;
+        // otherwise its CitizensEnableEvent does it once saves.yml is in.
+        getServer().getScheduler().runTask(this, () -> npcProvider.sweepOrphans(CitizensNPCProvider.BUTLER_NAME));
 
         // Ears. No-ops unless voice.enabled and Simple Voice Chat is installed.
         voice = new PaperVoice(this);
