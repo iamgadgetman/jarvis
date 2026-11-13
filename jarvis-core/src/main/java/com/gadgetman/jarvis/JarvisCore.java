@@ -161,6 +161,7 @@ public final class JarvisCore {
         schematics = new SchematicLibrary(platform, butlers, undo);
         requestDecomposer = new RequestDecomposer(config, log, ai, database);
         confirmations = new ConfirmationManager(config.getLong("confirmation-timeout-seconds", 30));
+        building.setConfirmations(confirmations);   // FB-07: build previews wait on Confirm/Cancel
         requests = new PlayerRequestManager();
         duties = new DutyScheduler(platform);
         morningReport = new MorningReport(platform, butlers, requests, duties);

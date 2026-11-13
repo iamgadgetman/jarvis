@@ -99,3 +99,46 @@ timeout places nothing and clears particles; `yes` places and the batch appears 
 dangerous blocks are refused, size and distance are capped, and each permission group
 gets a cooldown and daily budget that only successful builds spend. `building.guardrails`
 and `building.limits`.
+
+
+## Audit findings (2026-11-11)
+
+- The config section is `build:`, not `building:`; the keys are `build.guardrails.*` and `build.limits.*`.
+- `World.particle(at, id, count, spread)` already exists (Paper, the shared vanilla adapter, FakeWorld),
+  so no platform change: the preview uses `end_rod` particles. They are world-wide, not per player.
+- **No WorldGuard check exists anywhere in Java** (only `mining.integrations.worldguard` keys and a
+  plugin.yml soft-depend). In-game step 7 ("still refused") has nothing behind it; out of scope here.
+- The cleaners run only inside the script planner; JSON plans get none. Both planners meet in the
+  `sync` block at the end of `startBuild`, which is where the policy, block budget and preview go.
+- AI builds only. `/jarvis build wall|floor|pillar|cube`, schematic pastes and undo/redo don't go
+  through it (they aren't AI-designed).
+- `max-blocks` default is **8000, not 4000**: the largest real AI build on GadgetCraft (a redstone
+  mansion) was 4229 blocks, and the spec says a legitimate large build must pass.
+- No plain "yes"/"no" handling existed. `IntentPipeline.submit` now answers a waiting preview first
+  (yes/yeah/ok/do it/build it; no/nope/cancel/stop/never mind), before the fast path. In chat that
+  still needs the wake word ("jarvis yes"); `/jarvis confirm`, `/jarvis cancel`, `/jarvis build cancel`
+  and the [Build it]/[Cancel] links work too.
+- `jarvis.build.bypass` (default op) skips the policy and limits, not the preview.
+
+## Built
+
+`building/BuildPolicy.java`, `building/BuildQuota.java` (table `build_quota(player_id, day, builds,
+blocks, last_build_at)`), the preview in `BuildingAssistant` (pending plans, outline task, expiry,
+`confirmPending`/`cancelPending`, `CONFIRM_ACTION` through `ConfirmationManager`), quota spent in
+`completeBuild` only, `plugin.yml` permissions, `config.yml`, docs.
+Tests: `BuildPolicyTest` (6), `BuildQuotaTest` (5), `BuildGuardrailsTest` (5: preview then confirm
+and undo history, no, spoken yes, TNT refused, preview off). 353 pass.
+
+## Results
+
+Run 2026-11-11 on GadgetCraft with callmegadget (an op, so `jarvis.build.bypass`: limits and the
+policy are skipped, the preview is not), jar `3b4210d1` (test build of FB-04/07/09/10/15/16).
+
+| # | Result | Notes |
+|---|---|---|
+| 1 | PASS | `/jarvis build a small stone hut` → "1361 blocks, 11x11x14. Say yes to build or no to cancel." + [Build it] [Cancel]; `/jarvis no` → "Plan dropped, sir. Nothing was built."; `/jarvis undo list` → "No builds to undo". First try found `/jarvis no` caught as a typo ("No such command: no"); fixed (`yes`/`no` are subcommands). Particles can't be seen headless. |
+| 2 | PASS | Again, `/jarvis yes` → placed; undo list "AI build: a small stone hut — 274 blocks"; `/jarvis undo` → "Restored 274 blocks." The preview said 1479: plans count the air they clear with. Fixed after the run: the preview now counts solid blocks only (not in the live jar). |
+| — | PASS | Timeout: left alone for 20 s → "The preview ran out; nothing was built." |
+| 3–6 | not run | callmegadget is op (bypass). Covered by `BuildPolicyTest`, `BuildQuotaTest`, `BuildGuardrailsTest.tntRefused`. Needs a non-op player. |
+| 7 | n/a | No WorldGuard check exists to regress (see audit). |
+| 8 | not run | The fish market is 587–1158 placed blocks, the largest real AI build 4229; both under `max-blocks: 8000`. |

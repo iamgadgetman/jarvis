@@ -372,8 +372,8 @@ public class CommandService implements CommandSink {
                 }
             }
             case "memory"    -> handleMemory(player, args);
-            case "confirm"   -> handleConfirm(player);
-            case "cancel"    -> handleCancel(player);
+            case "confirm", "yes" -> handleConfirm(player);   // "yes"/"no" answer a build preview (FB-07)
+            case "cancel", "no"   -> handleCancel(player);
             case "requests"  -> handleRequests(player);
             case "approve", "deny" -> {
                 if (!player.hasPermission("jarvis.admin")) {
@@ -1027,6 +1027,12 @@ public class CommandService implements CommandSink {
                             + "Forgotten, sir. We have never met. Charmed, I'm sure."));
             return;
         }
+        if (BuildingAssistant.CONFIRM_ACTION.equals(actionType)) {   // FB-07: a previewed build
+            if (!core.building().confirmPending(player)) {
+                player.message(Colors.YELLOW + "Jarvis: That plan has gone, sir. Ask again.");
+            }
+            return;
+        }
 
         String result = core.actions().execute(actionType, params, player);
         if (result != null) {
@@ -1078,6 +1084,7 @@ public class CommandService implements CommandSink {
 
     private void handleCancel(Owner player) {
         ConfirmationManager cm = core.confirmations();
+        if (core.building() != null && core.building().cancelPending(player)) return;   // FB-07
         if (!cm.hasPending(player.id())) {
             player.message(Colors.YELLOW + "Jarvis: Nothing to cancel.");
             return;
@@ -1169,7 +1176,7 @@ public class CommandService implements CommandSink {
             "report", "requests", "return", "rotate", "save", "scan", "schematic", "schematics", "sentry",
             "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather", "setup",
             "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "undo", "ver", "version", "voice",
-            "warp", "watch");
+            "warp", "watch", "yes", "no");
 
     /** The top-level words worth offering on tab. */
     private static final List<String> COMPLETIONS = List.of(

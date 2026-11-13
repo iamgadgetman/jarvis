@@ -38,6 +38,20 @@ ai:
     min-interval-ms: 400    # floor between chat lines
     providers: [openai, claude, gemini, grok, ollama]
 
+build:
+  guardrails:               # checked on every AI build before anything is placed (0.18.1)
+    blocked-blocks: [tnt, lava, lava_bucket, command_block, chain_command_block,
+                     repeating_command_block, structure_block, barrier, bedrock,
+                     end_portal_frame, spawner, fire]
+    max-blocks: 8000
+    max-size: 48            # longest edge of the bounding box
+    max-distance: 64        # player to the nearest edge of the build
+    preview-seconds: 20     # particle outline + yes/no; 0 = build at once
+  limits:                   # per permission group; only finished builds count (0.18.1)
+    default: { cooldown-seconds: 120, daily-builds: 5, daily-blocks: 6000 }
+    trusted: { cooldown-seconds: 30, daily-builds: 30, daily-blocks: 60000 }
+    # jarvis.build.limit.trusted puts a player in "trusted"; jarvis.build.bypass (op) skips all limits
+
 memory:                     # experience memory (0.8.0)
   enabled: true
   conversation:             # what he remembers of each player (0.18.1)

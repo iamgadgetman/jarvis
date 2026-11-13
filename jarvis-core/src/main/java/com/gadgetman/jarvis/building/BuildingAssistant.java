@@ -11,6 +11,7 @@ import com.gadgetman.jarvis.core.platform.Task;
 import com.gadgetman.jarvis.core.platform.World;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.core.world.BlockPos;
+import com.gadgetman.jarvis.core.world.Vec3;
 import com.gadgetman.jarvis.core.world.BlockState;
 import com.gadgetman.jarvis.core.world.Facing;
 import com.gadgetman.jarvis.core.world.Ids;
@@ -62,6 +63,31 @@ public class BuildingAssistant {
 
     private final Map<UUID, BuildState> activeBuilds = new ConcurrentHashMap<>();
 
+    // ---- FB-07 guardrails ----
+    private BuildPolicy.Limits policy;
+    private int previewSeconds = 20;
+    private BuildQuota quota;
+    private com.gadgetman.jarvis.ConfirmationManager confirmations;
+    /** Plans waiting for the player's yes, with their particle outline. Server thread only. */
+    private final Map<UUID, PendingBuild> pending = new ConcurrentHashMap<>();
+    /** The pending-confirmation action name for a previewed build. */
+    public static final String CONFIRM_ACTION = "build_confirm";
+
+    private static final class PendingBuild {
+        final World world;
+        final List<BlockPlacement> placements;
+        final Runnable build;
+        final long expiresAt;
+        Task outline;
+
+        PendingBuild(World world, List<BlockPlacement> placements, Runnable build, long expiresAt) {
+            this.world = world;
+            this.placements = placements;
+            this.build = build;
+            this.expiresAt = expiresAt;
+        }
+    }
+
     // Configuration
     private int blocksPerTick = 50;
     private int progressUpdateInterval = 100;
@@ -90,6 +116,8 @@ public class BuildingAssistant {
         this.progression = progression;
         this.undo = undo;
         loadConfig();
+        this.quota = database == null ? null
+                : new BuildQuota(platform, database, System::currentTimeMillis, java.time.ZoneId.systemDefault());
         log.info("Building assistant initialized");
     }
 
@@ -98,6 +126,9 @@ public class BuildingAssistant {
         blocksPerTick = cfg.getInt("build.blocks-per-tick", 50);
         progressUpdateInterval = cfg.getInt("build.progress-update-interval", 100);
         maxAiBlocks = cfg.getInt("build.max-ai-blocks", 5000);
+        policy = BuildPolicy.from(cfg);
+        previewSeconds = cfg.getInt("build.guardrails.preview-seconds", 20);
+        if (quota != null) quota.reload(cfg);
 
         planner = cfg.getString("build.planner", "script").toLowerCase(Locale.ROOT);
         int scriptMaxBlocks = cfg.getInt("build.script.max-blocks", 50000);
@@ -209,6 +240,19 @@ public class BuildingAssistant {
             return;
         }
 
+        if (pending.containsKey(player.id())) {
+            player.message(Colors.YELLOW + "Jarvis: There's a build waiting for your yes or no, sir.");
+            return;
+        }
+        // FB-07: the cooldown and daily budget, before the model is asked anything.
+        if (quota != null) {
+            String refused = quota.checkStart(player);
+            if (refused != null) {
+                player.message(Colors.YELLOW + "Jarvis: " + Colors.WHITE + refused);
+                return;
+            }
+        }
+
         // Bring him if he is not out (butler.auto-summon)
         if (!butlers.ensurePresent(player)) return;
 
@@ -291,12 +335,19 @@ public class BuildingAssistant {
                 final List<BlockPlacement> finalPlacements = placements;
                 final String finalResponse = response;
                 platform.scheduler().sync(() -> {
-                    BuildState state = executeBuild(player, world, description, finalPlacements, true);
-                    if (state != null) {
-                        state.situationJson = situationJson;
-                        state.planJson = finalResponse;
-                        state.provider = provider;
-                    }
+                    Runnable build = () -> {
+                        BuildState state = executeBuild(player, world, description, finalPlacements, true);
+                        if (state != null) {
+                            state.situationJson = situationJson;
+                            state.planJson = finalResponse;
+                            state.provider = provider;
+                        }
+                    };
+                    // FB-07: the plan is final here (the cleaners have run). Refuse what
+                    // the guardrails forbid, then show it and wait for a yes.
+                    if (!guard(player, world, origin, finalPlacements)) return;
+                    if (previewSeconds > 0) preview(player, world, finalPlacements, build);
+                    else build.run();
                 });
 
             } catch (Exception e) {
@@ -818,9 +869,140 @@ public class BuildingAssistant {
         }
     }
 
+    // ==================== GUARDRAILS (FB-07) ====================
+
+    /** Called by JarvisCore once the confirmation manager exists. */
+    public void setConfirmations(com.gadgetman.jarvis.ConfirmationManager confirmations) {
+        this.confirmations = confirmations;
+    }
+
+    /** Tests: a quota with a fake clock. */
+    void useQuota(BuildQuota quota) {
+        this.quota = quota;
+    }
+
+    /** The policy and the day's block budget; false (with the reasons said) when the plan may not be built. */
+    private boolean guard(Owner player, World world, BlockPos origin, List<BlockPlacement> placements) {
+        List<BlockPos> positions = new ArrayList<>(placements.size());
+        List<String> specs = new ArrayList<>(placements.size());
+        for (BlockPlacement p : placements) {
+            positions.add(p.pos);
+            specs.add(p.spec);
+        }
+        List<String> violations = player.hasPermission(BuildQuota.BYPASS) ? List.of()
+                : BuildPolicy.check(policy, positions, specs, player.pos().block(), world.minY(), world.maxY());
+        if (!violations.isEmpty()) {
+            player.message(Colors.RED + "Jarvis: I can't build that, sir: " + String.join("; ", violations) + ".");
+            log.info("Build refused for " + player.name() + ": " + String.join("; ", violations));
+            return false;
+        }
+        if (quota != null) {
+            String refused = quota.checkBlocks(player, placements.size());
+            if (refused != null) {
+                player.message(Colors.YELLOW + "Jarvis: " + Colors.WHITE + refused);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Outline the plan with particles and ask; nothing is placed until {@link #confirmPending}. */
+    private void preview(Owner player, World world, List<BlockPlacement> placements, Runnable build) {
+        List<BlockPos> positions = new ArrayList<>(placements.size());
+        for (BlockPlacement p : placements) positions.add(p.pos);
+        BlockPos[] box = BuildPolicy.bounds(positions);
+        List<Vec3> outline = outlinePoints(box[0], box[1], positions);
+
+        PendingBuild pb = new PendingBuild(world, placements, build,
+                System.currentTimeMillis() + previewSeconds * 1000L);
+        pending.put(player.id(), pb);
+        pb.outline = platform.scheduler().every(0L, 10L, t -> {
+            if (System.currentTimeMillis() > pb.expiresAt) {
+                if (pending.remove(player.id(), pb)) {
+                    t.cancel();
+                    clearConfirmation(player);
+                    player.message(Colors.GRAY + "Jarvis: The preview ran out; nothing was built.");
+                }
+                return;
+            }
+            for (Vec3 v : outline) world.particle(v, "end_rod", 1, 0.0);
+        });
+        if (confirmations != null) {
+            confirmations.setPending(player.id(), CONFIRM_ACTION, new org.json.JSONObject(),
+                    "build " + placements.size() + " blocks");
+        }
+        int w = box[1].x() - box[0].x() + 1, h = box[1].y() - box[0].y() + 1, d = box[1].z() - box[0].z() + 1;
+        // Plans also clear their insides with air; say how many real blocks go in.
+        int solid = 0;
+        for (BlockPlacement p : placements) if (!BuildPolicy.isAir(p.spec)) solid++;
+        player.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + solid + " blocks, " + w + "x" + h + "x" + d
+                + ". Say " + Colors.GREEN + "yes" + Colors.WHITE + " to build or " + Colors.RED + "no" + Colors.WHITE
+                + " to cancel.");
+        player.rich(new com.gadgetman.jarvis.core.text.RichLine()
+                .link(Colors.GREEN + "[Build it]", "/jarvis confirm", "Place the " + solid + " blocks")
+                .link(Colors.RED + " [Cancel]", "/jarvis cancel", "Drop this plan"));
+        player.message(Colors.GRAY + "The outline shows for " + previewSeconds + "s.");
+    }
+
+    /** The box's twelve edges, one point per block, plus a sparse sample of the blocks themselves. */
+    static List<Vec3> outlinePoints(BlockPos min, BlockPos max, List<BlockPos> blocks) {
+        List<Vec3> out = new ArrayList<>();
+        double x0 = min.x(), y0 = min.y(), z0 = min.z(), x1 = max.x() + 1, y1 = max.y() + 1, z1 = max.z() + 1;
+        for (double x = x0; x <= x1; x++) {
+            for (double[] yz : new double[][]{{y0, z0}, {y0, z1}, {y1, z0}, {y1, z1}}) out.add(new Vec3(x, yz[0], yz[1]));
+        }
+        for (double y = y0 + 1; y < y1; y++) {
+            for (double[] xz : new double[][]{{x0, z0}, {x0, z1}, {x1, z0}, {x1, z1}}) out.add(new Vec3(xz[0], y, xz[1]));
+        }
+        for (double z = z0 + 1; z < z1; z++) {
+            for (double[] xy : new double[][]{{x0, y0}, {x0, y1}, {x1, y0}, {x1, y1}}) out.add(new Vec3(xy[0], xy[1], z));
+        }
+        int step = Math.max(1, blocks.size() / 60);
+        for (int i = 0; i < blocks.size(); i += step) {
+            BlockPos b = blocks.get(i);
+            out.add(new Vec3(b.x() + 0.5, b.y() + 0.5, b.z() + 0.5));
+        }
+        return out;
+    }
+
+    public boolean hasPending(Owner player) {
+        return pending.containsKey(player.id());
+    }
+
+    /** The player said yes: stop the outline and build. False when nothing was waiting. */
+    public boolean confirmPending(Owner player) {
+        PendingBuild pb = pending.remove(player.id());
+        if (pb == null) return false;
+        if (pb.outline != null) pb.outline.cancel();
+        clearConfirmation(player);
+        pb.build.run();
+        return true;
+    }
+
+    /** The player said no: stop the outline and drop the plan. False when nothing was waiting. */
+    public boolean cancelPending(Owner player) {
+        PendingBuild pb = pending.remove(player.id());
+        if (pb == null) return false;
+        if (pb.outline != null) pb.outline.cancel();
+        clearConfirmation(player);
+        player.message(Colors.GRAY + "Jarvis: Plan dropped, sir. Nothing was built.");
+        return true;
+    }
+
+    private void clearConfirmation(Owner player) {
+        if (confirmations != null && CONFIRM_ACTION.equals(confirmations.getPendingAction(player.id()))) {
+            confirmations.clearPending(player.id());
+        }
+    }
+
     /** Complete a build. */
     private void completeBuild(Owner player, BuildState state) {
         activeBuilds.remove(player.id());
+        // FB-07: only a finished AI build spends the day's budget.
+        if (state.aiGenerated && quota != null) {
+            int placed = state.placedBlocks;
+            platform.scheduler().async(() -> quota.spend(player.id(), placed));
+        }
 
         // Remember the plan that worked. The label is free: a build that ran to
         // completion and was left alone is a success by definition.
@@ -879,6 +1061,7 @@ public class BuildingAssistant {
 
     /** Cancel an active build. */
     public void cancelBuild(Owner player) {
+        if (cancelPending(player)) return;   // FB-07: a preview waiting for yes
         cancelBuildInternal(player, "Cancelled by player", true);
     }
 
