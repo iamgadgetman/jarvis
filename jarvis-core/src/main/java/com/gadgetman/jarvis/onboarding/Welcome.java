@@ -57,7 +57,7 @@ public final class Welcome {
     }
 
     public void start() {
-        subscriptions.add(platform.events().on(JoinEvent.class, e -> onJoin(e.who())));
+        subscriptions.add(platform.events().on(JoinEvent.class, e -> onJoin(e.who(), e.firstJoin())));
     }
 
     public void shutdown() {
@@ -65,14 +65,14 @@ public final class Welcome {
         subscriptions.clear();
     }
 
-    private void onJoin(Owner p) {
+    private void onJoin(Owner p, boolean firstJoin) {
         if (!inFlight.add(p.id())) return;   // a quick reconnect while the last join is still pending
         long delay = platform.config().getLong("steward.report-join-delay-ticks", 60L);
         platform.scheduler().later(delay, () -> {
             if (!p.isOnline()) { inFlight.remove(p.id()); return; }
             platform.scheduler().async(() -> store.load(p.id()), row -> {
                 try {
-                    decide(p, row.orElse(null));
+                    decide(p, row.orElse(null), firstJoin);
                 } finally {
                     inFlight.remove(p.id());
                 }
@@ -80,16 +80,26 @@ public final class Welcome {
         });
     }
 
-    private void decide(Owner p, OnboardingStore.State row) {
+    private void decide(Owner p, OnboardingStore.State row, boolean firstJoin) {
         if (!p.isOnline()) return;
-        if (row != null) tutorial.remember(p.id(), row);
+        // /jarvis tutorial reset leaves a "welcome again" row (welcomedAt 0).
+        boolean resetPending = row != null && row.welcomedAt() == 0;
+        if (row != null && !resetPending) tutorial.remember(p.id(), row);
 
         if (isAdmin(p) && Boolean.FALSE.equals(aiUsable.get()) && nagMode().equals(NAG_ONCE)) {
             if (naggedThisRun.add(p.id())) nag(p);
             return;   // the welcome waits until the AI works
         }
-        if (row != null) return;
+        if (row != null && !resetPending) return;
         if (!platform.config().getBoolean("onboarding.welcome.enabled", true)) return;
+        // Someone who has played here before but has no row: the server just got
+        // this version. Don't welcome every regular with a bell; note them quietly.
+        if (row == null && !firstJoin && !platform.config().getBoolean("onboarding.welcome.existing-players", false)) {
+            OnboardingStore.State s = new OnboardingStore.State(clock.getAsLong(), 0, false, 0);
+            tutorial.remember(p.id(), s);
+            platform.scheduler().async(() -> store.save(p.id(), s));
+            return;
+        }
         welcome(p);
     }
 

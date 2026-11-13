@@ -136,6 +136,38 @@ class WelcomeTest {
     }
 
     @Test
+    @DisplayName("a regular from before this version (played before, no row): no welcome, a quiet row")
+    void existingPlayerQuiet() {
+        FakeOwner p = f.player("vera");
+        join(p, false);
+        assertEquals(0, bells(p));
+        assertFalse(welcomeSaid(p), String.join("\n", p.plainMessages()));
+        assertTrue(store.load(p.id()).isPresent(), "noted, so a later wipe doesn't welcome them either");
+
+        f.platform.config().set("onboarding.welcome.existing-players", true);
+        FakeOwner q = f.player("walt");
+        join(q, false);
+        assertEquals(1, bells(q), "existing-players: true welcomes them");
+    }
+
+    @Test
+    @DisplayName("/jarvis tutorial reset: the next join is a welcome again, even for a regular, even after a restart")
+    void resetWelcomesAgain() {
+        FakeOwner p = f.player("xena");
+        join(p, false);                     // a regular: quiet row
+        assertEquals(0, bells(p));
+        f.core.tutorial().reset(p.id());
+        f.tick(1);
+        assertEquals(0L, store.load(p.id()).orElseThrow().welcomedAt(), "kept as a 'welcome again' row");
+        rejoin(p, false);
+        assertEquals(1, bells(p));
+        assertTrue(p.wasTold("I'm Jarvis"), String.join("\n", p.plainMessages()));
+        assertTrue(store.load(p.id()).orElseThrow().welcomedAt() > 0);
+        rejoin(p, false);
+        assertFalse(welcomeSaid(p), "once only");
+    }
+
+    @Test
     @DisplayName("player data wiped (firstJoin true again) but the row exists: nothing")
     void wipedPlayerData() {
         FakeOwner p = f.player("hank");

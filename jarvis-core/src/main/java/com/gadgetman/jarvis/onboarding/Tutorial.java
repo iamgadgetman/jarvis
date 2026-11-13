@@ -129,11 +129,17 @@ public final class Tutorial {
         say(p, "Stopped. " + Colors.AQUA + "/jarvis tutorial" + Colors.WHITE + " picks up at step " + s.step() + ".");
     }
 
-    /** Forget a player entirely: their next join is a first join again. */
+    /**
+     * Forget a player's welcome and tutorial: their next join is a first join
+     * again. Saved as a row with welcomedAt 0 rather than deleted, so it
+     * survives a restart and isn't mistaken for a player who was here before
+     * onboarding existed.
+     */
     public void reset(UUID player) {
         cancelReminder(player);
         states.remove(player);
-        platform.scheduler().async(() -> store.delete(player));
+        OnboardingStore.State again = new OnboardingStore.State(0, 0, false, 0);
+        platform.scheduler().async(() -> store.save(player, again));
     }
 
     /**

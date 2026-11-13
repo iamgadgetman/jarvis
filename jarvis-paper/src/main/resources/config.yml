@@ -723,6 +723,7 @@ onboarding:
     enabled: true
     give-bell: true            # Hand the controller bell on a player's first join
     offer-tutorial: true       # Ask once; /jarvis tutorial always works regardless
+    existing-players: false    # Also welcome players who were here before this version (they get a quiet row otherwise)
   tutorial:
     enabled: true              # /jarvis tutorial, and the Tutorial button on the bell
     reminder-minutes: 10       # One nudge per step if they wander off; 0 = none

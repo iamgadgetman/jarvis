@@ -152,7 +152,8 @@ class TutorialTest {
         cmd("tutorial", "reset", "alice");
         assertTrue(p.wasTold("next join is a first join"), said());
         OnboardingStore store = new OnboardingStore(f.core.database(), f.platform.log());
-        assertTrue(store.load(p.id()).isEmpty(), "reset deletes the row");
+        assertEquals(0L, store.load(p.id()).map(OnboardingStore.State::welcomedAt).orElse(-1L),
+                "reset leaves a 'welcome again' row (welcomedAt 0)");
 
         FakeOwner bob = f.player("bob");
         f.core.commands().jarvis(bob, Optional.of(bob), List.of("tutorial", "reset", "alice"), false);

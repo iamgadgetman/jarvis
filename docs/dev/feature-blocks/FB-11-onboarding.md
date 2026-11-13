@@ -231,3 +231,13 @@ Tests: `WelcomeTest` (7) and `TutorialTest` (8); full suite 394 core + 26 paper,
 ## Results
 
 _Not run yet: the owner's in-game run, after FB-08 and FB-11 are both merged for the live test._
+
+### Review fix (2026-11-12): existing servers
+
+"No row in `onboarding_state`" is also true for every regular the first time a server runs
+this version, so each of them would have got a welcome and a bell. Now a player with no row
+whose platform says they have played before is noted quietly (row written, no welcome) unless
+`onboarding.welcome.existing-players: true`. The wiped-player-data case is unchanged (a row
+exists, so nothing). `/jarvis tutorial reset` therefore leaves a row with `welcomed_ts = 0`
+("welcome again") instead of deleting it, so a reset regular is still welcomed, and the reset
+survives a restart. Tests: `WelcomeTest.existingPlayerQuiet`, `resetWelcomesAgain`.
