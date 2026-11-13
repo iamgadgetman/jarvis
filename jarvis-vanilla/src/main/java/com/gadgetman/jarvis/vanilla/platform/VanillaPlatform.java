@@ -144,6 +144,11 @@ public final class VanillaPlatform implements Platform {
     }
 
     @Override
+    public void runConsoleCommand(String command) {
+        server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), command);
+    }
+
+    @Override
     public double mspt() {
         return server.getAverageTickTimeNanos() / 1_000_000.0;
     }

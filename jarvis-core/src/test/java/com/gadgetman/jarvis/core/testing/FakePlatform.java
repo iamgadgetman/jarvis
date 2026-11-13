@@ -70,6 +70,9 @@ public final class FakePlatform implements Platform {
     @Override public FakeUi ui() { return ui; }
     @Override public String serverVersion() { return "Fake 1.0 (API test)"; }
     @Override public double tps() { return tps; }
+    /** Console commands run through {@link #runConsoleCommand}, in order. */
+    public final List<String> consoleCommands = new ArrayList<>();
+    @Override public void runConsoleCommand(String command) { consoleCommands.add(command); }
     @Override public double mspt() { return 1000.0 / 20.0 / (tps / 20.0); }
 
     public FakeButlers butlers() {

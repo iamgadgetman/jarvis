@@ -172,6 +172,12 @@ public class CommandService implements CommandSink {
                 handleAiSetup(sender, args);
                 return;
             }
+            // FB-08: reward bundles. Admins (and the console) list and run them.
+            case "bundle", "bundles" -> {
+                if (!isAdmin(sender, asPlayer)) { sender.message(Colors.RED + "You don't have permission."); return; }
+                handleBundle(sender, asPlayer, args);
+                return;
+            }
             // FB-09: which AI providers can answer, and how to get one if none can.
             case "setup" -> {
                 if (!isAdmin(sender, asPlayer) && !platform.singleplayer()) {
@@ -440,6 +446,50 @@ public class CommandService implements CommandSink {
                 core.intents().submit(player, nlInput, IntentPipeline.Source.CONSOLE);
             }
         }
+    }
+
+    // ==================== BUNDLES (FB-08) ====================
+
+    /**
+     * /jarvis bundle [list] — the configured bundles.
+     * /jarvis bundle run &lt;name&gt; [player] — run one for a player (yourself if
+     * you leave it out; the console must name one). The once-per-player and
+     * cooldown rules still apply, so this is also how to test them.
+     */
+    private void handleBundle(Audience sender, Optional<Owner> asPlayer, List<String> args) {
+        BundleRegistry reg = core.bundles();
+        if (reg == null) { sender.message(Colors.RED + "Bundles aren't loaded."); return; }
+        String verb = args.size() > 1 ? args.get(1).toLowerCase(Locale.ROOT) : "list";
+        if (verb.equals("list")) {
+            if (reg.all().isEmpty()) {
+                sender.message(Colors.GRAY + "Jarvis: No bundles yet, sir. Add some under bundles: in config.yml.");
+                return;
+            }
+            sender.message(Colors.GOLD + "Jarvis: Reward bundles:");
+            for (BundleRegistry.Bundle b : reg.all().values()) {
+                StringBuilder rules = new StringBuilder();
+                if (b.oncePerPlayer()) rules.append(" · once per player");
+                if (b.cooldownMinutes() > 0) rules.append(" · every ").append(b.cooldownMinutes()).append(" min");
+                if (!b.ai()) rules.append(" · admin only");
+                sender.message(Colors.WHITE + "  " + b.name() + Colors.GRAY
+                        + (b.description().isBlank() ? "" : " - " + b.description())
+                        + " (" + b.commands().size() + " command" + (b.commands().size() == 1 ? "" : "s") + rules + ")");
+            }
+            return;
+        }
+        if (!verb.equals("run") || args.size() < 3) {
+            sender.message(Colors.RED + "Usage: /jarvis bundle list | /jarvis bundle run <name> [player]");
+            return;
+        }
+        Optional<Owner> target = asPlayer;
+        if (args.size() > 3) {
+            String name = args.get(3);
+            target = platform.players().online().stream().filter(o -> o.name().equalsIgnoreCase(name)).findFirst();
+            if (target.isEmpty()) { sender.message(Colors.RED + name + " isn't online."); return; }
+        }
+        if (target.isEmpty()) { sender.message(Colors.RED + "From the console, name the player: /jarvis bundle run <name> <player>"); return; }
+        BundleRegistry.Result r = reg.trigger(target.get(), args.get(2), BundleRegistry.By.ADMIN);
+        sender.message((r.ran() ? Colors.GREEN : Colors.YELLOW) + "Jarvis: " + r.message());
     }
 
     // ==================== SETUP (FB-09) ====================
@@ -1229,7 +1279,7 @@ public class CommandService implements CommandSink {
     /** Every subcommand the switch above accepts, for typo suggestions. */
     private static final List<String> KNOWN_COMMANDS = List.of(
             "about", "add", "ai", "approve", "queue", "rank", "tunnel", "ask", "attack", "bell",
-            "branch_mine", "briefing", "broadcast", "build", "cancel", "cancelbuild", "export-dataset",
+            "branch_mine", "briefing", "broadcast", "build", "bundle", "bundles", "cancel", "cancelbuild", "export-dataset",
             "chat", "chest", "chop", "chop_trees", "clearloot", "come", "confirm", "convert", "convertall",
             "dance", "defend", "delete", "deny", "deposit", "dig", "discord_broadcast", "dismiss", "duties",
             "duty", "enchant", "farm", "feed", "fight", "fish", "folder", "follow", "give_item", "guard",
@@ -1245,7 +1295,7 @@ public class CommandService implements CommandSink {
     private static final List<String> COMPLETIONS = List.of(
             "summon", "dismiss", "return", "follow", "stop", "attack", "guard", "watch", "mine", "dig",
             "tunnel", "farm", "tend", "chop", "fish", "dance", "light", "patrol", "chest", "deposit", "loot",
-            "clearloot", "bell", "build", "paste", "undo", "redo", "cancelbuild", "schematic", "ask", "ai", "cloud", "setup", "report", "duties",
+            "clearloot", "bell", "build", "paste", "undo", "redo", "cancelbuild", "schematic", "ask", "ai", "cloud", "setup", "bundle", "report", "duties",
             "duty", "recover", "home", "memory", "confirm", "cancel", "requests", "approve", "deny", "portal", "portals",
             "quiet", "rank", "queue", "version", "voice", "help", "reload", "debug", "export-dataset");
 
@@ -1503,6 +1553,11 @@ public class CommandService implements CommandSink {
             player.message(Colors.WHITE + "  /jarvis schematic convertall" + Colors.GRAY + " - Convert all litematics");
         }
 
+        if (player.hasPermission("jarvis.admin")) {
+            player.message(Colors.YELLOW + "Reward bundles:");
+            player.message(Colors.WHITE + "  /jarvis bundle list" + Colors.GRAY + " - The bundles in config.yml");
+            player.message(Colors.WHITE + "  /jarvis bundle run <name> [player]" + Colors.GRAY + " - Run one (its rules still apply)");
+        }
         player.message(Colors.YELLOW + "AI setup:");
         player.message(Colors.WHITE + "  /jarvis setup" + Colors.GRAY + " - Which AI providers can answer, and free ways to get one");
         player.message(Colors.WHITE + "  /jarvis setup pull [model]" + Colors.GRAY + " - The Ollama command to run on its host");

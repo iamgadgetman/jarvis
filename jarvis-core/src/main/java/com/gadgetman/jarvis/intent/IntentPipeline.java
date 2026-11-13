@@ -76,6 +76,10 @@ public class IntentPipeline {
      * Actions too risky to trust to a small local model's parsing. The fast
      * path never produces these either.
      */
+    // trigger_bundle (FB-08) is deliberately NOT here: a bundle's commands are
+    // written by the admin, the model only picks a name from the admin's list,
+    // and once-per-player/cooldown rules apply, so a small model misparsing a
+    // sentence can at worst hand out a reward the admin already approved.
     static final Set<String> RESTRICTED_IN_REDUCED_MODE = Set.of(
             "console_command", "console_commands", "lp_group_add", "lp_group_remove", "set_gamerule");
 
@@ -438,7 +442,7 @@ public class IntentPipeline {
         try {
             String context  = worldContext + buildMemoryContext(player);
             String response = ai.parseNaturalLanguage(message, player.name(), context,
-                    core.knowledge().render(), stream);
+                    serverFacts(), stream);
 
             JSONObject action     = new JSONObject(extractJson(response));
             String actionType     = action.optString("action", "unknown");
@@ -567,6 +571,14 @@ public class IntentPipeline {
         return text.isEmpty() ? "none" : text;
     }
 
+    /** The admin's server facts plus the reward bundles the model may name (FB-08). */
+    private String serverFacts() {
+        String facts = core.knowledge().render();
+        String bundles = core.bundles() == null ? "" : core.bundles().promptSection();
+        if (bundles.isEmpty()) return facts;
+        return facts == null || facts.isBlank() ? bundles : facts + "\n\n" + bundles;
+    }
+
     // ==================== EXECUTE ====================
 
     private void executeAction(Owner player, String actionType, JSONObject parameters,
@@ -687,6 +699,15 @@ public class IntentPipeline {
                     parameters != null ? parameters.optString("type", null) : null,
                     parameters != null ? parameters.optInt("spacing", -1) : -1);
             case "clearloot" -> npc.clearInventory(player);
+            case "trigger_bundle" -> {
+                if (core.bundles() == null) return;
+                String name = parameters == null ? "" : parameters.optString("name", "");
+                var result = core.bundles().trigger(player, name, com.gadgetman.jarvis.commands.BundleRegistry.By.AI);
+                // On success the model's own reply already celebrated; say only a refusal.
+                if (!result.ran() || aiResponse.isEmpty()) {
+                    sink.feedback(player, (result.ran() ? Colors.GREEN : Colors.YELLOW) + "Jarvis: " + result.message());
+                }
+            }
             case "undo" -> core.undo().undo(player, 1);
             case "redo" -> core.undo().redo(player);
             case "chat", "talk" -> {

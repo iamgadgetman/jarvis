@@ -205,6 +205,18 @@ public class DatabaseManager {
             ps.executeUpdate();
         }
 
+        // Reward bundles (FB-08) — see commands.BundleRegistry. How often each
+        // player has had each bundle, and when last, for once-per-player and cooldowns.
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS bundle_uses (" +
+                "player_id VARCHAR(36) NOT NULL, " +
+                "bundle VARCHAR(48) NOT NULL, " +
+                "uses INTEGER NOT NULL, " +
+                "last_at BIGINT NOT NULL, " +
+                "PRIMARY KEY (player_id, bundle))")) {
+            ps.executeUpdate();
+        }
+
         log.info("Database tables initialized successfully");
     }
 

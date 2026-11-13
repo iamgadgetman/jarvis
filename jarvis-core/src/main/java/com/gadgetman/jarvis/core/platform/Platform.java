@@ -49,6 +49,20 @@ public interface Platform {
         return false;
     }
 
+    /**
+     * Run one command as the server console, on the server thread. Only for
+     * commands an admin wrote (reward bundles, FB-08): the model never supplies
+     * the text. {@code console_command} has its own path in the adapters.
+     */
+    default void runConsoleCommand(String command) {
+        throw new UnsupportedOperationException("console commands are not supported on " + name());
+    }
+
+    /** Expand third-party placeholders (PlaceholderAPI on Paper) for a player; as-is where there are none. */
+    default String expandPlaceholders(java.util.UUID player, String text) {
+        return text;
+    }
+
     /** Ticks per second over the last minute, at most 20. */
     double tps();
 

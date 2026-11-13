@@ -136,6 +136,27 @@ public final class PaperPlatform implements Platform {
     }
 
     @Override
+    public void runConsoleCommand(String command) {
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
+    }
+
+    /**
+     * PlaceholderAPI's %placeholders%, when it is installed. Called by
+     * reflection so the plugin needs no compile-time dependency on it.
+     */
+    @Override
+    public String expandPlaceholders(java.util.UUID player, String text) {
+        if (text.indexOf('%') < 0 || !Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) return text;
+        try {
+            Class<?> papi = Class.forName("me.clip.placeholderapi.PlaceholderAPI");
+            java.lang.reflect.Method set = papi.getMethod("setPlaceholders", org.bukkit.OfflinePlayer.class, String.class);
+            return (String) set.invoke(null, Bukkit.getOfflinePlayer(player), text);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return text;
+        }
+    }
+
+    @Override
     public double tps() {
         double[] tps = Bukkit.getTPS();
         return tps.length > 0 ? Math.min(20.0, tps[0]) : 20.0;

@@ -417,6 +417,37 @@ build:
   max-ai-blocks: 5000            # Max blocks for JSON-planner builds
   ai-timeout: 30                 # Seconds to wait for AI response
 
+# ========== REWARD BUNDLES (FB-08) ==========
+# Named lists of console commands that you write. Jarvis can trigger one by
+# name when a player's words fit its description ("I found my first
+# diamond!"), and /jarvis bundle run <name> [player] runs one by hand. The
+# model only ever picks a name from this list; it never writes a command.
+# Players can tell Jarvis anything, so keep AI bundles to fun rewards and use
+# once-per-player or a cooldown on anything worth having.
+#
+# Per bundle:
+#   description       shown to the model; say when it should be given
+#   commands          run as the console, in order (a leading / is fine)
+#                     placeholders: {player} {uuid} {x} {y} {z} {world};
+#                     PlaceholderAPI %placeholders% too, if it's installed
+#   once-per-player   true = each player gets it once, ever (default false)
+#   cooldown-minutes  wait this long before the same player gets it again (0)
+#   ai                false = only /jarvis bundle run can give it (default true)
+#   permission        when set, Jarvis gives it only to players with this node
+# Uses are kept in the database, so restarts don't reset them.
+bundles: {}
+#  first-diamond:
+#    description: "Celebrate a player's first diamond"
+#    once-per-player: true
+#    commands:
+#      - "give {player} minecraft:cooked_beef 8"
+#      - "title {player} title {\"text\":\"Diamonds!\",\"color\":\"aqua\"}"
+#      - "playsound minecraft:ui.toast.challenge_complete master {player}"
+#  shrine-blessing:
+#    description: "Reward for reaching the hidden shrine"
+#    cooldown-minutes: 1440
+#    commands: ["effect give {player} minecraft:regeneration 60 1"]
+
 # ========== MINING (v0.1.0 rework) ==========
 mining:
   debug: false                   # Verbose mining debug logging
