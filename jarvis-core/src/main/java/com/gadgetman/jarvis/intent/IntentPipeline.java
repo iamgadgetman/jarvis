@@ -592,8 +592,12 @@ public class IntentPipeline {
                                String aiResponse, String originalMessage,
                                Source source, Responder sink, boolean alreadySpoken) {
 
+        // A reward bundle (FB-08): the reply celebrates it, so say it only once the
+        // bundle has run. Otherwise a refusal followed "Well earned, sir." (seen live).
+        boolean bundle = "trigger_bundle".equals(actionType);
+
         // Always show Jarvis's witty response first
-        if (!aiResponse.isEmpty() && !alreadySpoken) {
+        if (!aiResponse.isEmpty() && !alreadySpoken && !bundle) {
             sink.speak(player, aiResponse);
         }
 
@@ -613,6 +617,20 @@ public class IntentPipeline {
             sink.feedback(player, Colors.YELLOW
                     + "Jarvis: I'd rather not run " + actionType + " on local-model judgement alone, sir. "
                     + "Use the slash command directly, or enable ai.reduced-mode.allow-risky-actions.");
+            return;
+        }
+
+        if (bundle) {
+            if (core.bundles() == null) return;
+            String name = parameters == null ? "" : parameters.optString("name", "");
+            var result = core.bundles().trigger(player, name, com.gadgetman.jarvis.commands.BundleRegistry.By.AI);
+            // The reply celebrates, so it waited for the bundle to run. A streamed
+            // reply (ai.streaming) is out already; then the refusal just follows it.
+            if (result.ran() && !aiResponse.isEmpty()) {
+                if (!alreadySpoken) sink.speak(player, aiResponse);
+            } else {
+                sink.feedback(player, (result.ran() ? Colors.GREEN : Colors.YELLOW) + "Jarvis: " + result.message());
+            }
             return;
         }
 
@@ -699,15 +717,6 @@ public class IntentPipeline {
                     parameters != null ? parameters.optString("type", null) : null,
                     parameters != null ? parameters.optInt("spacing", -1) : -1);
             case "clearloot" -> npc.clearInventory(player);
-            case "trigger_bundle" -> {
-                if (core.bundles() == null) return;
-                String name = parameters == null ? "" : parameters.optString("name", "");
-                var result = core.bundles().trigger(player, name, com.gadgetman.jarvis.commands.BundleRegistry.By.AI);
-                // On success the model's own reply already celebrated; say only a refusal.
-                if (!result.ran() || aiResponse.isEmpty()) {
-                    sink.feedback(player, (result.ran() ? Colors.GREEN : Colors.YELLOW) + "Jarvis: " + result.message());
-                }
-            }
             case "undo" -> core.undo().undo(player, 1);
             case "redo" -> core.undo().redo(player);
             case "chat", "talk" -> {

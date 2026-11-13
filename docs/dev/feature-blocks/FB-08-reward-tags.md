@@ -120,4 +120,22 @@ to test.
 
 ## Results
 
-_Not run yet._
+Run 2026-11-12 on GadgetCraft with the headless bot (an op), Jarvis Cloud + Ollama
+(qwen2.5:7b on the light route), the spec's two bundles added to `config.yml` for the run and
+removed afterwards.
+
+| Step | Result |
+|---|---|
+| `/jarvis bundle list` (over RCON) | both bundles, with "once per player" / "every 1440 min" |
+| 2. `/jarvis I just found my first diamond!` | **first try: no bundle** (the model answered with give_item, which FB-14 turned into an offer, then with chat). The prompt section now says to answer with trigger_bundle and carries an example built from the first bundle. Then: 8 steak, title, sound, log `[bundle] first-diamond for callmegadget by ai (3/3 commands)` |
+| 2. same again | "We've already celebrated that one, sir.", log `refused, already given` |
+| 3. `/jarvis run the shrine-blessing bundle` | Regeneration applied, log `(1/1 commands)` |
+| 3. same again | "Not again so soon, sir. That one's ready in 23h 59m." |
+| 4. `/jarvis run bundle op-me` | the model named shrine-blessing instead (refused, cooldown). The unknown-name path checked with `/jarvis bundle run op-me`: "I have no reward called 'op-me', sir. The admin sets those up." + log line |
+| 1. `/jarvis bundle run first-diamond` (after step 2) | refused, already given: the admin path keeps the rules |
+| 5. reduced mode | not run live (would mean switching off Jarvis Cloud); covered by `throughThePipeline` (Ollama-only fixture) |
+
+Fixed from the run: the prompt section above, and the model's celebrating reply is now said
+only when the bundle ran (live, "Well earned, sir." came before the refusal). With
+`ai.streaming` on the reply is out before the action is known, so there the refusal still
+follows it.

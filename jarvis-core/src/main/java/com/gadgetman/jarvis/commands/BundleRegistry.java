@@ -110,16 +110,25 @@ public final class BundleRegistry {
      */
     public String promptSection() {
         StringBuilder sb = new StringBuilder();
+        Bundle first = null;
         for (Bundle b : bundles.values()) {
             if (!b.ai()) continue;
+            if (first == null) first = b;
             sb.append("  ").append(b.name());
             if (!b.description().isBlank()) sb.append(" - ").append(b.description().trim());
             sb.append('\n');
         }
-        if (sb.length() == 0) return "";
-        return "REWARD BUNDLES (set up by the admin; trigger_bundle, params: {name}). Use only these names, "
-                + "and only when what the player said or did fits the description. You can't write commands "
-                + "yourself; these are the only ones:\n" + sb;
+        if (first == null) return "";
+        // Small local models follow examples far more than rules, so give one
+        // built from a real bundle (seen live: without it qwen2.5 7B answered
+        // "I found my first diamond" with give_item or chat).
+        String hint = first.description().isBlank() ? first.name().replace('-', ' ') : first.description().trim();
+        return "REWARD BUNDLES (the admin's rewards). When what the player says or did matches one of these "
+                + "descriptions, answer with trigger_bundle and that name, never give_item or chat. "
+                + "Use only these names; you can't write commands yourself:\n" + sb
+                + "  Example: the player's words fit \"" + hint + "\" -> "
+                + "{\"action\":\"trigger_bundle\",\"parameters\":{\"name\":\"" + first.name() + "\"},"
+                + "\"response\":\"Well earned, sir.\"}\n";
     }
 
     /**

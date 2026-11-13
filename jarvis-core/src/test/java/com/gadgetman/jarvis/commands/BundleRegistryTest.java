@@ -189,6 +189,10 @@ class BundleRegistryTest {
         f.core.intents().submit(p, "I just found my first diamond!", IntentPipeline.Source.CONSOLE);
         assertEquals(2, f.platform.consoleCommands.size());
         assertTrue(p.messages.stream().anyMatch(m -> m.contains("already celebrated")), p.messages.toString());
+        // Said once per reply, never repeated after a stream (FB-05 streams it as it's written).
+        int firstRun = (int) p.messages.stream().takeWhile(m -> !m.contains("already celebrated"))
+                .filter(m -> m.contains("Diamonds! A banquet")).count();
+        assertEquals(0, firstRun, "a streamed reply isn't said again whole: " + p.messages);
     }
 
     @Test
