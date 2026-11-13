@@ -217,6 +217,18 @@ public class DatabaseManager {
             ps.executeUpdate();
         }
 
+        // Onboarding (FB-11) — see onboarding.OnboardingStore. A row means the
+        // player has been welcomed; it also holds where they are in the tutorial.
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS onboarding_state (" +
+                "player_id VARCHAR(36) PRIMARY KEY, " +
+                "welcomed_at BIGINT NOT NULL, " +
+                "tutorial_step INTEGER NOT NULL DEFAULT 0, " +
+                "tutorial_active INTEGER NOT NULL DEFAULT 0, " +
+                "tutorial_done_at BIGINT NOT NULL DEFAULT 0)")) {
+            ps.executeUpdate();
+        }
+
         log.info("Database tables initialized successfully");
     }
 

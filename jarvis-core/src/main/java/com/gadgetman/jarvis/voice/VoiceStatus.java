@@ -17,6 +17,13 @@ public interface VoiceStatus {
     /** The {@code voice.*} section changed on disk: re-read it, and register if that is what it now asks. */
     default void settingsChanged() { }
 
+    /**
+     * Say a line aloud to this player if they are on voice chat; otherwise
+     * nothing (the caller has already written it in chat). FB-11's tutorial
+     * and welcome use it so voice players hear them.
+     */
+    default void speak(com.gadgetman.jarvis.core.platform.Owner player, String line) { }
+
     /** Time the recogniser on this machine and tell {@code to} what was found; see {@link Speech#benchmark}. */
     default void benchmark(Audience to, int threads) {
         to.message(Colors.YELLOW + "Voice: nothing to benchmark; voice is not available on this server.");

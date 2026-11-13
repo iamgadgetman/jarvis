@@ -206,6 +206,19 @@ public class SvcVoicePlugin implements VoicechatPlugin, VoiceStatus {
         attached.platform().log().info("Voice: ready to speak (distance " + serverApi.getVoiceChatDistance() + ")");
     }
 
+    /**
+     * Speak a line to a player who is connected to voice chat (FB-11's
+     * tutorial and welcome); nothing for anyone else, who has it in chat.
+     */
+    @Override
+    public void speak(Owner player, String line) {
+        SvcVoiceResponder r = responder;
+        VoicechatServerApi api = serverApi;
+        if (r == null || api == null || player == null || line == null) return;
+        if (api.getConnectionOf(player.id()) == null) return;
+        r.say(player, line);
+    }
+
     /** The voice section was edited: read it again and start or stop listening accordingly. */
     @Override
     public synchronized void settingsChanged() {

@@ -27,6 +27,9 @@ permissions:
   jarvis.menu.use:
     description: Use Jarvis control menu via bell or right-click
     default: true
+  jarvis.tutorial.reset:
+    description: Forget a player's welcome so their next join is a first join (/jarvis tutorial reset <player>)
+    default: op
   jarvis.build.bypass:
     description: AI builds skip the guardrails, cooldown and daily limits (build.guardrails, build.limits)
     default: op

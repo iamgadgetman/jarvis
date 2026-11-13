@@ -73,6 +73,10 @@
 | `/jarvis bundle run <name> [player]` | Run a bundle for yourself or a player (its rules still apply) | `jarvis.admin` |
 | `/jarvis setup` | Check which AI providers can answer; if none, the free ways to get one | `jarvis.admin` |
 | `/jarvis setup pull [model]` | Print the `ollama pull` command to run on the Ollama host | `jarvis.admin` |
+| `/jarvis setup ollama`, `/jarvis setup gemini` | How to set up a free local model or a free Gemini key (the admin join buttons run these) | `jarvis.admin` |
+| `/jarvis tutorial` | Start the tutorial, or carry on from the step you were on | `jarvis.use` |
+| `/jarvis tutorial start\|skip\|later\|stop` | Start over, pass a step, don't ask again, or end it for now | `jarvis.use` |
+| `/jarvis tutorial reset <player>` | Forget their welcome: the next join is a first join (console too) | `jarvis.tutorial.reset` |
 | `/jarvis memory` | What Jarvis remembers of you: his notes, recent events, your last lines | `jarvis.use` |
 | `/jarvis memory forget` | Wipe that memory (Confirm/Cancel first) | `jarvis.use` |
 | `/jarvis <anything>` | Natural language — Jarvis figures it out | `jarvis.use` |

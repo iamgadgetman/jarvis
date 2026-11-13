@@ -74,6 +74,13 @@ public class DepositManager {
     private static final int WALK_NUDGE_TICKS = 10;   // 10s of stalled walking before nudging
     private static final double MAX_DEPOSIT_DISTANCE = 64.0;
 
+    private com.gadgetman.jarvis.onboarding.Milestones milestones = com.gadgetman.jarvis.onboarding.Milestones.NONE;
+
+    /** Chest registrations and deposits are reported here for the tutorial (FB-11). */
+    void setMilestones(com.gadgetman.jarvis.onboarding.Milestones milestones) {
+        this.milestones = milestones;
+    }
+
     public DepositManager(Platform platform, ButlerHost host) {
         this.platform = platform;
         this.host = host;
@@ -109,6 +116,7 @@ public class DepositManager {
         save();
         host.say(player, "Noted, sir. That " + Blocks.pretty(world.get().block(target.get()).id())
                 + " is now where I'll deposit your spoils.");
+        milestones.reached(player, com.gadgetman.jarvis.onboarding.Milestone.CHEST);
     }
 
     /** The registered chest, if it is still a container in a loaded world. */
@@ -183,6 +191,9 @@ public class DepositManager {
             host.say(player, "I have no chest on record, sir. Look at one and say '/jarvis chest'.");
             return;
         }
+        // The tutorial's deposit step counts once there's a chest to go to,
+        // even with empty bags: a new player may not have mined anything yet.
+        milestones.reached(player, com.gadgetman.jarvis.onboarding.Milestone.DEPOSIT);
         if (host.lootSlotsUsed(player) == 0) {
             host.say(player, "My bags are already empty, sir.");
             return;
