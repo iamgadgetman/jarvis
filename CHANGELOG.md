@@ -22,6 +22,11 @@
   daily budget that only finished builds spend. Ops (`jarvis.build.bypass`)
   skip the limits but still get the preview. `build.guardrails` and
   `build.limits`; `preview-seconds: 0` turns the preview off.
+- **Reward bundles.** Define named command bundles in config (`bundles:`);
+  Jarvis can trigger them by name when what a player says fits, with
+  once-per-player, cooldown, admin-only and permission rules kept in the
+  database, and the model can't compose raw commands. `/jarvis bundle list`
+  and `/jarvis bundle run <name> [player]` to test.
 
 - **Fast path for simple commands.** "follow me", "stop", "mine 10 iron" and
   the like run instantly without an AI call; only sentences the local parser

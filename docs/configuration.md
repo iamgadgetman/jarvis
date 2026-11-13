@@ -155,6 +155,36 @@ hardware, at the cost of slower and less accurate responses.
 
 ---
 
+### Reward bundles
+
+`bundles:` holds named lists of console commands that you write. Jarvis's model
+sees each bundle's name and description and can ask for one (`trigger_bundle`)
+when what a player says fits, say "I just found my first diamond!". It can only
+pick a name; the commands are yours. `/jarvis bundle run <name> [player]` runs one
+by hand.
+
+```yaml
+bundles:
+  first-diamond:
+    description: "Celebrate a player's first diamond"
+    once-per-player: true
+    commands:
+      - "give {player} minecraft:cooked_beef 8"
+      - "playsound minecraft:ui.toast.challenge_complete master {player}"
+  shrine-blessing:
+    description: "Reward for reaching the hidden shrine"
+    cooldown-minutes: 1440
+    commands: ["effect give {player} minecraft:regeneration 60 1"]
+```
+
+Placeholders: `{player}`, `{uuid}`, `{x}` `{y}` `{z}` (block position), `{world}`,
+plus PlaceholderAPI's `%…%` when it's installed. `ai: false` keeps a bundle out of
+the model's reach (admins only); `permission: some.node` limits who Jarvis gives it
+to. Players can claim anything in chat, so AI bundles should be fun rewards with
+`once-per-player` or a cooldown. Bundles work in reduced (Ollama-only) mode: the
+model picks from your list and can't do more. Every trigger, given or refused, is
+logged as `[bundle] <name> for <player> by ai|admin`.
+
 ## Permissions
 
 | Permission | Description | Default |

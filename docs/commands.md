@@ -69,6 +69,8 @@
 | `/jarvis voice bench [threads]`, `/jarvis voice threads <n>` | Time the embedded recogniser at several thread counts and name the fastest; keep a count (0 = automatic) | `jarvis.admin` |
 | `/jarvis ai [status]` | Which AI providers are on, and their models | `jarvis.use` |
 | `/jarvis ai enable\|disable\|key\|endpoint\|model\|models\|test ...` | Set up a provider from the console | `jarvis.admin` |
+| `/jarvis bundle [list]` | The reward bundles in `config.yml` | `jarvis.admin` |
+| `/jarvis bundle run <name> [player]` | Run a bundle for yourself or a player (its rules still apply) | `jarvis.admin` |
 | `/jarvis setup` | Check which AI providers can answer; if none, the free ways to get one | `jarvis.admin` |
 | `/jarvis setup pull [model]` | Print the `ollama pull` command to run on the Ollama host | `jarvis.admin` |
 | `/jarvis memory` | What Jarvis remembers of you: his notes, recent events, your last lines | `jarvis.use` |

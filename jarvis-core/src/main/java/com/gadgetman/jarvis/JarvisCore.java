@@ -74,6 +74,7 @@ public final class JarvisCore {
     private DatabaseManager database;
     private ExperienceMemory memory;
     private ConversationMemory conversation;
+    private com.gadgetman.jarvis.commands.BundleRegistry bundles;
     private TaskRecoveryHandler recovery;
     private ButlerService butlers;
     private ProgressionManager progression;
@@ -145,6 +146,8 @@ public final class JarvisCore {
         platform.scheduler().async(() -> conversation.prune(System.currentTimeMillis()));
         tasks.add(platform.scheduler().every(1_728_000L, 1_728_000L,   // daily
                 self -> platform.scheduler().async(() -> conversation.prune(System.currentTimeMillis()))));
+        // Reward bundles (FB-08): admin-written command lists, triggered by name.
+        bundles = new com.gadgetman.jarvis.commands.BundleRegistry(platform, database, System::currentTimeMillis);
         recovery = new TaskRecoveryHandler(config, log, platform.scheduler(), ai);
 
         butlers = new ButlerService(platform, butlerBackend, recovery);
@@ -284,6 +287,7 @@ public final class JarvisCore {
         loadKnowledge();
         if (memory != null) memory.reload();
         if (conversation != null) conversation.reload();
+        if (bundles != null) bundles.reload(platform.config());
         if (recovery != null) recovery.reload();
         if (requestDecomposer != null) requestDecomposer.reload();
         if (remarks != null) remarks.reload();
@@ -345,6 +349,7 @@ public final class JarvisCore {
     public ActionExecutor actions() { return actions; }
     public ConfirmationManager confirmations() { return confirmations; }
     public ConversationMemory conversation() { return conversation; }
+    public com.gadgetman.jarvis.commands.BundleRegistry bundles() { return bundles; }
     public PlayerRequestManager requests() { return requests; }
     public DutyScheduler duties() { return duties; }
     public MorningReport morningReport() { return morningReport; }

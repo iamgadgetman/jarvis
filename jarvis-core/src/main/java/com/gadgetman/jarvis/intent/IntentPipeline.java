@@ -76,6 +76,10 @@ public class IntentPipeline {
      * Actions too risky to trust to a small local model's parsing. The fast
      * path never produces these either.
      */
+    // trigger_bundle (FB-08) is deliberately NOT here: a bundle's commands are
+    // written by the admin, the model only picks a name from the admin's list,
+    // and once-per-player/cooldown rules apply, so a small model misparsing a
+    // sentence can at worst hand out a reward the admin already approved.
     static final Set<String> RESTRICTED_IN_REDUCED_MODE = Set.of(
             "console_command", "console_commands", "lp_group_add", "lp_group_remove", "set_gamerule");
 
@@ -438,7 +442,7 @@ public class IntentPipeline {
         try {
             String context  = worldContext + buildMemoryContext(player);
             String response = ai.parseNaturalLanguage(message, player.name(), context,
-                    core.knowledge().render(), stream);
+                    serverFacts(), stream);
 
             JSONObject action     = new JSONObject(extractJson(response));
             String actionType     = action.optString("action", "unknown");
@@ -567,6 +571,14 @@ public class IntentPipeline {
         return text.isEmpty() ? "none" : text;
     }
 
+    /** The admin's server facts plus the reward bundles the model may name (FB-08). */
+    private String serverFacts() {
+        String facts = core.knowledge().render();
+        String bundles = core.bundles() == null ? "" : core.bundles().promptSection();
+        if (bundles.isEmpty()) return facts;
+        return facts == null || facts.isBlank() ? bundles : facts + "\n\n" + bundles;
+    }
+
     // ==================== EXECUTE ====================
 
     private void executeAction(Owner player, String actionType, JSONObject parameters,
@@ -580,8 +592,12 @@ public class IntentPipeline {
                                String aiResponse, String originalMessage,
                                Source source, Responder sink, boolean alreadySpoken) {
 
+        // A reward bundle (FB-08): the reply celebrates it, so say it only once the
+        // bundle has run. Otherwise a refusal followed "Well earned, sir." (seen live).
+        boolean bundle = "trigger_bundle".equals(actionType);
+
         // Always show Jarvis's witty response first
-        if (!aiResponse.isEmpty() && !alreadySpoken) {
+        if (!aiResponse.isEmpty() && !alreadySpoken && !bundle) {
             sink.speak(player, aiResponse);
         }
 
@@ -601,6 +617,20 @@ public class IntentPipeline {
             sink.feedback(player, Colors.YELLOW
                     + "Jarvis: I'd rather not run " + actionType + " on local-model judgement alone, sir. "
                     + "Use the slash command directly, or enable ai.reduced-mode.allow-risky-actions.");
+            return;
+        }
+
+        if (bundle) {
+            if (core.bundles() == null) return;
+            String name = parameters == null ? "" : parameters.optString("name", "");
+            var result = core.bundles().trigger(player, name, com.gadgetman.jarvis.commands.BundleRegistry.By.AI);
+            // The reply celebrates, so it waited for the bundle to run. A streamed
+            // reply (ai.streaming) is out already; then the refusal just follows it.
+            if (result.ran() && !aiResponse.isEmpty()) {
+                if (!alreadySpoken) sink.speak(player, aiResponse);
+            } else {
+                sink.feedback(player, (result.ran() ? Colors.GREEN : Colors.YELLOW) + "Jarvis: " + result.message());
+            }
             return;
         }
 

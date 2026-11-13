@@ -178,7 +178,7 @@ public final class BuildQuota {
     }
 
     /** "4h 12m", "35s". */
-    static String duration(long ms) {
+    public static String duration(long ms) {
         long s = Math.max(1, (ms + 999) / 1000);
         if (s < 60) return s + "s";
         long m = s / 60;
