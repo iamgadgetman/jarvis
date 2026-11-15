@@ -24,11 +24,9 @@ permissions:
   jarvis.admin:
     description: Admin Jarvis features, including every action the AI can run for you
     default: op
-  jarvis.admin.actions.*:
-    description: >-
-      One AI action without full admin, e.g. jarvis.admin.actions.heal or
-      jarvis.admin.actions.give_item. jarvis.admin covers them all.
-    default: op
+  # One AI action without full admin: jarvis.admin.actions.<action>, e.g.
+  # jarvis.admin.actions.heal. Not declared one by one; an undeclared node is
+  # op-only by default, and a permissions plugin grants it like any other.
   jarvis.menu.use:
     description: Use Jarvis control menu via bell or right-click
     default: true

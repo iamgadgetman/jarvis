@@ -36,8 +36,20 @@ class ActionPermissionsTest {
     }
 
     private void act(String action) {
-        f.core.intents().executeAction(p, action, new JSONObject(), "", "", IntentPipeline.Source.CHAT,
+        act(action, "");
+    }
+
+    private void act(String action, String reply) {
+        f.core.intents().executeAction(p, action, new JSONObject(), reply, "", IntentPipeline.Source.CHAT,
                 IntentPipeline.CHAT_RESPONDER);
+    }
+
+    @Test
+    @DisplayName("a refused order isn't answered as if it were done")
+    void refusalComesFirst() {
+        act("admin_give", "At once, sir. Sixty-four diamonds.");
+        assertFalse(p.wasTold("At once"), String.join("\n", p.plainMessages()));
+        assertTrue(p.wasTold("needs an administrator"));
     }
 
     @Test
@@ -72,6 +84,7 @@ class ActionPermissionsTest {
         p.permissions.remove("jarvis.admin");
         f.core.commands().jarvis(p, Optional.of(p), List.of("confirm"), false);
         assertTrue(f.actions.executed.isEmpty());
+        assertTrue(p.wasTold("needs an administrator"), String.join("\n", p.plainMessages()));
     }
 
     @Test

@@ -12,13 +12,19 @@ confirmed their own prompt. Nothing checked the player's permissions.
 - **AI actions need permission.** Every action the AI can run on the server
   (console commands, items, enchantments, effects, heal and feed, game mode,
   time, weather, game rules, difficulty, teleport and warps, summoning mobs,
-  announcements, LuckPerms groups, clearing mobs and drops, saving, pasting
-  schematics) now needs `jarvis.admin`, or the per-action node
-  `jarvis.admin.actions.<action>`, for example `jarvis.admin.actions.heal`
-  to let a group keep just that one. Anyone may still ask Jarvis to request
-  an item from staff (`request_item`). `/jarvis confirm` checks again, so a
-  prompt doesn't run after the permission is taken away. On Fabric and
-  NeoForge, which have no permission nodes, these need op.
+  announcements, LuckPerms groups, clearing mobs and drops, saving, and
+  the AI's `paste_schematic`) now needs `jarvis.admin`, or the per-action
+  node `jarvis.admin.actions.<action>`, for example
+  `jarvis.admin.actions.heal` to let a group keep just that one. Several of
+  these take a target player, so a node lets its holder heal, teleport, give
+  to or change the game mode of other players too. Anyone may still ask
+  Jarvis to request an item from staff (`request_item`). `/jarvis confirm`
+  checks again, so a prompt doesn't run after the permission is taken away.
+  A refused order is no longer answered as if done, nor remembered as done.
+  On Fabric and NeoForge, which have no permission nodes, these need op (any
+  op level; console commands then run at console level).
+- `/jarvis paste`, `/jarvis build` and the menu are unchanged: they follow
+  their existing permissions.
 - Summoning Jarvis himself ("come here") is no longer sent to the mob-summon
   action.
 

@@ -190,6 +190,26 @@ public class IntentPipeline {
                                String aiResponse, String originalMessage,
                                Source source, Responder sink) {
 
+        ActionExecutor executor = core.actions();
+        ButlerService npc = core.butlers();
+
+        // "summon" with no entity (or with Jarvis as the entity) is Jarvis
+        // himself, not a mob: the adapter's executor would otherwise offer to
+        // spawn a mob for "come here".
+        boolean npcSummon = "summon".equals(actionType)
+                && (parameters == null || !parameters.has("entity")
+                    || "jarvis".equalsIgnoreCase(parameters.optString("entity")));
+        boolean adminAction = !npcSummon && executor != null && executor.handles(actionType);
+
+        // Server-administration actions run only on the player's own
+        // permissions (ActionPermissions). Checked before the model's reply is
+        // shown or remembered, so a refused order isn't answered "at once,
+        // sir" or recalled later as done.
+        if (adminAction && !ActionPermissions.allowed(player, actionType)) {
+            sink.feedback(player, Colors.YELLOW + ActionPermissions.refusal(actionType));
+            return;
+        }
+
         // Always show Jarvis's witty response first
         if (!aiResponse.isEmpty()) {
             sink.speak(player, aiResponse);
@@ -211,21 +231,8 @@ public class IntentPipeline {
             return;
         }
 
-        ActionExecutor executor = core.actions();
-        ButlerService npc = core.butlers();
-
-        // "summon" with no entity is Jarvis himself, not a mob: the adapter's
-        // executor would otherwise offer to spawn a mob for "come here".
-        boolean npcSummon = "summon".equals(actionType)
-                && (parameters == null || !parameters.has("entity"));
-
-        // Server-administration actions belong to the adapter's executor, and
-        // only the player's own permissions let them run (ActionPermissions).
-        if (!npcSummon && executor != null && executor.handles(actionType)) {
-            if (!ActionPermissions.allowed(player, actionType)) {
-                sink.feedback(player, Colors.YELLOW + ActionPermissions.refusal(actionType));
-                return;
-            }
+        // Server-administration actions belong to the adapter's executor
+        if (adminAction) {
             if (executor.dangerousActions().contains(actionType)) {
                 queueForConfirmation(player, actionType, parameters, executor);
             } else {
