@@ -22,7 +22,12 @@ permissions:
     description: Basic Jarvis usage
     default: true
   jarvis.admin:
-    description: Admin Jarvis features
+    description: Admin Jarvis features, including every action the AI can run for you
+    default: op
+  jarvis.admin.actions.*:
+    description: >-
+      One AI action without full admin, e.g. jarvis.admin.actions.heal or
+      jarvis.admin.actions.give_item. jarvis.admin covers them all.
     default: op
   jarvis.menu.use:
     description: Use Jarvis control menu via bell or right-click

@@ -895,6 +895,11 @@ public class CommandService implements CommandSink {
         String actionType  = cm.getPendingAction(player.id());
         JSONObject params   = cm.getPendingParameters(player.id());
         cm.clearPending(player.id());
+        // Checked again here: permissions can change while a prompt waits.
+        if (!ActionPermissions.allowed(player, actionType)) {
+            player.message(Colors.YELLOW + ActionPermissions.refusal(actionType));
+            return;
+        }
 
         String result = core.actions().execute(actionType, params, player);
         if (result != null) {

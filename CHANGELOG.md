@@ -1,6 +1,32 @@
 # Jarvis Changelog
 
-## Unreleased
+## v0.17.1 (2026-11-15) — security fix
+
+**Update now.** In 0.17.0 and earlier, any player could have Jarvis run
+server-administration actions by asking in chat, including console commands
+("run op me"): the model picked the action from what they typed and they
+confirmed their own prompt. Nothing checked the player's permissions.
+
+### Security
+
+- **AI actions need permission.** Every action the AI can run on the server
+  (console commands, items, enchantments, effects, heal and feed, game mode,
+  time, weather, game rules, difficulty, teleport and warps, summoning mobs,
+  announcements, LuckPerms groups, clearing mobs and drops, saving, pasting
+  schematics) now needs `jarvis.admin`, or the per-action node
+  `jarvis.admin.actions.<action>`, for example `jarvis.admin.actions.heal`
+  to let a group keep just that one. Anyone may still ask Jarvis to request
+  an item from staff (`request_item`). `/jarvis confirm` checks again, so a
+  prompt doesn't run after the permission is taken away. On Fabric and
+  NeoForge, which have no permission nodes, these need op.
+- Summoning Jarvis himself ("come here") is no longer sent to the mob-summon
+  action.
+
+### Changed
+
+- Players without the permission get a polite refusal instead of the action.
+  If your players relied on "heal me" or "give me…" through Jarvis, grant the
+  matching `jarvis.admin.actions.*` nodes.
 
 ### Added
 

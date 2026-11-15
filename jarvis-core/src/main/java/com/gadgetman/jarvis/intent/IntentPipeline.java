@@ -3,6 +3,7 @@ package com.gadgetman.jarvis.intent;
 import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.ai.AIConnector;
 import com.gadgetman.jarvis.commands.ActionExecutor;
+import com.gadgetman.jarvis.commands.ActionPermissions;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Scheduler;
@@ -184,7 +185,8 @@ public class IntentPipeline {
 
     // ==================== EXECUTE ====================
 
-    private void executeAction(Owner player, String actionType, JSONObject parameters,
+    // Package-private for tests.
+    void executeAction(Owner player, String actionType, JSONObject parameters,
                                String aiResponse, String originalMessage,
                                Source source, Responder sink) {
 
@@ -212,8 +214,18 @@ public class IntentPipeline {
         ActionExecutor executor = core.actions();
         ButlerService npc = core.butlers();
 
-        // Server-administration actions belong to the adapter's executor
-        if (executor != null && executor.handles(actionType)) {
+        // "summon" with no entity is Jarvis himself, not a mob: the adapter's
+        // executor would otherwise offer to spawn a mob for "come here".
+        boolean npcSummon = "summon".equals(actionType)
+                && (parameters == null || !parameters.has("entity"));
+
+        // Server-administration actions belong to the adapter's executor, and
+        // only the player's own permissions let them run (ActionPermissions).
+        if (!npcSummon && executor != null && executor.handles(actionType)) {
+            if (!ActionPermissions.allowed(player, actionType)) {
+                sink.feedback(player, Colors.YELLOW + ActionPermissions.refusal(actionType));
+                return;
+            }
             if (executor.dangerousActions().contains(actionType)) {
                 queueForConfirmation(player, actionType, parameters, executor);
             } else {
