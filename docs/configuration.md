@@ -15,7 +15,7 @@ ai:
     - claude
     - openai
     - grok
-  env-keys: true            # blank api-key reads GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / XAI_API_KEY (0.18.1)
+  env-keys: true            # blank api-key reads GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / XAI_API_KEY (0.18.0)
   gemini:
     api-key: "env:GEMINI_API_KEY"   # a key, or env:NAME to read an environment variable
     model: gemini-3.7-flash
@@ -28,18 +28,18 @@ ai:
   ollama:
     endpoint: "http://localhost:11434"
     model: mistral
-  context:                  # what each chat request knows about you (0.18.1)
+  context:                  # what each chat request knows about you (0.18.0)
     level: 2                # 0 none · 1 you · 2 + world and Jarvis · 3 + nearby mobs/players
     hostile-radius: 16
     player-radius: 32
     knowledge-file: knowledge.yml   # server facts, in plugins/Jarvis/
-  streaming:                # replies appear sentence by sentence (0.18.1)
+  streaming:                # replies appear sentence by sentence (0.18.0)
     enabled: true
     min-interval-ms: 400    # floor between chat lines
     providers: [openai, claude, gemini, grok, ollama]
 
 build:
-  guardrails:               # checked on every AI build before anything is placed (0.18.1)
+  guardrails:               # checked on every AI build before anything is placed (0.18.0)
     blocked-blocks: [tnt, lava, lava_bucket, command_block, chain_command_block,
                      repeating_command_block, structure_block, barrier, bedrock,
                      end_portal_frame, spawner, fire]
@@ -47,14 +47,14 @@ build:
     max-size: 48            # longest edge of the bounding box
     max-distance: 64        # player to the nearest edge of the build
     preview-seconds: 20     # particle outline + yes/no; 0 = build at once
-  limits:                   # per permission group; only finished builds count (0.18.1)
+  limits:                   # per permission group; only finished builds count (0.18.0)
     default: { cooldown-seconds: 120, daily-builds: 5, daily-blocks: 6000 }
     trusted: { cooldown-seconds: 30, daily-builds: 30, daily-blocks: 60000 }
     # jarvis.build.limit.trusted puts a player in "trusted"; jarvis.build.bypass (op) skips all limits
 
 memory:                     # experience memory (0.8.0)
   enabled: true
-  conversation:             # what he remembers of each player (0.18.1)
+  conversation:             # what he remembers of each player (0.18.0)
     enabled: true
     recent-turns: 8         # verbatim turns per request (3 on Ollama-only servers)
     summarize-after: 30     # unsummarized turns before the light model condenses them

@@ -1,124 +1,6 @@
 # Jarvis Changelog
 
-## v0.18.1 (unreleased)
-
-### Added
-
-- **A proper welcome.** New players get the controller bell and an offer of a
-  short interactive tutorial that walks them through the bell, summoning,
-  talking to Jarvis, chests, mining, deposits and undo, reacting to what they
-  actually do (one reminder per step, and it survives a restart). Admins who
-  join a server with no AI set up get three clickable ways to fix that: free
-  local Ollama, a free Gemini key, or Jarvis Cloud (also on the bell's AI setup
-  page, and as `/jarvis setup ollama|gemini`). Tracked per player in the
-  database, so wiping player data doesn't welcome everyone again.
-  `onboarding:` in config; `/jarvis tutorial`.
-
-- **Five-minute free start.** On boot Jarvis reports which AI providers are
-  usable and, if none are, prints the three fastest ways to get one (Ollama, a
-  free Gemini key, the Jarvis Cloud trial); an op who joins gets the same in
-  chat. `/jarvis setup` re-checks. Free providers now lead the default priority
-  list. API keys can be `env:NAME` to read an environment variable, and a blank
-  key reads the provider's usual variable (`GEMINI_API_KEY`, …) unless
-  `ai.env-keys` is off.
-- **Jarvis remembers.** Conversations and notable events (deaths, portal
-  trips) are kept per player in the database, condensed by the light model as
-  they grow, and brought into every reply, so "where did I say my base was?"
-  works after a restart. `/jarvis memory` shows what he knows; `/jarvis memory
-  forget` wipes it. Settings under `memory.conversation`.
-- **Build guardrails.** AI builds show a particle preview and wait for yes
-  (say yes/no, or click [Build it]/[Cancel]); dangerous blocks are refused,
-  size and distance are capped, and each permission group gets a cooldown and
-  daily budget that only finished builds spend. Ops (`jarvis.build.bypass`)
-  skip the limits but still get the preview. `build.guardrails` and
-  `build.limits`; `preview-seconds: 0` turns the preview off.
-- **Reward bundles.** Define named command bundles in config (`bundles:`);
-  Jarvis can trigger them by name when what a player says fits, with
-  once-per-player, cooldown, admin-only and permission rules kept in the
-  database, and the model can't compose raw commands. `/jarvis bundle list`
-  and `/jarvis bundle run <name> [player]` to test.
-
-- **Fast path for simple commands.** "follow me", "stop", "mine 10 iron" and
-  the like run instantly without an AI call; only sentences the local parser
-  can't place go to the model. `intent.fast-path` in config; add your own
-  aliases under `extra-phrases`.
-- **Jarvis shows he's thinking.** While a sentence is with the AI he turns to
-  you, swings an arm now and then, and an action-bar line reads "Jarvis is
-  thinking…". Off with `intent.thinking-feedback.enabled: false`; `animate`
-  and `action-bar` switch each half off.
-- **Jarvis knows where you are.** Chat requests now carry your health, food,
-  held item, time, weather, light, biome and nearby hostile mobs and players,
-  plus what Jarvis himself is doing and carrying, so "what should I do?" gets
-  a real answer. A new `knowledge.yml` holds server facts and named locations
-  he treats as true ("where is the market?"). `ai.context.level` (0–3) sets
-  how much is sent; `/jarvis reload` re-reads the file.
-
-### Developer tooling
-
-- **MCP server for testing.** `tools/jarvis-mcp` lets Claude Code drive a
-  running test server over RCON — status, `/jarvis` commands, chat-as-player,
-  log tailing — so feature blocks can be exercised in-game from the terminal.
-  New console-only `/jarvis say-as <player> <text>`, off unless
-  `dev.allow-say-as: true`. Not part of the plugin jar.
-
-### Changed
-
-- **Replies stream.** Jarvis's sentences appear as the model writes them
-  instead of all at once; actions still wait for the full reply. Replies the
-  safety checks may rewrite (an unasked announcement, a teleport for a "where
-  is" question) are still shown whole. `ai.streaming` to tune or disable; Jarvis
-  Cloud and voice replies stay buffered.
-
-### Fixed
-
-- **No more spare Jarvises.** Citizens keeps NPCs in `saves.yml`, so after a
-  crash or hard stop the old butler came back on the next start while Jarvis
-  spawned a new one, and extras piled up. Every butler is now tagged with its
-  owner, and tagged leftovers are removed when Citizens finishes loading.
-  Untagged NPCs named "Jarvis" (from older versions) are listed in the log
-  with their ids for `/npc remove`.
-
-- **No world changes nobody asked for.** Time, weather, game mode, difficulty,
-  game rules, summons and mob/item clears now need the player's words to ask
-  for them ("make it day", "stop the rain", "spawn a cow"); otherwise Jarvis
-  offers instead of changing the world. `/jarvis stop the rain` and the like
-  are now read as sentences instead of running `/jarvis stop`.
-
-- **No free gifts nobody asked for.** Asked "what should I do next?", a small
-  model would hand over a diamond sword or heal you to full. Items, heals,
-  food, enchantments and potion effects now need the player to ask ("give
-  me…", "I'm hungry", "heal me"); otherwise Jarvis offers instead.
-
-- **No more silent or blank replies.** When the model answers with an empty
-  chat reply, Jarvis now says "Ask me again?" instead of nothing; when it picks
-  an announcement with no message, he uses the text from your request
-  ("announce that the market opens at noon"), and asks what to announce only
-  when there is none, instead of offering to post a blank line to everyone.
-
-- **One order, one answer.** A chat order such as "follow me" or "stop" got
-  two replies: Jarvis's answer and then the action's own "Right behind you,
-  sir." line. Chat orders now get one reply; slash commands and bell buttons
-  keep theirs.
-- **Answers stay private.** Asking Jarvis a question could post his answer to
-  every player as `[Server] …` ("Said it."): the model used `server_say` to
-  talk. He now has a plain `chat` action, and `server_say`, `broadcast`,
-  `announce_all`, `schedule_broadcast` and `discord_broadcast` only run when
-  the player asks for an announcement ("announce", "tell everyone", …).
-- **Questions get answers, not briefings.** "What should I do next?" made the
-  model run the status report and attach the whole estate briefing. The
-  report now runs only when asked for (report, status, briefing, TPS, lag);
-  anything else is answered as plain chat.
-- **"Where is…" no longer teleports you.** Asking where a place is could make
-  the model pick `teleport` and move you on the spot. Teleport and warp now run
-  only when you ask to be moved ("take me to", "tp me", "send me"); otherwise
-  Jarvis tells you the coordinates. Teleport and warp also ask Confirm/Cancel
-  first now, so nobody is moved without saying yes.
-- **Builds: real windows, no stray cobwebs, sensible chairs.** Every window
-  opening now gets glass (shutters go beside it, not in it), cobwebs appear only
-  when you ask for something abandoned or haunted, and a stair used as a chair
-  stands alone by the table instead of stacking into stairs to nowhere.
-
-## v0.18.0 (unreleased — local test build)
+## v0.18.0 (unreleased)
 
 ### Added
 
@@ -197,6 +79,63 @@
   `-Pmc_compat`; see `jarvis-neoforge/gradle.properties`. The NeoForge CI
   job builds and boots a server for all three versions.
 
+- **A proper welcome.** New players get the controller bell and an offer of a
+  short interactive tutorial that walks them through the bell, summoning,
+  talking to Jarvis, chests, mining, deposits and undo, reacting to what they
+  actually do (one reminder per step, and it survives a restart). Admins who
+  join a server with no AI set up get three clickable ways to fix that: free
+  local Ollama, a free Gemini key, or Jarvis Cloud (also on the bell's AI setup
+  page, and as `/jarvis setup ollama|gemini`). Tracked per player in the
+  database, so wiping player data doesn't welcome everyone again.
+  `onboarding:` in config; `/jarvis tutorial`.
+
+- **Five-minute free start.** On boot Jarvis reports which AI providers are
+  usable and, if none are, prints the three fastest ways to get one (Ollama, a
+  free Gemini key, the Jarvis Cloud trial); an op who joins gets the same in
+  chat. `/jarvis setup` re-checks. Free providers now lead the default priority
+  list. API keys can be `env:NAME` to read an environment variable, and a blank
+  key reads the provider's usual variable (`GEMINI_API_KEY`, …) unless
+  `ai.env-keys` is off.
+- **Jarvis remembers.** Conversations and notable events (deaths, portal
+  trips) are kept per player in the database, condensed by the light model as
+  they grow, and brought into every reply, so "where did I say my base was?"
+  works after a restart. `/jarvis memory` shows what he knows; `/jarvis memory
+  forget` wipes it. Settings under `memory.conversation`.
+- **Build guardrails.** AI builds show a particle preview and wait for yes
+  (say yes/no, or click [Build it]/[Cancel]); dangerous blocks are refused,
+  size and distance are capped, and each permission group gets a cooldown and
+  daily budget that only finished builds spend. Ops (`jarvis.build.bypass`)
+  skip the limits but still get the preview. `build.guardrails` and
+  `build.limits`; `preview-seconds: 0` turns the preview off.
+- **Reward bundles.** Define named command bundles in config (`bundles:`);
+  Jarvis can trigger them by name when what a player says fits, with
+  once-per-player, cooldown, admin-only and permission rules kept in the
+  database, and the model can't compose raw commands. `/jarvis bundle list`
+  and `/jarvis bundle run <name> [player]` to test.
+
+- **Fast path for simple commands.** "follow me", "stop", "mine 10 iron" and
+  the like run instantly without an AI call; only sentences the local parser
+  can't place go to the model. `intent.fast-path` in config; add your own
+  aliases under `extra-phrases`.
+- **Jarvis shows he's thinking.** While a sentence is with the AI he turns to
+  you, swings an arm now and then, and an action-bar line reads "Jarvis is
+  thinking…". Off with `intent.thinking-feedback.enabled: false`; `animate`
+  and `action-bar` switch each half off.
+- **Jarvis knows where you are.** Chat requests now carry your health, food,
+  held item, time, weather, light, biome and nearby hostile mobs and players,
+  plus what Jarvis himself is doing and carrying, so "what should I do?" gets
+  a real answer. A new `knowledge.yml` holds server facts and named locations
+  he treats as true ("where is the market?"). `ai.context.level` (0–3) sets
+  how much is sent; `/jarvis reload` re-reads the file.
+
+### Changed
+
+- **Replies stream.** Jarvis's sentences appear as the model writes them
+  instead of all at once; actions still wait for the full reply. Replies the
+  safety checks may rewrite (an unasked announcement, a teleport for a "where
+  is" question) are still shown whole. `ai.streaming` to tune or disable; Jarvis
+  Cloud and voice replies stay buffered.
+
 ### Fixed
 
 - **The night skips with Jarvis summoned.** On Fabric and NeoForge the butler
@@ -216,6 +155,61 @@
   sleep-ignored every time Citizens spawns his entity (first spawn, world
   change, chunk reload). The game counts a sleep-ignored player as asleep.
   Citizens already keeps him out of the tab list and `/list`.
+
+- **No more spare Jarvises.** Citizens keeps NPCs in `saves.yml`, so after a
+  crash or hard stop the old butler came back on the next start while Jarvis
+  spawned a new one, and extras piled up. Every butler is now tagged with its
+  owner, and tagged leftovers are removed when Citizens finishes loading.
+  Untagged NPCs named "Jarvis" (from older versions) are listed in the log
+  with their ids for `/npc remove`.
+
+- **No world changes nobody asked for.** Time, weather, game mode, difficulty,
+  game rules, summons and mob/item clears now need the player's words to ask
+  for them ("make it day", "stop the rain", "spawn a cow"); otherwise Jarvis
+  offers instead of changing the world. `/jarvis stop the rain` and the like
+  are now read as sentences instead of running `/jarvis stop`.
+
+- **No free gifts nobody asked for.** Asked "what should I do next?", a small
+  model would hand over a diamond sword or heal you to full. Items, heals,
+  food, enchantments and potion effects now need the player to ask ("give
+  me…", "I'm hungry", "heal me"); otherwise Jarvis offers instead.
+
+- **No more silent or blank replies.** When the model answers with an empty
+  chat reply, Jarvis now says "Ask me again?" instead of nothing; when it picks
+  an announcement with no message, he uses the text from your request
+  ("announce that the market opens at noon"), and asks what to announce only
+  when there is none, instead of offering to post a blank line to everyone.
+
+- **One order, one answer.** A chat order such as "follow me" or "stop" got
+  two replies: Jarvis's answer and then the action's own "Right behind you,
+  sir." line. Chat orders now get one reply; slash commands and bell buttons
+  keep theirs.
+- **Answers stay private.** Asking Jarvis a question could post his answer to
+  every player as `[Server] …` ("Said it."): the model used `server_say` to
+  talk. He now has a plain `chat` action, and `server_say`, `broadcast`,
+  `announce_all`, `schedule_broadcast` and `discord_broadcast` only run when
+  the player asks for an announcement ("announce", "tell everyone", …).
+- **Questions get answers, not briefings.** "What should I do next?" made the
+  model run the status report and attach the whole estate briefing. The
+  report now runs only when asked for (report, status, briefing, TPS, lag);
+  anything else is answered as plain chat.
+- **"Where is…" no longer teleports you.** Asking where a place is could make
+  the model pick `teleport` and move you on the spot. Teleport and warp now run
+  only when you ask to be moved ("take me to", "tp me", "send me"); otherwise
+  Jarvis tells you the coordinates. Teleport and warp also ask Confirm/Cancel
+  first now, so nobody is moved without saying yes.
+- **Builds: real windows, no stray cobwebs, sensible chairs.** Every window
+  opening now gets glass (shutters go beside it, not in it), cobwebs appear only
+  when you ask for something abandoned or haunted, and a stair used as a chair
+  stands alone by the table instead of stacking into stairs to nowhere.
+
+### Developer tooling
+
+- **MCP server for testing.** `tools/jarvis-mcp` lets Claude Code drive a
+  running test server over RCON — status, `/jarvis` commands, chat-as-player,
+  log tailing — so feature blocks can be exercised in-game from the terminal.
+  New console-only `/jarvis say-as <player> <text>`, off unless
+  `dev.allow-say-as: true`. Not part of the plugin jar.
 
 ## v0.17.0 (2026-09-20) — the same butler on Fabric and NeoForge
 
