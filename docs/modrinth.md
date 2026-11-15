@@ -68,7 +68,7 @@ No commands needed — Jarvis parses natural chat through the AI:
 > "protect me" · "weapons free" · "stand down"
 > "take me home" · "get my stuff back" · "how are things?"
 
-He remembers your recent conversation, so *"do that again"* actually works.
+He remembers what each player told him, even after a restart, so *"do that again"* and *"where did I say my base was?"* both work. He also knows your health, what you're holding and what's nearby, so *"what should I do?"* gets a real answer.
 
 ## 🤖 Bring your own AI — or none of the cloud
 
@@ -78,6 +78,8 @@ Tiered routing built for home-labbers:
 |---|---|
 | Chat intents, banter (fast & frequent) | **Ollama first** (your local box), cloud fallback |
 | Build planning (rare & heavy) | Cloud first (Claude / OpenAI / Grok / Gemini), Ollama fallback |
+
+**No keys at all? Jarvis Cloud.** `/jarvis cloud activate`, press Activate on the page it opens, and he sets himself up. Every server gets 125 free requests a month and a two-week trial; paid plans start at $15 a year at [gadgetcraft.cloud](https://gadgetcraft.cloud). Entirely optional: the plugin never contacts it unless you run that command, and your own key or Ollama works exactly the same.
 
 Running **only Ollama**? Fully supported — Jarvis enters a reduced mode: constrained JSON parsing that small local models handle reliably, schematic-based building instead of freeform AI designs, and risky console actions locked behind an explicit opt-in. Check routing and provider health any time with `/jarvis ai`.
 
@@ -95,8 +97,9 @@ first.
 Drop `.schem`, `.schematic` or `.litematic` files into his library and
 "jarvis, build me a house" picks the best match and pastes it — on every
 platform, and still the path used when you are running local-only. On Paper
-with WorldEdit you can also save and rotate schematics in-game;
-`/jarvis build undo` reverts the last one.
+with WorldEdit you can also save and rotate schematics in-game.
+
+Every AI build shows a **particle preview** and waits for your yes. Dangerous blocks are refused, size and distance are capped, and each permission group gets a cooldown and daily budget. **`/jarvis undo`** takes down the last job, whatever it was — AI build, shape or schematic paste — and it survives a restart.
 
 ## 🎙️ He listens, and he answers
 

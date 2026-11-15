@@ -25,8 +25,11 @@ Jarvis:  Right away, sir. Mind the lava.
   the situation rather than from his rank alone.
 - **Earns his kit.** A service ladder from Hired to Without Equal; better
   tools and enchantments arrive as he works, not from a config file.
-- **Learns.** He remembers builds that went well and reasons about a request
-  before searching his memory for a precedent.
+- **Learns and remembers.** He remembers builds that went well, and what each
+  player told him, so "where did I say my base was?" works after a restart.
+- **Builds safely.** AI builds show a preview and wait for yes; dangerous
+  blocks, size and distance are capped, and `/jarvis undo` takes down any job.
+- **Welcomes new players** with the controller bell and a short tutorial.
 - **Notices things.** Idle remarks on what you are carrying and how deep you
   have got — off by default, and keyed so he cannot repeat himself.
 - **Finds nether portals**, remembers them, and can tell you where any of them
@@ -48,7 +51,7 @@ One release, three files. Take the one for your server from the
 |---|---|---|
 | Paper / Purpur 1.21.11 – 26.2 | `jarvis-paper-<version>.jar` | [Citizens 2](https://ci.citizensnpcs.co/job/citizens2/) 2.0.43+ · Java 21 (25 on 26.x) |
 | Fabric, Minecraft 26.3 | `jarvis-fabric-<version>.jar` | Fabric Loader 0.19.5+ · [Fabric API](https://modrinth.com/mod/fabric-api) · Java 25 |
-| NeoForge 26.3.0.x | `jarvis-neoforge-<version>.jar` | Java 25 |
+| NeoForge 26.1.2, 26.2 and 26.3 | `jarvis-neoforge-<version>.jar` | Java 25 |
 
 On every platform: an AI provider is optional (every slash command works
 without one; natural language and freeform building need one), and
@@ -66,7 +69,10 @@ Jarvis talks with no spend at all. Pick one, in this order:
    then `ollama pull mistral`. Jarvis looks for it at `localhost:11434`.
 2. **A free Gemini key**: get one at [aistudio.google.com](https://aistudio.google.com/),
    then `export GEMINI_API_KEY=...` before starting the server.
-3. **The Jarvis Cloud trial**: `/jarvis cloud activate` in-game, no key to manage.
+3. **Jarvis Cloud**: `/jarvis cloud activate` in-game, no key to manage. Free
+   plan with 125 requests a month and a two-week trial; paid plans at
+   [gadgetcraft.cloud](https://gadgetcraft.cloud). Optional: the plugin never
+   contacts it unless you run that command.
 
 On startup the console says which providers can answer
 (`AI providers: ollama OK (mistral) · gemini no key · …`), and if none can it
