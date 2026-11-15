@@ -79,7 +79,7 @@ Tiered routing built for home-labbers:
 | Chat intents, banter (fast & frequent) | **Ollama first** (your local box), cloud fallback |
 | Build planning (rare & heavy) | Cloud first (Claude / OpenAI / Grok / Gemini), Ollama fallback |
 
-**No keys at all? Jarvis Cloud.** `/jarvis cloud activate`, press Activate on the page it opens, and he sets himself up. Every server gets 125 free requests a month and a two-week trial; paid plans start at $15 a year at [gadgetcraft.cloud](https://gadgetcraft.cloud). Entirely optional: the plugin never contacts it unless you run that command, and your own key or Ollama works exactly the same.
+**No keys at all? Jarvis Cloud.** `/jarvis cloud activate`, press Activate on the page it opens, and he sets himself up. Every server gets 125 free requests a month and a two-week trial; paid plans start at $15 a year at [jarvis-cloud.app](https://jarvis-cloud.app). Entirely optional: the plugin never contacts it unless you run that command, and your own key or Ollama works exactly the same.
 
 Running **only Ollama**? Fully supported — Jarvis enters a reduced mode: constrained JSON parsing that small local models handle reliably, schematic-based building instead of freeform AI designs, and risky console actions locked behind an explicit opt-in. Check routing and provider health any time with `/jarvis ai`.
 
