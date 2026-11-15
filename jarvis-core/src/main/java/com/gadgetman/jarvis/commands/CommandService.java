@@ -103,7 +103,7 @@ public class CommandService implements CommandSink {
         if (args.size() > 1) {
             List<String> pool;
             if (args.get(0).equalsIgnoreCase("cloud")) {
-                pool = args.size() == 2 ? List.of("activate", "status", "upgrade") : List.of();
+                pool = args.size() == 2 ? List.of("activate", "attach", "status", "upgrade") : List.of();
             } else if (args.get(0).equalsIgnoreCase("ai")) {
                 pool = args.size() == 2 ? AI_SUBCOMMANDS
                         : args.size() == 3 && !args.get(1).equalsIgnoreCase("status") ? AiSettings.PROVIDERS
@@ -218,10 +218,13 @@ public class CommandService implements CommandSink {
                 }
                 if (what.equals("activate")) {
                     core.cloud().activate(sender, args.size() > 2 ? rest(args, 2) : null);
+                } else if (what.equals("attach")) {
+                    core.cloud().attach(sender, args.size() > 2 ? rest(args, 2) : null);
                 } else {
                     sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "/jarvis cloud activate [name]"
-                            + Colors.GRAY + " turns on Jarvis Cloud AI; " + Colors.WHITE + "/jarvis cloud status" + Colors.GRAY + " shows the plan; "
-                            + Colors.WHITE + "/jarvis cloud upgrade" + Colors.GRAY + " opens plans and billing.");
+                            + Colors.GRAY + " turns on Jarvis Cloud AI; " + Colors.WHITE + "/jarvis cloud status" + Colors.GRAY + " shows the credits; "
+                            + Colors.WHITE + "/jarvis cloud upgrade" + Colors.GRAY + " opens plans, billing and your account; "
+                            + Colors.WHITE + "/jarvis cloud attach <code>" + Colors.GRAY + " adds another server to this one's account.");
                 }
                 return;
             }
@@ -1648,8 +1651,9 @@ public class CommandService implements CommandSink {
         player.message(Colors.WHITE + "  /jarvis memory forget" + Colors.GRAY + " - Wipe it (asks first)");
         player.message(Colors.YELLOW + "Jarvis Cloud (AI without your own API key):");
         player.message(Colors.WHITE + "  /jarvis cloud activate [name]" + Colors.GRAY + " - Get a link, click it, done");
-        player.message(Colors.WHITE + "  /jarvis cloud status" + Colors.GRAY + " - Plan and requests used this month");
-        player.message(Colors.WHITE + "  /jarvis cloud upgrade" + Colors.GRAY + " - Plans, buying, and billing");
+        player.message(Colors.WHITE + "  /jarvis cloud status" + Colors.GRAY + " - Credits used this month");
+        player.message(Colors.WHITE + "  /jarvis cloud upgrade" + Colors.GRAY + " - Plans, buying, billing, and your account");
+        player.message(Colors.WHITE + "  /jarvis cloud attach <code>" + Colors.GRAY + " - Add another server to this one's account");
 
         player.message(Colors.YELLOW + "Natural Language (just type it):");
         player.message(Colors.GRAY + "  Chat: 'jarvis kill all creepers'");

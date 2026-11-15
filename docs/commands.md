@@ -72,6 +72,10 @@
 | `/jarvis bundle [list]` | The reward bundles in `config.yml` | `jarvis.admin` |
 | `/jarvis bundle run <name> [player]` | Run a bundle for yourself or a player (its rules still apply) | `jarvis.admin` |
 | `/jarvis setup` | Check which AI providers can answer; if none, the free ways to get one | `jarvis.admin` |
+| `/jarvis cloud activate [name]` | Turn on Jarvis Cloud: a link in chat, one click, no key to copy | `jarvis.admin` (or single-player) |
+| `/jarvis cloud status` | Credits used and left this month, and about how many chats or builds that is | anyone |
+| `/jarvis cloud upgrade` | A 30-minute link to plans, billing and this server's GadgetCraft account | `jarvis.admin` (public plans page for others) |
+| `/jarvis cloud attach <code>` | Add another server to this server's account, so they share one plan | `jarvis.admin` |
 | `/jarvis setup pull [model]` | Print the `ollama pull` command to run on the Ollama host | `jarvis.admin` |
 | `/jarvis setup ollama`, `/jarvis setup gemini` | How to set up a free local model or a free Gemini key (the admin join buttons run these) | `jarvis.admin` |
 | `/jarvis tutorial` | Start the tutorial, or carry on from the step you were on | `jarvis.use` |

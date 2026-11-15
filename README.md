@@ -70,8 +70,8 @@ Jarvis talks with no spend at all. Pick one, in this order:
 2. **A free Gemini key**: get one at [aistudio.google.com](https://aistudio.google.com/),
    then `export GEMINI_API_KEY=...` before starting the server.
 3. **Jarvis Cloud**: `/jarvis cloud activate` in-game, no key to manage. Free
-   plan with 125 requests a month and a two-week trial; paid plans at
-   [jarvis-cloud.app](https://jarvis-cloud.app). Optional: the plugin never
+   credits every month and a two-week trial; paid plans, shared across your
+   servers, at [jarvis-cloud.app](https://jarvis-cloud.app). Optional: the plugin never
    contacts it unless you run that command.
 
 On startup the console says which providers can answer

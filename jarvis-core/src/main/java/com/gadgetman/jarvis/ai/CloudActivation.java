@@ -37,7 +37,7 @@ public final class CloudActivation {
         String errorMessage() {
             JSONObject e = body.optJSONObject("error");
             String m = e == null ? "" : e.optString("message", "");
-            return m.replaceFirst("^Jarvis Cloud: ", "");
+            return m.replaceFirst("^(Jarvis Cloud|GadgetCraft): ", "");
         }
     }
 
@@ -208,9 +208,22 @@ public final class CloudActivation {
             }
             JSONObject u = r.body();
             String plan = u.optString("plan", "?");
-            who.message(Colors.GOLD + "Jarvis: Jarvis Cloud, sir: " + Colors.WHITE + plan + Colors.GRAY + " plan, "
-                    + u.optInt("requests_used") + " of " + u.optInt("requests_quota") + " requests this month"
-                    + " (resets " + u.optString("resets_at", "").replaceFirst("T.*", "") + ").");
+            String resets = u.optString("resets_at", "").replaceFirst("T.*", "");
+            if (u.optBoolean("credits_enforced", false)) {
+                // Shared credits: the monthly limit is credits, spent by each request's AI cost.
+                who.message(Colors.GOLD + "Jarvis: Jarvis Cloud, sir: " + Colors.WHITE
+                        + String.format("%,d of %,d", u.optInt("credits_used"), u.optInt("credits_included"))
+                        + Colors.GRAY + " credits used this month (resets " + resets + ")"
+                        + (u.optBoolean("account", false) ? ", shared with your GadgetCraft account." : "."));
+                JSONObject est = u.optJSONObject("estimate");
+                if (est != null && est.has("chats")) {
+                    who.message(Colors.GRAY + String.format("About %,d chats or %,d AI builds left.", est.optInt("chats"), est.optInt("builds")));
+                }
+            } else {
+                who.message(Colors.GOLD + "Jarvis: Jarvis Cloud, sir: " + Colors.WHITE + plan + Colors.GRAY + " plan, "
+                        + u.optInt("requests_used") + " of " + u.optInt("requests_quota") + " requests this month"
+                        + " (resets " + resets + ").");
+            }
             String trialEnds = u.optString("trial_expires_at", "");
             if (!trialEnds.isEmpty()) {
                 who.message(Colors.GRAY + "Trial ends " + trialEnds.replaceFirst("T.*", "") + "; after that it becomes the free plan.");
@@ -252,6 +265,50 @@ public final class CloudActivation {
                     .text(Colors.GOLD + "Jarvis: ")
                     .url(Colors.GREEN + "[Click here for plans and billing]", url, "Opens the Jarvis Cloud plans page for this server"));
             who.message(Colors.GRAY + "The link lasts 30 minutes. A new plan applies to the same key; nothing to change here.");
+        });
+    }
+
+    // ==================== attach ====================
+
+    /**
+     * {@code /jarvis cloud attach <code>}: bring another install onto this
+     * server's GadgetCraft account, so they share one plan. The other install
+     * shows the code on its account page ("Add to an existing account"); this
+     * server must already be on an account (buying a plan puts it on one).
+     */
+    public void attach(Audience who, String code) {
+        if (!isActive()) {
+            who.message(Colors.GOLD + "Jarvis: Jarvis Cloud isn't active here, sir. " + Colors.GRAY + "Run /jarvis cloud activate first.");
+            return;
+        }
+        String typed = code == null ? "" : code.trim();
+        if (typed.isEmpty()) {
+            who.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "/jarvis cloud attach ABCD-EFGH" + Colors.GRAY
+                    + " adds another server to this server's account. Get the code on the other server: /jarvis cloud upgrade, Your account, Add to an existing account.");
+            return;
+        }
+        String key = platform.config().getString("ai.claude.api-key", "").trim();
+        Map<String, String> headers = Map.of("x-api-key", key, "x-jarvis-server", installId);
+        JSONObject body = new JSONObject().put("code", typed);
+        platform.scheduler().async(() -> attempt(() -> api.post(baseUrl() + "/v1/account/attach", body, headers)), r -> {
+            String label = r.body().optString("label", "that install");
+            switch (r.status()) {
+                case 200 -> who.message("already_attached".equals(r.body().optString("status"))
+                        ? Colors.GOLD + "Jarvis: " + label + " is already on this account, sir."
+                        : Colors.GREEN + "Jarvis: " + label + " is now on this server's account, sir. They share one plan.");
+                case 409 -> {
+                    String m = r.errorMessage();
+                    who.message(Colors.GOLD + (m.startsWith("no_account")
+                            ? "Jarvis: This server isn't on a GadgetCraft account yet, sir. Buying a plan puts it on one: /jarvis cloud upgrade."
+                            : "Jarvis: That install is on another account, sir. Detach it there first, on its account page."));
+                }
+                case 404 -> who.message(Colors.GOLD + "Jarvis: That code is wrong or has expired, sir. Codes last 15 minutes.");
+                case 400 -> who.message(Colors.GOLD + "Jarvis: A code looks like ABCD-EFGH, sir.");
+                case 429 -> who.message(Colors.RED + "Jarvis: Too many attach attempts from here, sir. Try again in an hour.");
+                case -1 -> who.message(Colors.RED + "Jarvis: I couldn't reach Jarvis Cloud (" + r.errorMessage() + "), sir.");
+                default -> who.message(Colors.RED + "Jarvis: Jarvis Cloud couldn't attach it (" + r.status()
+                        + (r.errorMessage().isEmpty() ? "" : ": " + r.errorMessage()) + "), sir.");
+            }
         });
     }
 

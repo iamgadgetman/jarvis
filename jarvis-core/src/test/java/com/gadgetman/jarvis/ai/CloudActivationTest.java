@@ -255,6 +255,61 @@ class CloudActivationTest {
     }
 
     @Test
+    @DisplayName("status: with shared credits enforced, shows credits used of included, the account, and what's left")
+    void statusCredits() {
+        f.core.aiSettings().setKey("claude", "gc_live");
+        api.then(200, """
+                {"plan":"server","requests_used":80,"requests_quota":25000,"resets_at":"2026-12-01T00:00:00.000Z",
+                 "credits_used":1240,"credits_included":6350,"credits_left":5110,"credits_enforced":true,
+                 "account":true,"estimate":{"chats":9290,"builds":51}}""");
+        cloud.status(who);
+        String out = who.all();
+        assertTrue(out.contains("1,240 of 6,350"), out);
+        assertTrue(out.contains("credits used this month (resets 2026-12-01)"), out);
+        assertTrue(out.contains("shared with your GadgetCraft account"), out);
+        assertTrue(out.contains("About 9,290 chats or 51 AI builds left."), out);
+        assertFalse(out.contains("requests"), out);
+    }
+
+    @Test
+    @DisplayName("attach: sends the code with this server's key and install ID, and reports every answer")
+    void attach() {
+        cloud.attach(who, "ABCD-EFGH");
+        assertTrue(who.all().contains("isn't active"));
+        assertTrue(api.calls.isEmpty());
+
+        f.core.aiSettings().setKey("claude", "gc_live");
+        cloud.attach(who, " ");
+        assertTrue(who.all().contains("/jarvis cloud attach ABCD-EFGH"), who.all());
+        assertTrue(api.calls.isEmpty());
+
+        api.then(200, """
+                {"status":"attached","label":"server: Survival","product":"jarvis"}""")
+           .then(200, """
+                {"status":"already_attached","label":"server: Survival"}""")
+           .then(409, """
+                {"type":"error","error":{"type":"invalid_request_error","message":"Jarvis Cloud: no_account: this server isn't on a GadgetCraft account yet"}}""")
+           .then(409, """
+                {"type":"error","error":{"type":"invalid_request_error","message":"Jarvis Cloud: other_account: that install is on another account"}}""")
+           .then(404, """
+                {"type":"error","error":{"type":"not_found_error","message":"Jarvis Cloud: unknown_code"}}""")
+           .then(429, """
+                {"type":"error","error":{"type":"rate_limit_error","message":"Jarvis Cloud: too many"}}""");
+        for (int i = 0; i < 6; i++) cloud.attach(who, "abcd-efgh");
+        assertEquals("POST " + BASE + "/v1/account/attach", api.calls.get(0));
+        assertEquals("abcd-efgh", api.bodies.get(0).getString("code"));
+        assertEquals("gc_live", api.headers.get(0).get("x-api-key"));
+        assertEquals("11111111-1111-4111-8111-111111111111", api.headers.get(0).get("x-jarvis-server"));
+        String out = who.all();
+        assertTrue(out.contains("server: Survival is now on this server's account"), out);
+        assertTrue(out.contains("server: Survival is already on this account"), out);
+        assertTrue(out.contains("isn't on a GadgetCraft account yet"), out);
+        assertTrue(out.contains("on another account"), out);
+        assertTrue(out.contains("wrong or has expired"), out);
+        assertTrue(out.contains("Too many attach attempts"), out);
+    }
+
+    @Test
     @DisplayName("upgrade: not active shows the public plans page and calls nothing")
     void upgradeWhenInactive() {
         cloud.upgrade(who);
@@ -329,6 +384,10 @@ class CloudActivationTest {
         assertTrue(steve.messages.stream().anyMatch(m -> m.contains("isn't active")));
         assertEquals(List.of("activate"), f.core.commands().jarvis(steve, java.util.Optional.of(steve), List.of("cloud", "ac"), true));
         assertEquals(List.of("upgrade"), f.core.commands().jarvis(steve, java.util.Optional.of(steve), List.of("cloud", "up"), true));
+        assertEquals(List.of("attach"), f.core.commands().jarvis(steve, java.util.Optional.of(steve), List.of("cloud", "att"), true));
+        steve.messages.clear();
+        f.core.commands().jarvis(steve, java.util.Optional.of(steve), List.of("cloud", "attach", "ABCD-EFGH"), false);
+        assertTrue(steve.messages.stream().anyMatch(m -> m.contains("permission")), "attach is for whoever manages the server");
 
         // Anyone sees the public price list; only a manager gets this server's buying link.
         steve.messages.clear();

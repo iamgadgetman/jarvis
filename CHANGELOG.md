@@ -9,7 +9,9 @@
   (an email is optional), and within a few seconds Jarvis writes the key and
   endpoint into config.yml himself and puts Claude-via-Jarvis-Cloud first in
   the provider list. Nothing to copy or paste. `/jarvis cloud status` shows the
-  plan, requests used this month and when a trial ends.
+  credits used and left this month (about how many chats or builds that is)
+  and when a trial ends; against a Jarvis Cloud without credits it shows
+  requests, as before.
   - Works from the console, for anyone with `jarvis.admin`, and for the player
     in a single-player game even with cheats off. The link lasts 15 minutes.
   - Each install now has a random ID in `install-id` beside config.yml. Jarvis
@@ -23,6 +25,10 @@
     a link to the plans page, good for 30 minutes, where they can buy a plan or
     manage the one they have. Before activating, anyone gets a link to the
     public plans page instead.
+  - **Accounts.** `/jarvis cloud attach <code>` adds another server to this
+    server's GadgetCraft account, so they share one plan: the other server
+    shows the code on its account page (`/jarvis cloud upgrade`, Your
+    account, Add to an existing account). Admins only.
   - **A Jarvis Cloud page in the bell menu**, from Steward and from Admin → AI
     setup: status, Activate, Activate with a name, See the plans / Plans &
     upgrade, Plan & usage, and Test Claude.
