@@ -293,10 +293,13 @@ public final class StreamAssembler {
             return;
         }
         // A sentence ends at . ! or ? followed by a space: "3.5" and "e.g.x" don't split.
+        // Closing quotes and brackets after the mark belong to it: 'Run!' she said.
         if (Character.isWhitespace(c) && sentence.length() > 1) {
-            char last = sentence.charAt(sentence.length() - 1);
+            int end = sentence.length() - 1;
+            while (end > 0 && CLOSERS.indexOf(sentence.charAt(end)) >= 0) end--;
+            char last = sentence.charAt(end);
             // "and... well" is a pause, not the end of a sentence.
-            boolean ellipsis = last == '.' && sentence.charAt(sentence.length() - 2) == '.';
+            boolean ellipsis = last == '.' && end > 0 && sentence.charAt(end - 1) == '.';
             if ((last == '.' || last == '!' || last == '?') && !ellipsis) {
                 String s = sentence.toString().strip();
                 sentence.setLength(0);
@@ -307,6 +310,9 @@ public final class StreamAssembler {
         sentence.append(c);
     }
 
+    /** Characters that close a quote or bracket after a sentence's last mark. */
+    private static final String CLOSERS = "\"')]}\u2019\u201D\u00BB";
+
     private void queue(String s) {
         if (pending.length() > 0) pending.append(' ');
         pending.append(s);
@@ -315,6 +321,13 @@ public final class StreamAssembler {
 
     private void flush(boolean force) {
         if (pending.length() == 0) return;
+        // A piece with no words ("'" after "HAYSTACK! '", seen live) isn't a
+        // line of its own: it goes out with the next one, or is dropped once
+        // the reply is over (it only closed the sentence before it).
+        if (pending.codePoints().noneMatch(Character::isLetterOrDigit)) {
+            if (force || responseClosed) pending.setLength(0);
+            return;
+        }
         long now = clock.getAsLong();
         if (!force && lastEmit != Long.MIN_VALUE && now - lastEmit < minIntervalMs) return;
         String out = pending.toString();

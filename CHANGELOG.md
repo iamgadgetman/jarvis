@@ -159,6 +159,16 @@
 
 ### Fixed
 
+- **Jokes get told, and "come here" works through the AI.** A summon with no
+  creature is Jarvis himself, but the guard against mobs nobody asked for
+  treated it as a mob: "tell me a joke about creepers" came back as "I could
+  summon something, sir", and "could you come over here" got the same offer
+  instead of bringing him. Now an unasked summon of Jarvis is answered in the
+  model's own words, and one that asks for him (come, here, summon, where are
+  you) brings him.
+- **No stray quote lines while streaming.** A closing quote or bracket after
+  `.`, `!` or `?` stays with its sentence, and a piece with no words in it is
+  never a chat line of its own (a lone `'` was).
 - **The night skips with Jarvis summoned.** On Fabric and NeoForge the butler
   is a fake player that joins through the real player list, so the game
   waited for him to go to bed too: the owner alone in bed was "1/2 players

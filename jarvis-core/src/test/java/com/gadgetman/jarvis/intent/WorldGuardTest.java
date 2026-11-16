@@ -87,6 +87,32 @@ class WorldGuardTest {
     }
 
     @Test
+    @DisplayName("a joke that came back as \"summon Jarvis\" is told, not swapped for a mob offer (seen live)")
+    void jokeAsButlerSummon() throws IOException {
+        f = withModel("{\"action\":\"summon\",\"parameters\":{},"
+                + "\"response\":\"Why do creepers never win at hide and seek? They always blow their cover.\"}");
+        FakeOwner p = f.player("alice");
+        f.core.intents().submit(p, "tell me a short joke about creepers", IntentPipeline.Source.CONSOLE);
+        assertTrue(p.messages.stream().anyMatch(m -> m.contains("blow their cover")), p.messages.toString());
+        assertTrue(p.messages.stream().noneMatch(m -> m.contains("I could summon")), p.messages.toString());
+        assertFalse(f.core.butlers().isSpawned(p), "nobody asked him to come");
+        assertTrue(f.actions.executed.isEmpty(), f.actions.executed.toString());
+    }
+
+    @Test
+    @DisplayName("\"come here\" through the model still brings Jarvis")
+    void comeHereSummonsButler() throws IOException {
+        f = withModel("{\"action\":\"summon\",\"parameters\":{},\"response\":\"On my way, sir.\"}");
+        FakeOwner p = f.player("alice");
+        f.core.intents().submit(p, "could you come over here", IntentPipeline.Source.CONSOLE);
+        assertTrue(f.core.butlers().isSpawned(p), p.messages.toString());
+        assertTrue(IntentPipeline.unaskedJarvisSummon("summon", new org.json.JSONObject(), "tell me a story"));
+        assertFalse(IntentPipeline.unaskedJarvisSummon("summon", new org.json.JSONObject(), "where are you?"));
+        assertFalse(IntentPipeline.unaskedJarvisSummon("summon",
+                new org.json.JSONObject().put("entity", "minecraft:cow"), "tell me a story"), "a mob summon isn't this guard");
+    }
+
+    @Test
     @DisplayName("the words that count as asking, per world action")
     void askWords() {
         assertTrue(IntentPipeline.unaskedAction("set_time", "what should I do today?"));

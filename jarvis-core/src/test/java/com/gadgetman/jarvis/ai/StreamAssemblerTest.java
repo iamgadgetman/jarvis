@@ -253,4 +253,28 @@ class StreamAssemblerTest {
         a.finish();
         assertEquals(List.of("It sprang to life and... well, you know.", "The end."), rec.said);
     }
+
+    private static List<String> said(String response) {
+        Rec rec = new Rec("chat");
+        StreamAssembler a = new StreamAssembler(StreamAssembler.Wire.OLLAMA_NDJSON, rec, 0, () -> 0);
+        for (String piece : pieces("{\"action\":\"chat\",\"response\":" + JSONObject.quote(response) + "}", 4)) {
+            a.text(piece);
+        }
+        a.finish();
+        return rec.said;
+    }
+
+    @Test
+    @DisplayName("a closing quote after ! stays with its sentence, and a lone quote is never a line (seen live)")
+    void closingQuotes() {
+        assertEquals(List.of("A pig heard 'SKELETONS IN THE HAYSTACK!'", "It ran."),
+                said("A pig heard 'SKELETONS IN THE HAYSTACK!' It ran."));
+        assertEquals(List.of("He said \"Run!\"", "So we ran."), said("He said \"Run!\" So we ran."));
+        assertEquals(List.of("(Quietly.)", "Then louder."), said("(Quietly.) Then louder."));
+        // The model wrote a space before the closing quote; the quote is dropped, not sent alone.
+        assertEquals(List.of("A pig heard 'SKELETONS IN THE HAYSTACK!"),
+                said("A pig heard 'SKELETONS IN THE HAYSTACK! '"));
+        // Mid-reply, a wordless piece goes out with the next line.
+        assertEquals(List.of("Boo!", "' Then silence."), said("Boo! ' Then silence."));
+    }
 }

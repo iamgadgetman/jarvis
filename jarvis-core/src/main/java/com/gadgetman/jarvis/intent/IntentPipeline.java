@@ -166,6 +166,32 @@ public class IntentPipeline {
         return false;
     }
 
+    /**
+     * "summon" with no entity, or with Jarvis as the entity, calls the butler
+     * himself; with any other entity it spawns a mob (a world action).
+     */
+    static boolean jarvisSummon(String actionType, JSONObject parameters) {
+        return "summon".equals(actionType)
+                && (parameters == null || !parameters.has("entity")
+                    || "jarvis".equalsIgnoreCase(parameters.optString("entity")));
+    }
+
+    /** Words that ask for Jarvis himself: "come here", "summon", "where are you". */
+    private static final java.util.regex.Pattern ASKED_FOR_JARVIS = java.util.regex.Pattern.compile(
+            "\\b(come|here|summon\\w*|spawn\\w*|appear|show up|where are you)\\b");
+
+    /**
+     * True when the model reached for "summon Jarvis" without being asked:
+     * "tell me a joke about creepers" came back as summon with the joke as the
+     * reply (seen live), and the mob-summon guard swapped the joke for "I could
+     * summon something". Such a pick is answered as chat, in the model's words.
+     */
+    static boolean unaskedJarvisSummon(String actionType, JSONObject parameters, String message) {
+        if (!jarvisSummon(actionType, parameters)) return false;
+        String m = message == null ? "" : message.toLowerCase(Locale.ROOT);
+        return !ASKED_FOR_JARVIS.matcher(m).find();
+    }
+
     /** True when a public action's {@code message} is missing or blank (FB-13). */
     static boolean blankMessage(JSONObject parameters) {
         return parameters == null || parameters.optString("message", "").isBlank();
@@ -463,9 +489,13 @@ public class IntentPipeline {
             // asked for an announcement gets one; otherwise it is a reply.
             // The model then puts its real answer in the action's message and
             // filler ("A tactical observation, sir.") in response, so say the message.
-            boolean keptPrivate = unaskedAction(actionType, message);
+            // A summon of Jarvis himself is not the mob summon WORLD_ACTIONS guards:
+            // asked for, it runs; not asked for, the reply is chat, as written.
+            boolean butlerSummon = jarvisSummon(actionType, parameters);
+            boolean keptPrivate = butlerSummon ? unaskedJarvisSummon(actionType, parameters, message)
+                    : unaskedAction(actionType, message);
             String chosen = keptPrivate ? "chat" : actionType;
-            String reply = keptPrivate ? privateReply(actionType, parameters, aiResponse) : aiResponse;
+            String reply = keptPrivate && !butlerSummon ? privateReply(actionType, parameters, aiResponse) : aiResponse;
 
             final boolean alreadySpoken = spoke.get();
 
@@ -617,9 +647,7 @@ public class IntentPipeline {
         // "summon" with no entity (or with Jarvis as the entity) is Jarvis
         // himself, not a mob: the adapter's executor would otherwise offer to
         // spawn a zombie for "come here".
-        boolean npcSummon = "summon".equals(actionType)
-                && (parameters == null || !parameters.has("entity")
-                    || "jarvis".equalsIgnoreCase(parameters.optString("entity")));
+        boolean npcSummon = jarvisSummon(actionType, parameters);
         boolean adminAction = !npcSummon && executor != null && executor.handles(actionType);
 
         // Server-administration actions run only on the player's own
