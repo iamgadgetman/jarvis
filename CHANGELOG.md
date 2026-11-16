@@ -1,6 +1,6 @@
 # Jarvis Changelog
 
-## v0.18.0 (unreleased)
+## v0.18.0 (2026-11-15) — Jarvis settles in
 
 ### Security
 

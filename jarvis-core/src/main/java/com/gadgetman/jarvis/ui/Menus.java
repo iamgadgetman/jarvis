@@ -848,7 +848,7 @@ public class Menus {
                     }));
         } else {
             m.put(11, item(Ids.COMPASS, Colors.YELLOW + "Server: " + Colors.WHITE + s.endpoint(provider),
-                    Colors.GRAY + "Click, then type the address in chat.", Colors.DARK_GRAY + "For example http://10.0.0.5:11434"),
+                    Colors.GRAY + "Click, then type the address in chat.", Colors.DARK_GRAY + "For example http://192.0.2.10:11434"),
                     c -> askInChat(p, "Where is the Ollama server? (Currently " + s.endpoint(provider) + ".)", url -> {
                         if (!s.setEndpoint(provider, url)) {
                             p.message(Colors.RED + "Jarvis: An address starts with http:// or https://, sir. Left as it was.");

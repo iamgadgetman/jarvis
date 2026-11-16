@@ -125,7 +125,7 @@ cover them.
 | 5 | PASS (adapted) | Cloud already active: shown as "jarvis-cloud OK". |
 | 6 | PASS | The startup log has the one status line. |
 
-Steps 1, 2 and 4 want a throwaway server (or Chance's say-so to switch providers off on
+Steps 1, 2 and 4 want a throwaway server (or the owner's say-so to switch providers off on
 GadgetCraft for a few minutes).
 
 **Owner, 2026-11-12:** accepted the headless results; marked `tested`.

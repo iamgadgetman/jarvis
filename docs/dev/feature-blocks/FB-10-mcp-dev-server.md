@@ -102,7 +102,7 @@ the terminal. Not part of the plugin jar.
   `[say-as <player>] Jarvis: …`, because otherwise a log-reading tool can't see them (replies
   are private chat).
 - RCON chosen over the AMP API: AMP login needs an account, password and TOTP, and is AMP-only.
-  RCON is built in. GadgetCraft had `enable-rcon=false`; Chance OK'd turning it on (2026-11-12).
+  RCON is built in. The test server had `enable-rcon=false`; the owner OK'd turning it on (2026-11-12).
 - RCON is a 100-line client in `src/rcon.ts` instead of the `rcon-client` package (one fewer
   dependency). Dependencies: `@modelcontextprotocol/sdk` 1.32.2 and `zod` 4.6.7; dev:
   `typescript` 7.0.2, `@types/node`. None ship in the plugin.
