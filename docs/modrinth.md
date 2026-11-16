@@ -155,6 +155,27 @@ same observation in new words. `/jarvis quiet` mutes him.
 
 ---
 
+## 🔍 What Jarvis sends, downloads and costs
+
+**AI.** Natural-language chat and freeform building use a generative AI model you choose: Ollama on your own machine, or Claude, OpenAI, Grok or Gemini with your own key, or Jarvis Cloud. Without one, every slash command still works.
+
+**What goes to the AI.** Only when a player talks to Jarvis or asks for a build, and only to the provider you set up:
+- what the player said, plus their last few turns with Jarvis (`ai.conversation.recent-turns`, 8 by default)
+- a short snapshot of their situation (`ai.context.level`, 2 by default): health, food, held item, game mode, biome, height, time, weather, and what Jarvis is doing and carrying. Level 3 adds nearby hostile mobs and the names of players within 32 blocks; level 0 sends none of it
+- the server facts and named places you write in `knowledge.yml`
+
+Nothing is sent on its own: no telemetry, no analytics, no update check. With Ollama, nothing leaves your network.
+
+**Jarvis Cloud (optional, paid after the free credits).** It only runs after an admin runs `/jarvis cloud activate`. Requests then go to Anthropic's Claude through Jarvis Cloud on Cloudflare. Its database keeps request and token counts per license, for billing, not what was said. Every feature works the same with your own key or Ollama; the plan only pays for the AI requests.
+
+**Downloads after install.**
+- **Paper only:** on first start, Paper fetches GraalJS (about 60 MB) from Maven Central into `libraries/`, through the plugin's `libraries:` list. It runs the build scripts the AI writes, in a sandbox with no file, network or Java access. If it can't be fetched, Jarvis still loads and builds use the simpler planner.
+- **Voice models (about 210 MB, from huggingface.co):** never fetched on their own. An admin runs `/jarvis voice download`, sees the files, the size and the folder, and confirms. Or download them yourself and drop them in `plugins/Jarvis/models`.
+
+**Files Jarvis writes:** his config and data in `plugins/Jarvis/` (`config/jarvis/` on the mods), saved schematics, and the voice models above. Nothing outside the server folder.
+
+**AI-generated code.** Jarvis was written with heavy help from an AI coding assistant, under human design, review and live testing. The source is on [GitHub](https://github.com/iamgadgetman/jarvis).
+
 ## 📋 Requirements
 
 | File | Server | Needs |
