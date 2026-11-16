@@ -14,11 +14,14 @@ process: there is nothing else to install and nothing to point him at.
    Fabric or NeoForge) and on your client.
 2. Ring the bell: Admin, Voice setup, and switch Voice on. Or `/jarvis voice
    enable` from the console.
-3. The first time, he fetches two model files into `config/jarvis/models`
-   (`plugins/Jarvis/models` on Paper): a whisper.cpp model, about 150 MB,
-   and a Piper voice, about 60 MB. The log counts the download up in tens
-   of percent, and `/jarvis voice` says "models downloading" until they are
-   here. Once only; they stay.
+3. Install the speech models, once. Jarvis never downloads them by himself.
+   `/jarvis voice download` lists the three files (a whisper.cpp model, about
+   150 MB, and a Piper voice, about 60 MB, both from huggingface.co) and where
+   they go: `config/jarvis/models`, or `plugins/Jarvis/models` on Paper. Click
+   **[Download them]** or run `/jarvis voice download confirm` to fetch them;
+   the log counts up in tens of percent and `/jarvis voice` shows progress.
+   Or download the files yourself and drop them in that folder (see below).
+   The bell's Voice setup page has a **Speech models** button for the same.
 4. Hold the voice chat **whisper** key and give him an order.
 
 `/jarvis voice` reports every link of the chain: whether voice chat took

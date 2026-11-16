@@ -66,6 +66,7 @@
 | `/jarvis quiet` | Mute (or unmute) his idle remarks, for you | `jarvis.use` |
 | `/jarvis voice` | Where voice stands: voice chat, the gate, what he last heard, the speech server | `jarvis.use` |
 | `/jarvis voice enable\|disable\|engine <e>\|endpoint <url>\|gate <g>\|speak on\|off\|test` | Set up voice from the console; the bell menu's Admin > Voice setup does the same | `jarvis.admin` |
+| `/jarvis voice download [confirm]` | List the speech model files (about 210 MB from huggingface.co) and where they go; with `confirm`, fetch them. Nothing is downloaded otherwise | `jarvis.admin` |
 | `/jarvis voice bench [threads]`, `/jarvis voice threads <n>` | Time the embedded recogniser at several thread counts and name the fastest; keep a count (0 = automatic) | `jarvis.admin` |
 | `/jarvis ai [status]` | Which AI providers are on, and their models | `jarvis.use` |
 | `/jarvis ai enable\|disable\|key\|endpoint\|model\|models\|test ...` | Set up a provider from the console | `jarvis.admin` |

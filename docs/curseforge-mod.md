@@ -105,7 +105,7 @@ Optional: **Simple Voice Chat** for voice, and an AI provider — any one of Oll
 
 ### About the file size
 
-The jar is about **100 MB** because it carries the speech engine for Linux, Windows and macOS, so voice works with nothing else installed. It is only loaded if you turn voice on. The two voice models (about 200 MB) are downloaded the first time you do.
+The jar is about **100 MB** because it carries the speech engine for Linux, Windows and macOS, so voice works with nothing else installed. It is only loaded if you turn voice on. The two voice models (about 210 MB) are never fetched on their own: `/jarvis voice download` lists them and fetches them when you confirm.
 
 ## 🚀 Quick start
 

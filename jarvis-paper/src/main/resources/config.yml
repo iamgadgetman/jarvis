@@ -525,14 +525,17 @@ voice:
   gate: wake-word
 
   # Where the listening and talking happen:
-  #   embedded  whisper.cpp and Piper inside this server (default). Nothing
-  #             to install; about 200 MB of models fetched on first use into
-  #             <data dir>/models, a few hundred MB of memory while voice is on.
+  #   embedded  whisper.cpp and Piper inside this server (default). Needs
+  #             three model files, about 210 MB, in <data dir>/models; nothing
+  #             fetches them unasked. /jarvis voice download lists them and,
+  #             with "confirm", fetches them; or download them yourself (the
+  #             log names them and their URLs). A few hundred MB of memory
+  #             while voice is on.
   #   server    an OpenAI-compatible speech server elsewhere on your network
   #             (see endpoint, stt-model, tts-model below).
   engine: embedded
   models-dir: models             # Under the data directory
-  # Where the model files are fetched from. A mirror that keeps the same
+  # Where /jarvis voice download fetches the model files from. A mirror that keeps the same
   # paths (ggerganov/whisper.cpp/..., rhasspy/piper-voices/...) can stand in
   # for a server whose outbound traffic is filtered; or fetch the three files
   # elsewhere and drop them in models-dir (the log names them and their URLs).

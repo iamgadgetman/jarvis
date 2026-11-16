@@ -121,7 +121,7 @@ Without any AI configured, every slash command still works — you only lose nat
 The jar is about **86 MB** because it carries the speech engine for Linux, Windows and macOS, so voice works with nothing else installed. It is only loaded if you turn voice on. Two more downloads happen on first use, into your server's own folders:
 
 - **On first start**, Paper fetches the JavaScript engine the build planner uses (about 60 MB, into `libraries/`). If it can't, freeform building still works with the simpler planner.
-- **When you first turn voice on**, the two voice models (about 200 MB) are downloaded, with progress shown in the log and in `/jarvis voice`.
+- **Voice models, only when you ask.** The two voice models (about 210 MB) are never fetched on their own: `/jarvis voice download` lists them and fetches them when you confirm, with progress in the log and in `/jarvis voice`. Or drop the files in yourself.
 
 ## 🚀 Quick start
 

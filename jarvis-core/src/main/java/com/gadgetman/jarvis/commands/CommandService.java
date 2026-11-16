@@ -112,6 +112,7 @@ public class CommandService implements CommandSink {
                 pool = args.size() == 2 ? VOICE_SUBCOMMANDS
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("gate") ? VoiceConfig.GATES
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("speak") ? List.of("on", "off")
+                        : args.size() == 3 && args.get(1).equalsIgnoreCase("download") ? List.of("confirm")
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("engine") ? VoiceConfig.ENGINES
                         : args.size() == 3 && (args.get(1).equalsIgnoreCase("threads") || args.get(1).equalsIgnoreCase("bench")) ? List.of("0", "2", "4", "8")
                         : List.of();
@@ -1041,18 +1042,81 @@ public class CommandService implements CommandSink {
     }
 
     private static final List<String> VOICE_SUBCOMMANDS = List.of(
-            "status", "enable", "disable", "engine", "endpoint", "gate", "speak", "threads", "bench", "test");
+            "status", "enable", "disable", "download", "engine", "endpoint", "gate", "speak", "threads", "bench", "test");
 
-    private static final String VOICE_USAGE = "Usage: /jarvis voice [status|enable|disable|engine <e>|endpoint <url>|gate <g>|speak on|off|threads <n>|bench [n]|test]";
+    private static final String VOICE_USAGE = "Usage: /jarvis voice [status|enable|disable|download|engine <e>|endpoint <url>|gate <g>|speak on|off|threads <n>|bench [n]|test]";
+
+    /** The embedded engine's model files, as config.yml names them. Built fresh so a reload's changes count. */
+    private com.gadgetman.jarvis.voice.SpeechModels speechModels() {
+        var cfg = platform.config();
+        return new com.gadgetman.jarvis.voice.SpeechModels(
+                platform.dataDir().resolve(cfg.getString("voice.models-dir", "models")),
+                cfg.getString("voice.whisper-model", "base.en"),
+                cfg.getString("voice.piper-voice", "en_GB-alan-medium"),
+                cfg.getString("voice.models-source", com.gadgetman.jarvis.voice.SpeechModels.DEFAULT_SOURCE),
+                platform.log());
+    }
+
+    private boolean speechModelsReady() {
+        try {
+            return speechModels().ready();
+        } catch (IllegalArgumentException e) {
+            return true;   // a malformed voice name; /jarvis voice download says what's wrong
+        }
+    }
+
+    /**
+     * {@code /jarvis voice download [confirm]}: nothing is fetched until an
+     * admin asks. Without {@code confirm} it lists what would come from where;
+     * with it, the download starts and reports back when done.
+     */
+    private void handleVoiceDownload(Audience sender, boolean confirmed) {
+        if (core.voiceConfig().engine().equals("server")) {
+            sender.message(Colors.YELLOW + "Jarvis: Voice uses a speech server, sir (voice.engine: server); there is nothing to download.");
+            return;
+        }
+        com.gadgetman.jarvis.voice.SpeechModels models;
+        try {
+            models = speechModels();
+        } catch (IllegalArgumentException e) {
+            sender.message(Colors.RED + "Jarvis: " + e.getMessage() + ", sir.");
+            return;
+        }
+        if (models.ready()) {
+            sender.message(Colors.GREEN + "Jarvis: The speech models are already installed, sir.");
+            return;
+        }
+        if (!confirmed) {
+            sender.message(Colors.GOLD + "Jarvis: Voice needs three model files, " + com.gadgetman.jarvis.voice.SpeechModels.DEFAULT_SIZE
+                    + " from " + models.sourceHost() + ", saved in " + models.whisperFile().getParent() + ":");
+            for (String line : models.plannedFiles()) sender.message(Colors.GRAY + "  " + line);
+            sender.rich(new RichLine()
+                    .link(Colors.GREEN + "[Download them]", "/jarvis voice download confirm", "Fetch the speech models now")
+                    .text(Colors.GRAY + "  or run /jarvis voice download confirm. You can also fetch them yourself and drop them in that folder."));
+            return;
+        }
+        boolean started = models.download(
+                () -> platform.scheduler().sync(() -> sender.message(Colors.GREEN
+                        + "Jarvis: The speech models are installed, sir. Voice is ready once it's on (/jarvis voice enable).")),
+                why -> platform.scheduler().sync(() -> sender.message(Colors.RED
+                        + "Jarvis: The speech models could not be fetched, sir: " + why + ". The server log says how to fetch them by hand.")));
+        sender.message(started
+                ? Colors.GOLD + "Jarvis: Fetching the speech models, sir. /jarvis voice status shows how far along it is."
+                : Colors.YELLOW + "Jarvis: That download is already under way, sir. /jarvis voice status shows how far along it is.");
+    }
 
     /** {@code /jarvis voice enable|disable|endpoint <url>|gate <g>|speak on|off|threads <n>|bench|test}, for the console. */
     private void handleVoiceSetup(Audience sender, List<String> args) {
         VoiceConfig v = core.voiceConfig();
         String what = args.get(1).toLowerCase(Locale.ROOT);
         switch (what) {
+            case "download" -> handleVoiceDownload(sender, args.size() > 2 && args.get(2).equalsIgnoreCase("confirm"));
             case "enable", "on" -> {
                 v.setEnabled(true);
                 sender.message(Colors.GREEN + "Jarvis: Voice on, sir. Speech server: " + Colors.WHITE + v.endpoint());
+                if (!v.engine().equals("server") && !speechModelsReady()) {
+                    sender.message(Colors.YELLOW + "Jarvis: The speech models aren't installed yet, sir. /jarvis voice download fetches them.");
+                }
             }
             case "disable", "off" -> {
                 v.setEnabled(false);
@@ -1063,7 +1127,7 @@ public class CommandService implements CommandSink {
                 String why = v.setEngine(args.get(2));
                 sender.message(why != null ? Colors.RED + "Jarvis: " + why + ", sir."
                         : Colors.GREEN + "Jarvis: Speech engine set to " + Colors.WHITE + v.engine() + Colors.GREEN
-                        + (v.engine().equals("embedded") ? ". The models are fetched on first use." : ". Set the server with /jarvis voice endpoint."));
+                        + (v.engine().equals("embedded") ? ". /jarvis voice download installs its models." : ". Set the server with /jarvis voice endpoint."));
             }
             case "endpoint" -> {
                 if (args.size() < 3) { sender.message(Colors.RED + "Usage: /jarvis voice endpoint <http://host:port>"); return; }

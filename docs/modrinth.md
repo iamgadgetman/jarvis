@@ -105,8 +105,8 @@ Every AI build shows a **particle preview** and waits for your yes. Dangerous bl
 
 Through [Simple Voice Chat](https://modrinth.com/plugin/simple-voice-chat) —
 and nothing else. Speech recognition (whisper.cpp) and his voice (Piper) run
-**inside the server**; the two model files are fetched the first time you turn
-voice on. No container, no speech service, nothing to point at. Hearing a
+**inside the server**; its model files (about 210 MB) are installed once with
+`/jarvis voice download`, never fetched unasked. No container, no speech service, nothing to point at. Hearing a
 short order takes well under a second on a desktop CPU, and `/jarvis voice`
 tells you how long each stage of the last order took. He speaks back through
 the NPC when he is beside you, and into your ear when he is away working.
@@ -167,7 +167,7 @@ Optional everywhere: an AI provider (any one of Ollama, Claude, OpenAI, Grok, Ge
 
 > **Note:** Citizens supports the latest patch of each Minecraft line — "1.21" support means 1.21.11. Older 1.21.x servers should update.
 
-**Why the files are large (~86–100 MB):** each carries the speech engine's native libraries for Linux, Windows and macOS, so voice works with nothing else installed. They are only loaded if you turn voice on; the two voice models (~200 MB) are downloaded the first time you do. On Paper, the build planner's script engine (~60 MB) is fetched into `libraries/` on first start.
+**Why the files are large (~86–100 MB):** each carries the speech engine's native libraries for Linux, Windows and macOS, so voice works with nothing else installed. They are only loaded if you turn voice on. The voice models (~210 MB) are not in the jar and are never fetched on their own: `/jarvis voice download` lists them and fetches them when an admin confirms, or you can drop them in yourself. On Paper, the build planner's script engine (~60 MB) is fetched into `libraries/` on first start.
 
 ## 🚀 Quick start
 

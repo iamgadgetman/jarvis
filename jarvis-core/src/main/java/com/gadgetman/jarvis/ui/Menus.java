@@ -696,10 +696,16 @@ public class Menus {
                 c -> { if (p.hasPermission("jarvis.admin")) { v.setEnabled(!v.enabled()); open(p, voiceSetup(p)); } });
         boolean embedded = v.engine().equals("embedded");
         m.put(11, item(embedded ? Ids.NOTE_BLOCK : Ids.COMPASS, Colors.AQUA + "Engine: " + v.engine(),
-                        Colors.GRAY + (embedded ? "Whisper and Piper inside the server; models fetched on first use"
+                        Colors.GRAY + (embedded ? "Whisper and Piper inside the server; needs its models installed"
                                 : "A speech server on your network"),
                         Colors.DARK_GRAY + "Click to switch to " + (embedded ? "server" : "embedded")),
                 c -> { if (p.hasPermission("jarvis.admin")) { v.setEngine(embedded ? "server" : "embedded"); open(p, voiceSetup(p)); } });
+        if (embedded) {
+            m.put(14, item(Ids.CHEST, Colors.AQUA + "Speech models",
+                            Colors.GRAY + "Listening and speaking models, " + com.gadgetman.jarvis.voice.SpeechModels.DEFAULT_SIZE,
+                            Colors.DARK_GRAY + "Click to see what is fetched, and from where"),
+                    c -> { if (p.hasPermission("jarvis.admin")) run(p, "voice", "download"); });
+        }
         if (!embedded) {
             m.put(14, item(Ids.COMPASS, Colors.AQUA + "Speech server", Colors.WHITE + v.endpoint(),
                             Colors.GRAY + "Where transcription and his voice come from", Colors.DARK_GRAY + "Click to type a new address"),

@@ -150,6 +150,15 @@
   how much is sent; `/jarvis reload` re-reads the file.
 
 ### Changed
+- **Voice models are installed only when you ask.** Jarvis no longer fetches
+  the speech models (about 210 MB from huggingface.co) on his own when voice
+  is turned on. `/jarvis voice download` lists the three files, their size,
+  where they come from and where they go, with a **[Download them]** link;
+  `/jarvis voice download confirm` fetches them, with progress in the log and
+  in `/jarvis voice`. Or download them yourself and drop them in the models
+  folder. The bell's Voice setup page has a **Speech models** button for the
+  same. Store rules (Modrinth) don't allow content to be downloaded after
+  install without being asked.
 
 - **Replies stream.** Jarvis's sentences appear as the model writes them
   instead of all at once; actions still wait for the full reply. Replies the
