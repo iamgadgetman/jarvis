@@ -136,6 +136,35 @@ class StreamingPipelineTest {
 
     }
 
+    private static final String GIVE = "{\"action\":\"give_item\",\"parameters\":{\"item\":\"diamond\",\"amount\":64},"
+            + "\"response\":\"Here you go, sir. A pile of diamonds for your coffers.\"}";
+
+    @Test
+    @DisplayName("an admin action a player may not run isn't streamed: they hear only the refusal (seen live)")
+    void refusedActionNotStreamed() throws IOException {
+        f = withModel(GIVE, "  streaming:\n    min-interval-ms: 0\n");
+        f.actions.alsoHandles.add("give_item");
+        FakeOwner p = f.player("alice");
+        f.core.intents().submit(p, "give me 64 diamonds please", IntentPipeline.Source.CONSOLE);
+        List<String> lines = jarvisLines(p);
+        assertTrue(lines.stream().noneMatch(l -> l.contains("Here you go")), lines.toString());
+        assertTrue(lines.stream().anyMatch(l -> l.contains("needs an administrator")), lines.toString());
+        assertTrue(f.actions.executed.isEmpty());
+    }
+
+    @Test
+    @DisplayName("an admin still gets the admin action's reply streamed, then the action")
+    void adminActionStreams() throws IOException {
+        f = withModel(GIVE, "  streaming:\n    min-interval-ms: 0\n");
+        f.actions.alsoHandles.add("give_item");
+        FakeOwner p = f.player("alice");
+        p.permissions.add("jarvis.admin");
+        f.core.intents().submit(p, "give me 64 diamonds please", IntentPipeline.Source.CONSOLE);
+        assertEquals(List.of("Here you go, sir.", "A pile of diamonds for your coffers."), jarvisLines(p),
+                p.messages.toString());
+        assertEquals(List.of("give_item"), f.actions.executed);
+    }
+
     /** A fake Ollama whose answer to the streamed request is {@code streamed}; buffered gets {@code reply}. */
     private Fixture withStreamAnswer(int status, String streamed, String reply) throws IOException {
         ollama = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);

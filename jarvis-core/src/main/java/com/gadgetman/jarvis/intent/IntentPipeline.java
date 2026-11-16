@@ -307,7 +307,9 @@ public class IntentPipeline {
             // The model can take seconds; show that he is on it (FB-02).
             final ThinkingFeedback thinking = ThinkingFeedback.start(
                     player, core.butlers().butler(player), platform.config(), scheduler());
-            scheduler().async(() -> parseAndDispatch(player, utterance, worldContext, source, sink, thinking));
+            // Read here, on the server thread: the stream asks from the AI's thread.
+            final boolean admin = player.hasPermission(ActionPermissions.ADMIN);
+            scheduler().async(() -> parseAndDispatch(player, utterance, worldContext, source, sink, thinking, admin));
         });
     }
 
@@ -419,7 +421,8 @@ public class IntentPipeline {
     // ==================== PARSE ====================
 
     private void parseAndDispatch(Owner player, String message, String worldContext,
-                                  Source source, Responder sink, ThinkingFeedback thinking) {
+                                  Source source, Responder sink, ThinkingFeedback thinking,
+                                  boolean admin) {
         // FB-05: sentences of the reply reach the player while the model writes.
         // Only replies the pipeline won't rewrite are streamed (see unaskedAction).
         final java.util.concurrent.atomic.AtomicBoolean spoke = new java.util.concurrent.atomic.AtomicBoolean();
@@ -427,7 +430,8 @@ public class IntentPipeline {
             @Override public boolean accepts(String actionType) {
                 // "unknown" goes to the keyword fallback, which must still be able to answer.
                 return !actionType.isBlank() && !actionType.equals("unknown")
-                        && !unaskedAction(actionType, message);
+                        && !unaskedAction(actionType, message)
+                        && !mayBeRefused(actionType, admin);
             }
             @Override public void sentence(String text) {
                 spoke.set(true);
@@ -582,6 +586,19 @@ public class IntentPipeline {
 
     // ==================== EXECUTE ====================
 
+    /**
+     * An admin action the permission check (ActionPermissions) could refuse.
+     * Its reply isn't streamed: it waits for the check, so a refused player
+     * never hears "at once, sir" first. Full admins ({@code admin}, read on the
+     * server thread) stream as before; a player with only a per-action node
+     * gets the reply whole, a moment later.
+     */
+    boolean mayBeRefused(String actionType, boolean admin) {
+        if (admin || ActionPermissions.OPEN.contains(actionType)) return false;
+        ActionExecutor executor = core.actions();
+        return executor != null && executor.handles(actionType);
+    }
+
     // Package-private for tests.
     void executeAction(Owner player, String actionType, JSONObject parameters,
                                String aiResponse, String originalMessage,
@@ -608,8 +625,8 @@ public class IntentPipeline {
         // Server-administration actions run only on the player's own
         // permissions (ActionPermissions). Checked before the model's reply is
         // shown or remembered, so a refused order isn't answered "at once,
-        // sir" or recalled later as done. (A streamed reply is out already;
-        // then the refusal just follows it.)
+        // sir" or recalled later as done. A streamed reply waits for this
+        // check too (mayBeRefused).
         if (adminAction && !ActionPermissions.allowed(player, actionType)) {
             sink.feedback(player, Colors.YELLOW + ActionPermissions.refusal(actionType));
             return;

@@ -13,6 +13,9 @@
   `request_item` stays open, and summoning Jarvis himself is unchanged.
   `/jarvis confirm` checks again. On Fabric and NeoForge, which have no
   permission nodes, both mean op.
+  With streaming replies on, an admin action's reply is held for anyone
+  without `jarvis.admin` until the check is done, so a refused player no
+  longer hears "Here you go, sir" before the refusal (seen live).
 
 ### Added
 
