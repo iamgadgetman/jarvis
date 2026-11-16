@@ -19,8 +19,8 @@ import java.util.Set;
  *
  * <p>One overworld with a flat stone floor at y=63, an sqlite database in a
  * temp folder so the service record and build history have somewhere to go,
- * and a config that keeps every network-facing feature quiet: the AI points
- * at a port nothing listens on, memory and remarks are off.
+ * and a config that keeps every network-facing feature quiet: the AI and
+ * Jarvis Cloud point at a port nothing listens on, memory and remarks are off.
  */
 public final class Fixture implements AutoCloseable {
 
@@ -32,6 +32,8 @@ public final class Fixture implements AutoCloseable {
                 model: test
               light-timeout-seconds: 1
               heavy-timeout-seconds: 1
+            cloud:
+              url: http://127.0.0.1:1
             memory:
               enabled: false
             natural-language:
@@ -62,13 +64,27 @@ public final class Fixture implements AutoCloseable {
     /** Records what the AI asked the server to do. */
     public static final class FakeActions implements ActionExecutor {
         public final List<String> executed = new ArrayList<>();
+        /** The parameters of each executed action, in the same order. */
+        public final List<JSONObject> executedParams = new ArrayList<>();
 
-        @Override public boolean handles(String actionType) { return actionType.startsWith("admin_"); }
-        @Override public Set<String> dangerousActions() { return Set.of("admin_dangerous"); }
+        /** Extra action names to claim, e.g. "summon" to act like the Paper executor. */
+        public final Set<String> alsoHandles = new java.util.HashSet<>();
+        /** Extra action names that need confirmation. */
+        public final Set<String> alsoDangerous = new java.util.HashSet<>();
+
+        @Override public boolean handles(String actionType) {
+            return actionType.startsWith("admin_") || alsoHandles.contains(actionType);
+        }
+        @Override public Set<String> dangerousActions() {
+            Set<String> out = new java.util.HashSet<>(alsoDangerous);
+            out.add("admin_dangerous");
+            return out;
+        }
 
         @Override
         public String execute(String actionType, JSONObject params, Owner requester) {
             executed.add(actionType);
+            executedParams.add(params);
             return "did " + actionType;
         }
 
@@ -99,6 +115,8 @@ public final class Fixture implements AutoCloseable {
         world = platform.addWorld(FakeWorld.overworld().flatFloor(48));
         core = new JarvisCore(platform, "test", platform.butlers(), actions);
         core.start();
+        // FB-09: keys can come from the environment; tests never read the real one.
+        core.ai().useEnvironment(java.util.Map.of());
     }
 
     /** An online player standing on the floor at the origin. */

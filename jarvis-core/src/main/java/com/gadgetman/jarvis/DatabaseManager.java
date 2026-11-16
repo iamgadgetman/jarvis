@@ -146,6 +146,89 @@ public class DatabaseManager {
             ps.executeUpdate();
         }
 
+        // Undo history (v0.18.0) — see building.UndoService. One row per job;
+        // the placements are a gzipped text list, decoded only on undo.
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS undo_batches (" +
+                "batch_key VARCHAR(36) PRIMARY KEY, " +
+                "player_id VARCHAR(36) NOT NULL, " +
+                "world VARCHAR(100) NOT NULL, " +
+                "label TEXT NOT NULL, " +
+                "created_at BIGINT NOT NULL, " +
+                "ai_generated INTEGER NOT NULL, " +
+                "experience_id BIGINT, " +
+                "block_count INTEGER NOT NULL, " +
+                "actions BLOB NOT NULL)")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE INDEX IF NOT EXISTS idx_undo_player " +
+                "ON undo_batches (player_id, created_at)")) {
+            ps.executeUpdate();
+        }
+
+        // Conversation memory (FB-04) — see memory.ConversationMemory. The turns
+        // themselves are chat_interactions; these hold the condensed summary per
+        // player and the notable things that happened (deaths, portals).
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS conversation_summaries (" +
+                "player_id VARCHAR(36) PRIMARY KEY, " +
+                "summary TEXT NOT NULL, " +
+                "covered_until BIGINT NOT NULL, " +
+                "updated_at BIGINT NOT NULL)")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS conversation_events (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                "player_id VARCHAR(36) NOT NULL, " +
+                "text TEXT NOT NULL, " +
+                "timestamp BIGINT NOT NULL)")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE INDEX IF NOT EXISTS idx_chat_player " +
+                "ON chat_interactions (player_id, timestamp)")) {
+            ps.executeUpdate();
+        }
+
+        // Build quota (FB-07) — see building.BuildQuota. One row per player per
+        // server-local day; only finished AI builds are counted.
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS build_quota (" +
+                "player_id VARCHAR(36) NOT NULL, " +
+                "day VARCHAR(10) NOT NULL, " +
+                "builds INTEGER NOT NULL, " +
+                "blocks INTEGER NOT NULL, " +
+                "last_build_at BIGINT NOT NULL, " +
+                "PRIMARY KEY (player_id, day))")) {
+            ps.executeUpdate();
+        }
+
+        // Reward bundles (FB-08) — see commands.BundleRegistry. How often each
+        // player has had each bundle, and when last, for once-per-player and cooldowns.
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS bundle_uses (" +
+                "player_id VARCHAR(36) NOT NULL, " +
+                "bundle VARCHAR(48) NOT NULL, " +
+                "uses INTEGER NOT NULL, " +
+                "last_at BIGINT NOT NULL, " +
+                "PRIMARY KEY (player_id, bundle))")) {
+            ps.executeUpdate();
+        }
+
+        // Onboarding (FB-11) — see onboarding.OnboardingStore. A row means the
+        // player has been welcomed; it also holds where they are in the tutorial.
+        try (PreparedStatement ps = c.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS onboarding_state (" +
+                "player_id VARCHAR(36) PRIMARY KEY, " +
+                "welcomed_at BIGINT NOT NULL, " +
+                "tutorial_step INTEGER NOT NULL DEFAULT 0, " +
+                "tutorial_active INTEGER NOT NULL DEFAULT 0, " +
+                "tutorial_done_at BIGINT NOT NULL DEFAULT 0)")) {
+            ps.executeUpdate();
+        }
+
         log.info("Database tables initialized successfully");
     }
 

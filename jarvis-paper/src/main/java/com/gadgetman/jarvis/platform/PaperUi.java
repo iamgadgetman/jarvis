@@ -12,8 +12,10 @@ import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -60,13 +62,33 @@ public final class PaperUi implements Ui, Listener {
         Inventory inv = Bukkit.createInventory(holder, menu.size(),
                 LegacyComponentSerializer.legacySection().deserialize(menu.title()));
         holder.inventory = inv;
+        draw(holder);
+        p.openInventory(inv);
+    }
+
+    /** Lay the menu's icons into its inventory, one slot per item. */
+    private static void draw(Holder holder) {
+        Menu menu = holder.menu;
+        Inventory inv = holder.inventory;
         ItemStack filler = menu.filler() == null ? null : PaperItems.toStack(menu.filler());
         for (int i = 0; i < menu.size(); i++) {
             MenuItem item = menu.at(i);
             if (item != null) inv.setItem(i, PaperItems.toStack(item.icon()));
-            else if (filler != null) inv.setItem(i, filler);
+            else inv.setItem(i, filler);
         }
-        p.openInventory(inv);
+    }
+
+    /**
+     * Put the icons back after every other plugin has seen the open.
+     *
+     * <p>Sorting plugins (ChestSort Plus sorts any holder-backed chest on open
+     * at HIGHEST) reorder the icons, but a click is matched by slot, so the
+     * buttons stopped matching their pictures. Redrawing at MONITOR runs after
+     * them and before the window reaches the client.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onInventoryOpen(InventoryOpenEvent e) {
+        if (e.getInventory().getHolder() instanceof Holder holder) draw(holder);
     }
 
     @Override
@@ -95,7 +117,9 @@ public final class PaperUi implements Ui, Listener {
         if (bar != null) bar.removeAll();
     }
 
-    @EventHandler
+    // LOWEST so the cancel is in place before sorting plugins look: ChestSort
+    // Plus skips cancelled clicks, and would otherwise sort on its keybind.
+    @EventHandler(priority = EventPriority.LOWEST)
     public void onInventoryClick(InventoryClickEvent e) {
         if (!(e.getWhoClicked() instanceof Player p)) return;
         if (!(e.getInventory().getHolder() instanceof Holder holder)) return;

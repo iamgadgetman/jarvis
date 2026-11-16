@@ -161,7 +161,9 @@ public final class EmbeddedSpeech implements Speech {
         if (!models.ready()) {
             if (!warnedNotReady) {
                 warnedNotReady = true;
-                log.warn("Speech models are not here yet (" + models.status().describe() + "); he cannot hear until they are.");
+                log.warn("Speech models are not here yet (" + models.status().describe() + "); he cannot hear until they are. "
+                        + "/jarvis voice download fetches them (" + SpeechModels.DEFAULT_SIZE + " from " + models.sourceHost()
+                        + "), or: " + models.manualInstructions());
             }
             models.ensure(this::load);
             lastProblem = "the speech models are " + models.status().describe();

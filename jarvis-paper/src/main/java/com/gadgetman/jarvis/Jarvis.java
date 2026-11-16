@@ -51,6 +51,10 @@ public class Jarvis extends JavaPlugin {
         // config.yml. Without this the data folder has no databases.yml, no data
         // source is ever registered, and every getConnection() throws.
         saveResource("databases.yml", false);
+        // The commented example server-facts file (FB-03); never overwrites one.
+        if (!new java.io.File(getDataFolder(), "knowledge.yml").exists()) {
+            saveResource("knowledge.yml", false);
+        }
 
         platform = new PaperPlatform(this);
         platform.registerEvents();
@@ -72,7 +76,7 @@ public class Jarvis extends JavaPlugin {
 
         // WorldEdit, when present, accelerates JSON pastes and adds clipboard
         // saves and rotated pastes.
-        schematicManager = new SchematicManager(this, core.schematics());
+        schematicManager = new SchematicManager(this, core.schematics(), core.undo());
         core.setSchematicExtras(schematicManager);
 
         // Bukkit registration
@@ -83,6 +87,9 @@ public class Jarvis extends JavaPlugin {
         getServer().getPluginManager().registerEvents(npcProvider.inventoryView(), this);
         getServer().getPluginManager().registerEvents(
                 new CitizensInteractListener(npcProvider, platform.paperEvents()), this);
+        // FB-16: if Citizens already loaded its NPCs (a plugin reload), sweep now;
+        // otherwise its CitizensEnableEvent does it once saves.yml is in.
+        getServer().getScheduler().runTask(this, () -> npcProvider.sweepOrphans(CitizensNPCProvider.BUTLER_NAME));
 
         // Ears. No-ops unless voice.enabled and Simple Voice Chat is installed.
         voice = new PaperVoice(this);

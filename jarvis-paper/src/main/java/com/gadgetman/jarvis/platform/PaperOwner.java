@@ -207,6 +207,7 @@ public final class PaperOwner implements Owner {
         for (RichLine.Part part : line.parts()) {
             Component c = LegacyComponentSerializer.legacySection().deserialize(part.text());
             if (part.command() != null) c = c.clickEvent(ClickEvent.runCommand(part.command()));
+            else if (part.url() != null) c = c.clickEvent(ClickEvent.openUrl(part.url()));
             if (part.hover() != null) c = c.hoverEvent(HoverEvent.showText(Component.text(part.hover())));
             out = out.append(c);
         }

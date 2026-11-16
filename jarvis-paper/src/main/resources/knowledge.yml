@@ -1,0 +1,29 @@
+# Jarvis server knowledge
+#
+# Facts and places here go into every chat request as things Jarvis treats as
+# true. Use it for server rules and for "where is ..." questions, so he answers
+# from your words instead of guessing. Re-read on /jarvis reload.
+#
+# Keep it short: every line is sent with every request, and small local models
+# have little room. Up to 40 facts and 40 locations are used, each line clipped
+# at 200 characters.
+#
+# Uncomment and edit:
+#
+# facts:
+#   - "Spawn is at 0, 64, 0"
+#   - "PvP is off everywhere except the arena"
+#   - "Ask an admin before building within 200 blocks of spawn"
+#
+# locations:
+#   market:
+#     x: 120
+#     y: 70
+#     z: -40
+#     note: "player shops"
+#   arena:
+#     x: -300
+#     z: 450
+#     world: world_nether      # optional
+#     note: "PvP allowed here"
+#   farm: "east of spawn, past the river"   # a plain description works too

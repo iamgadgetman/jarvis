@@ -1,6 +1,7 @@
 **[Jarvis Wiki](Home)**
 
 *Setting up*
+- [Getting Started](Getting-Started)
 - [Installation & Setup](Installation-and-Setup)
 - [Fabric & NeoForge](Fabric-and-NeoForge)
 - [Configuration](Configuration)

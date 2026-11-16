@@ -22,8 +22,20 @@ permissions:
     description: Basic Jarvis usage
     default: true
   jarvis.admin:
-    description: Admin Jarvis features
+    description: Admin Jarvis features, including every action the AI can run for you
     default: op
+  # One AI action without full admin: jarvis.admin.actions.<action>, e.g.
+  # jarvis.admin.actions.heal. Not declared one by one; an undeclared node is
+  # op-only by default, and a permissions plugin grants it like any other.
   jarvis.menu.use:
     description: Use Jarvis control menu via bell or right-click
     default: true
+  jarvis.tutorial.reset:
+    description: Forget a player's welcome so their next join is a first join (/jarvis tutorial reset <player>)
+    default: op
+  jarvis.build.bypass:
+    description: AI builds skip the guardrails, cooldown and daily limits (build.guardrails, build.limits)
+    default: op
+  jarvis.build.limit.trusted:
+    description: AI builds use the "trusted" limits in build.limits instead of "default"
+    default: false

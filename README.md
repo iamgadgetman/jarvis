@@ -25,8 +25,11 @@ Jarvis:  Right away, sir. Mind the lava.
   the situation rather than from his rank alone.
 - **Earns his kit.** A service ladder from Hired to Without Equal; better
   tools and enchantments arrive as he works, not from a config file.
-- **Learns.** He remembers builds that went well and reasons about a request
-  before searching his memory for a precedent.
+- **Learns and remembers.** He remembers builds that went well, and what each
+  player told him, so "where did I say my base was?" works after a restart.
+- **Builds safely.** AI builds show a preview and wait for yes; dangerous
+  blocks, size and distance are capped, and `/jarvis undo` takes down any job.
+- **Welcomes new players** with the controller bell and a short tutorial.
 - **Notices things.** Idle remarks on what you are carrying and how deep you
   have got — off by default, and keyed so he cannot repeat himself.
 - **Finds nether portals**, remembers them, and can tell you where any of them
@@ -48,7 +51,7 @@ One release, three files. Take the one for your server from the
 |---|---|---|
 | Paper / Purpur 1.21.11 – 26.2 | `jarvis-paper-<version>.jar` | [Citizens 2](https://ci.citizensnpcs.co/job/citizens2/) 2.0.43+ · Java 21 (25 on 26.x) |
 | Fabric, Minecraft 26.3 | `jarvis-fabric-<version>.jar` | Fabric Loader 0.19.5+ · [Fabric API](https://modrinth.com/mod/fabric-api) · Java 25 |
-| NeoForge 26.3.0.x | `jarvis-neoforge-<version>.jar` | Java 25 |
+| NeoForge 26.1.2, 26.2 and 26.3 | `jarvis-neoforge-<version>.jar` | Java 25 |
 
 On every platform: an AI provider is optional (every slash command works
 without one; natural language and freeform building need one), and
@@ -58,14 +61,33 @@ mod on Fabric and NeoForge). Nothing else: speech recognition and his voice
 run inside the server, and their models are fetched the first time voice is
 turned on.
 
+### Zero-cost start
+
+Jarvis talks with no spend at all. Pick one, in this order:
+
+1. **Ollama on your own box** (free, local): install [Ollama](https://ollama.com),
+   then `ollama pull mistral`. Jarvis looks for it at `localhost:11434`.
+2. **A free Gemini key**: get one at [aistudio.google.com](https://aistudio.google.com/),
+   then `export GEMINI_API_KEY=...` before starting the server.
+3. **Jarvis Cloud**: `/jarvis cloud activate` in-game, no key to manage. Free
+   credits every month and a two-week trial; paid plans, shared across your
+   servers, at [jarvis-cloud.app](https://jarvis-cloud.app). Optional: the plugin never
+   contacts it unless you run that command.
+
+On startup the console says which providers can answer
+(`AI providers: ollama OK (mistral) · gemini no key · …`), and if none can it
+prints these three options. `/jarvis setup` checks again.
+
 ### Paper / Purpur
 
 1. Drop `jarvis-paper-<version>.jar` and `Citizens.jar` into `plugins/`.
    [WorldEdit](https://enginehub.org/worldedit/) too if you want the
    schematic library.
-2. Start the server. Jarvis writes `plugins/Jarvis/config.yml`.
-3. `/jarvis bell`, ring it, **Admin > AI setup**, and pick a provider. Or set
-   the keys in `config.yml` and `/jarvis reload`.
+2. Start the server. Jarvis writes `plugins/Jarvis/config.yml` and logs which
+   AI providers it found.
+3. If none: one of the free options above, then `/jarvis setup`. Paid keys work
+   too: `/jarvis bell`, ring it, **Admin > AI setup**, or set them in
+   `config.yml` and `/jarvis reload`.
 
 Optional but recommended for experience memory: `ollama pull nomic-embed-text`
 on your Ollama box. Without it memory still works, on the weaker

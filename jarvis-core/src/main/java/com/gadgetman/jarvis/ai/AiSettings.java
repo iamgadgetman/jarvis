@@ -118,6 +118,20 @@ public final class AiSettings {
         apply();
     }
 
+    /**
+     * Point the Claude provider at Jarvis Cloud with a freshly activated key
+     * and put it first in the priority list, so it is used straight away.
+     */
+    public void useCloud(String key, String endpoint) {
+        cfg().set("ai.claude.api-key", key == null ? "" : key.trim());
+        cfg().set("ai.claude.endpoint", endpoint);
+        List<String> list = enabled();
+        list.remove("claude");
+        list.add(0, "claude");
+        cfg().set("ai.provider-priority", list);
+        apply();
+    }
+
     private void apply() {
         try {
             cfg().save();

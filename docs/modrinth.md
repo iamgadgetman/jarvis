@@ -68,7 +68,7 @@ No commands needed — Jarvis parses natural chat through the AI:
 > "protect me" · "weapons free" · "stand down"
 > "take me home" · "get my stuff back" · "how are things?"
 
-He remembers your recent conversation, so *"do that again"* actually works.
+He remembers what each player told him, even after a restart, so *"do that again"* and *"where did I say my base was?"* both work. He also knows your health, what you're holding and what's nearby, so *"what should I do?"* gets a real answer.
 
 ## 🤖 Bring your own AI — or none of the cloud
 
@@ -78,6 +78,8 @@ Tiered routing built for home-labbers:
 |---|---|
 | Chat intents, banter (fast & frequent) | **Ollama first** (your local box), cloud fallback |
 | Build planning (rare & heavy) | Cloud first (Claude / OpenAI / Grok / Gemini), Ollama fallback |
+
+**No keys at all? Jarvis Cloud.** `/jarvis cloud activate`, press Activate on the page it opens, and he sets himself up. Every server gets free credits each month and a two-week trial (a chat uses about half a credit); one paid plan, from $15 a year, covers all your servers: [jarvis-cloud.app](https://jarvis-cloud.app). Entirely optional: the plugin never contacts it unless you run that command, and your own key or Ollama works exactly the same.
 
 Running **only Ollama**? Fully supported — Jarvis enters a reduced mode: constrained JSON parsing that small local models handle reliably, schematic-based building instead of freeform AI designs, and risky console actions locked behind an explicit opt-in. Check routing and provider health any time with `/jarvis ai`.
 
@@ -95,15 +97,16 @@ first.
 Drop `.schem`, `.schematic` or `.litematic` files into his library and
 "jarvis, build me a house" picks the best match and pastes it — on every
 platform, and still the path used when you are running local-only. On Paper
-with WorldEdit you can also save and rotate schematics in-game;
-`/jarvis build undo` reverts the last one.
+with WorldEdit you can also save and rotate schematics in-game.
+
+Every AI build shows a **particle preview** and waits for your yes. Dangerous blocks are refused, size and distance are capped, and each permission group gets a cooldown and daily budget. **`/jarvis undo`** takes down the last job, whatever it was — AI build, shape or schematic paste — and it survives a restart.
 
 ## 🎙️ He listens, and he answers
 
 Through [Simple Voice Chat](https://modrinth.com/plugin/simple-voice-chat) —
 and nothing else. Speech recognition (whisper.cpp) and his voice (Piper) run
-**inside the server**; the two model files are fetched the first time you turn
-voice on. No container, no speech service, nothing to point at. Hearing a
+**inside the server**; its model files (about 210 MB) are installed once with
+`/jarvis voice download`, never fetched unasked. No container, no speech service, nothing to point at. Hearing a
 short order takes well under a second on a desktop CPU, and `/jarvis voice`
 tells you how long each stage of the last order took. He speaks back through
 the NPC when he is beside you, and into your ear when he is away working.
@@ -152,6 +155,27 @@ same observation in new words. `/jarvis quiet` mutes him.
 
 ---
 
+## 🔍 What Jarvis sends, downloads and costs
+
+**AI.** Natural-language chat and freeform building use a generative AI model you choose: Ollama on your own machine, or Claude, OpenAI, Grok or Gemini with your own key, or Jarvis Cloud. Without one, every slash command still works.
+
+**What goes to the AI.** Only when a player talks to Jarvis or asks for a build, and only to the provider you set up:
+- what the player said, plus their last few turns with Jarvis (`ai.conversation.recent-turns`, 8 by default)
+- a short snapshot of their situation (`ai.context.level`, 2 by default): health, food, held item, game mode, biome, height, time, weather, and what Jarvis is doing and carrying. Level 3 adds nearby hostile mobs and the names of players within 32 blocks; level 0 sends none of it
+- the server facts and named places you write in `knowledge.yml`
+
+Nothing is sent on its own: no telemetry, no analytics, no update check. With Ollama, nothing leaves your network.
+
+**Jarvis Cloud (optional, paid after the free credits).** It only runs after an admin runs `/jarvis cloud activate`. Requests then go to Anthropic's Claude through Jarvis Cloud on Cloudflare. Its database keeps request and token counts per license, for billing, not what was said. Every feature works the same with your own key or Ollama; the plan only pays for the AI requests.
+
+**Downloads after install.**
+- **Paper only:** on first start, Paper fetches GraalJS (about 60 MB) from Maven Central into `libraries/`, through the plugin's `libraries:` list. It runs the build scripts the AI writes, in a sandbox with no file, network or Java access. If it can't be fetched, Jarvis still loads and builds use the simpler planner.
+- **Voice models (about 210 MB, from huggingface.co):** never fetched on their own. An admin runs `/jarvis voice download`, sees the files, the size and the folder, and confirms. Or download them yourself and drop them in `plugins/Jarvis/models`.
+
+**Files Jarvis writes:** his config and data in `plugins/Jarvis/` (`config/jarvis/` on the mods), saved schematics, and the voice models above. Nothing outside the server folder.
+
+**AI-generated code.** Jarvis was written with heavy help from an AI coding assistant, under human design, review and live testing. The source is on [GitHub](https://github.com/iamgadgetman/jarvis).
+
 ## 📋 Requirements
 
 | File | Server | Needs |
@@ -164,7 +188,7 @@ Optional everywhere: an AI provider (any one of Ollama, Claude, OpenAI, Grok, Ge
 
 > **Note:** Citizens supports the latest patch of each Minecraft line — "1.21" support means 1.21.11. Older 1.21.x servers should update.
 
-**Why the files are large (~86–100 MB):** each carries the speech engine's native libraries for Linux, Windows and macOS, so voice works with nothing else installed. They are only loaded if you turn voice on; the two voice models (~200 MB) are downloaded the first time you do. On Paper, the build planner's script engine (~60 MB) is fetched into `libraries/` on first start.
+**Why the files are large (~86–100 MB):** each carries the speech engine's native libraries for Linux, Windows and macOS, so voice works with nothing else installed. They are only loaded if you turn voice on. The voice models (~210 MB) are not in the jar and are never fetched on their own: `/jarvis voice download` lists them and fetches them when an admin confirms, or you can drop them in yourself. On Paper, the build planner's script engine (~60 MB) is fetched into `libraries/` on first start.
 
 ## 🚀 Quick start
 

@@ -48,8 +48,11 @@ plugins/
     └── schematics/       .schem / .schematic files for the library
 ```
 
-3. `/jarvis bell`, ring it, **Admin → AI setup**, pick a provider and paste
-   your key or your Ollama address. It takes effect at once.
+3. Join as an op. If no AI provider answers yet, Jarvis says so with three
+   buttons: a free local model (Ollama), a free Gemini key, or Jarvis Cloud.
+   Or: `/jarvis bell`, ring it, **Admin → AI setup**, pick a provider and paste
+   your key or your Ollama address. It takes effect at once. `/jarvis setup`
+   checks which providers can answer.
 
 > Jarvis refuses to load without Citizens, and says so in the console.
 
@@ -77,7 +80,14 @@ See [Fabric & NeoForge](Fabric-and-NeoForge) for what differs on the mods.
 
 ## First run
 
+Each player's first join gets the controller bell, a two-line hello and an
+offer of a short tutorial (`/jarvis tutorial`); see
+[Getting Started](Getting-Started). It happens once per player, tracked in
+Jarvis's own database, and the `onboarding:` section of `config.yml` turns
+any part of it off.
+
 ```
+/jarvis tutorial    the guided tour
 /jarvis bell        get the controller bell
 /jarvis summon      bring him out
 /jarvis version     what is actually running
@@ -131,6 +141,7 @@ if your network cannot.
 | `jarvis.use` | everyone | Every standard command |
 | `jarvis.admin` | ops | Admin commands, the admin menu page, dangerous butler actions |
 | `jarvis.menu.use` | everyone | The bell menu |
+| `jarvis.tutorial.reset` | ops | `/jarvis tutorial reset <player>`: their next join is a first join |
 
 On Fabric and NeoForge there are no permission nodes: **admin means
 server operator**, and everything else is open to all players.

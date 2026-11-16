@@ -34,6 +34,13 @@ public interface ButlerHost {
     /** The owner's butler, spawned or not. */
     Butler butler(Owner owner);
 
+    /**
+     * Make sure he is here to take an order: summon him beside the owner if
+     * he is not out and {@code butler.auto-summon} is on. False, with the
+     * owner told why, when he cannot be.
+     */
+    boolean ensurePresent(Owner owner);
+
     /** The world his butler stands in, when spawned. */
     default Optional<World> worldOf(Owner owner) {
         return butler(owner).world();

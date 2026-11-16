@@ -41,7 +41,9 @@ public class JarvisActionExecutor implements ActionExecutor {
             "broadcast", "discord_broadcast", "summon",
             // New dangerous actions
             "console_command", "console_commands",
-            "clear_mobs", "set_difficulty", "schedule_broadcast"
+            "clear_mobs", "set_difficulty", "schedule_broadcast",
+            // Moving a player needs a yes: a question once teleported the asker to spawn.
+            "teleport", "warp"
     );
 
     public JarvisActionExecutor(Jarvis plugin) {
@@ -144,6 +146,11 @@ public class JarvisActionExecutor implements ActionExecutor {
                                          + (p.has("radius") ? " within " + p.getInt("radius") + " blocks" : " in world");
             case "set_difficulty"     -> "Set difficulty to " + p.optString("difficulty", "?");
             case "schedule_broadcast" -> "Schedule: \"" + p.optString("message", "?") + "\" in " + p.optInt("delay_seconds", 0) + "s";
+            case "teleport"        -> "Teleport " + (p.optString("player", "").isBlank() ? "you" : p.optString("player"))
+                                       + " to x " + p.optInt("x") + ", y " + p.optInt("y") + ", z " + p.optInt("z")
+                                       + (p.has("world") ? " in " + p.optString("world") : "");
+            case "warp"            -> "Warp " + (p.optString("player", "").isBlank() ? "you" : p.optString("player"))
+                                       + " to '" + p.optString("warp", "?") + "'";
             default                   -> actionType + " " + p;
         };
     }

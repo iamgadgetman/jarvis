@@ -38,6 +38,41 @@ class CommandServiceTest {
     }
 
     @Test
+    @DisplayName("FB-15: \"/jarvis stop the rain\" is a sentence for the pipeline; bare \"/jarvis stop\" still stops")
+    void bareSubcommandWithWordsIsASentence() {
+        run(p, "stop", "the", "rain");
+        assertTrue(p.wasTold("On it"), String.join("\n", p.plainMessages()));
+
+        FakeOwner bob = f.player("bob");
+        run(bob, "stop");
+        assertFalse(bob.wasTold("On it"), String.join("\n", bob.plainMessages()));
+    }
+
+    @Test
+    @DisplayName("FB-10: say-as is refused from a player, refused from the console while off, and routes when on")
+    void sayAs() {
+        FakeOwner console = f.player("console-stand-in");
+        // From a player: refused even for an operator.
+        p.op = true;
+        run(p, "say-as", "alice", "hello");
+        assertTrue(p.wasTold("console only"), String.join("\n", p.plainMessages()));
+
+        // From the console with dev.allow-say-as off (the default): refused.
+        f.core.commands().jarvis(console, Optional.empty(), List.of("say-as", "alice", "hello"), false);
+        assertTrue(console.wasTold("say-as is off"), String.join("\n", console.plainMessages()));
+
+        // On: the named player's pipeline gets it (the fixture's model is unreachable,
+        // so Jarvis answers that he couldn't reach it, to alice).
+        f.platform.config().set("dev.allow-say-as", true);
+        int before = p.plainMessages().size();
+        f.core.commands().jarvis(console, Optional.empty(), List.of("say-as", "ALICE", "what", "should", "I", "do?"), false);
+        assertTrue(p.plainMessages().size() > before, "alice heard Jarvis: " + String.join("\n", p.plainMessages()));
+
+        f.core.commands().jarvis(console, Optional.empty(), List.of("say-as", "nobody", "hi"), false);
+        assertTrue(console.wasTold("isn't online"), String.join("\n", console.plainMessages()));
+    }
+
+    @Test
     @DisplayName("/jarvis voice says so when there is no voice here, and defers to the plugin when there is")
     void voiceStatus() {
         run(p, "voice");

@@ -109,6 +109,14 @@ public class ButlerService implements ButlerHost {
         this.progression = progression;
     }
 
+    private com.gadgetman.jarvis.onboarding.Milestones milestones = com.gadgetman.jarvis.onboarding.Milestones.NONE;
+
+    /** Where summons, follow, mining and deposits are reported for the tutorial (FB-11). */
+    public void setMilestones(com.gadgetman.jarvis.onboarding.Milestones milestones) {
+        this.milestones = milestones == null ? com.gadgetman.jarvis.onboarding.Milestones.NONE : milestones;
+        depositManager.setMilestones(this.milestones);
+    }
+
     public void debug(String message) {
         if (debugMode) {
             platform.log().info("[Jarvis Debug] " + message);
@@ -140,6 +148,34 @@ public class ButlerService implements ButlerHost {
         owner.message(Colors.jarvis(text));
     }
 
+    /**
+     * Set while the chat pipeline runs an order it has already answered (the
+     * model's reply, or a fast-path acknowledgement), so the action's own
+     * "order received" line is not said as well. Server thread only.
+     */
+    private static final ThreadLocal<Boolean> ANSWERED = ThreadLocal.withInitial(() -> false);
+
+    /** Run {@code order} with its "order received" lines silenced; see {@link #confirm}. */
+    public void runAnswered(Runnable order) {
+        boolean outer = ANSWERED.get();
+        ANSWERED.set(true);
+        try {
+            order.run();
+        } finally {
+            ANSWERED.set(outer);
+        }
+    }
+
+    /**
+     * An "order received" line: said for a slash command or bell button, but
+     * not when the chat pipeline has already answered the same order. Lines
+     * that tell the player something new (an error, a count, "summon me
+     * first") use {@link #say} instead.
+     */
+    void confirm(Owner owner, String text) {
+        if (!ANSWERED.get()) say(owner, text);
+    }
+
     @Override
     public void sayQuiet(Owner owner, String text) {
         owner.actionBar(Colors.GRAY + "Jarvis: " + text);
@@ -150,7 +186,13 @@ public class ButlerService implements ButlerHost {
     public void summon(Owner owner) {
         Butler b = butler(owner);
         if (b.isSpawned()) {
+            if (!inOwnersWorld(b, owner)) {
+                teleportToOwner(b, owner);
+                say(owner, "Coming across, sir.");
+                return;
+            }
             say(owner, "I'm already here, sir.");
+            milestones.reached(owner, com.gadgetman.jarvis.onboarding.Milestone.SUMMONED);
             return;
         }
         if (b.exists()) {
@@ -160,6 +202,63 @@ public class ButlerService implements ButlerHost {
         World world = platform.world(owner.world()).orElse(null);
         if (world == null) return;
 
+        spawnBeside(owner, b, world);
+        confirm(owner, "At your service.");
+        if (b.isSpawned()) milestones.reached(owner, com.gadgetman.jarvis.onboarding.Milestone.SUMMONED);
+    }
+
+    /**
+     * Make sure he is out before a job starts, so an order works without a
+     * summons first: {@code /jarvis mine}, "Jarvis, chop some trees", or a
+     * bell-menu button with nobody summoned brings him beside the owner and
+     * the job goes ahead. He says one line rather than the summons greeting.
+     *
+     * <p>Already out: true, and if he is in another world or dimension he
+     * is moved to the owner first, as {@link #summon} does. With
+     * {@code butler.auto-summon: false} the old "summon me first" answer
+     * comes back. An adapter record with no body (Citizens holds one while
+     * his chunk is unloaded) counts as out, as it always has: re-summoning
+     * would destroy that NPC and what he carries.
+     */
+    @Override
+    public boolean ensurePresent(Owner owner) {
+        Butler b = butler(owner);
+        if (b.isSpawned()) {
+            if (!inOwnersWorld(b, owner)) {
+                teleportToOwner(b, owner);
+            }
+            return true;
+        }
+        if (b.exists()) return true;
+        if (!autoSummon()) {
+            say(owner, "Summon me first, sir — /jarvis summon.");
+            return false;
+        }
+        World world = platform.world(owner.world()).orElse(null);
+        if (world == null) {
+            say(owner, "I can't reach you where you are, sir.");
+            return false;
+        }
+        spawnBeside(owner, b, world);
+        if (!b.isSpawned()) {
+            say(owner, "I couldn't get to you, sir. Do try /jarvis summon.");
+            return false;
+        }
+        say(owner, "On my way, sir.");
+        return true;
+    }
+
+    /** Whether an order brings him when he is not out: {@code butler.auto-summon}, default on. */
+    public boolean autoSummon() {
+        return platform.config().getBoolean("butler.auto-summon", true);
+    }
+
+    private boolean inOwnersWorld(Butler b, Owner owner) {
+        return b.world().map(w -> w.id().equals(owner.world())).orElse(false);
+    }
+
+    /** Spawn him at a safe spot by the owner, dressed and ready. The one place he is spawned. */
+    private void spawnBeside(Owner owner, Butler b, World world) {
         Vec3 spawnAt = findSafeSpawn(world, owner.pos());
         b.spawn(world, spawnAt, "Jarvis");
         b.setProtected(true);
@@ -173,7 +272,6 @@ public class ButlerService implements ButlerHost {
         giveStartingEquipment(owner);
 
         world.sound(spawnAt, Ids.SOUND_BLOCK_BELL_USE, 1.0f, 1.0f);
-        say(owner, "At your service.");
 
         debug("Jarvis spawned for " + owner.name() + " at " + spawnAt);
     }
@@ -191,7 +289,7 @@ public class ButlerService implements ButlerHost {
         submergedSeconds.remove(owner.id());
 
         b.despawn();
-        say(owner, "Until next time, sir.");
+        confirm(owner, "Until next time, sir.");
 
         debug("Jarvis dismissed for " + owner.name());
     }
@@ -268,10 +366,7 @@ public class ButlerService implements ButlerHost {
     }
 
     private void mine(Owner owner, Set<String> oreFilter) {
-        if (!exists(owner)) {
-            say(owner, "Summon me first, sir — /jarvis summon.");
-            return;
-        }
+        if (!ensurePresent(owner)) return;
         stopTask(owner);
 
         OreMiner miner = new OreMiner(this, owner, oreFilter);
@@ -326,10 +421,7 @@ public class ButlerService implements ButlerHost {
 
     /** Bodyguard mode with stances. */
     public void guard(Owner owner, String stanceArg) {
-        if (!exists(owner)) {
-            say(owner, "Summon me first, sir — /jarvis summon.");
-            return;
-        }
+        if (!ensurePresent(owner)) return;
 
         Defender.Stance stance = parseStance(stanceArg, Defender.Stance.DEFENSIVE);
 
@@ -356,10 +448,7 @@ public class ButlerService implements ButlerHost {
 
     /** Night watch — hold the current position as a sentry post. */
     public void watch(Owner owner, String stanceArg) {
-        if (!exists(owner)) {
-            say(owner, "Summon me first, sir — /jarvis summon.");
-            return;
-        }
+        if (!ensurePresent(owner)) return;
 
         stopTask(owner);
 
@@ -548,12 +637,9 @@ public class ButlerService implements ButlerHost {
 
     // ==================== ACTIVITIES ====================
 
+    /** Every job start goes through here; see {@link #ensurePresent}. */
     private boolean requireSummoned(Owner owner) {
-        if (!exists(owner)) {
-            say(owner, "Summon me first, sir — /jarvis summon.");
-            return false;
-        }
-        return true;
+        return ensurePresent(owner);
     }
 
     /** Farming: one sweep, or a standing tend shift. */
@@ -651,7 +737,12 @@ public class ButlerService implements ButlerHost {
      */
     public void returnToPlayer(Owner owner) {
         Butler b = butler(owner);
-        if (!b.exists()) return;
+        if (!b.exists()) {
+            // Not out: being called over is a summons. Auto-summon puts him
+            // beside the owner already, so there is nothing left to walk.
+            ensurePresent(owner);
+            return;
+        }
 
         stopTask(owner);
 
@@ -659,13 +750,13 @@ public class ButlerService implements ButlerHost {
         if (!b.world().map(w -> w.id().equals(owner.world())).orElse(false)
                 || b.pos().distance(owner.pos()) > LAST_RESORT_TELEPORT_DISTANCE) {
             teleportToOwner(b, owner);
-            say(owner, "Right behind you, sir.");
+            confirm(owner, "Right behind you, sir.");
             return;
         }
 
         b.applyNavigationDefaults(null);
         ownerEntity(owner).ifPresent(e -> b.navigateTo(e, false));
-        say(owner, "On my way, sir.");
+        confirm(owner, "On my way, sir.");
 
         Task task = platform.scheduler().every(20L, 20L, new Consumer<Task>() {
             Vec3 lastPos = null;
@@ -845,7 +936,7 @@ public class ButlerService implements ButlerHost {
 
         stopTask(owner);
         b.applyNavigationDefaults(null);
-        say(owner, "Right behind you, sir.");
+        confirm(owner, "Right behind you, sir.");
 
         Task task = platform.scheduler().every(0L, 20L, new Consumer<Task>() {
             // Stall watchdog: he used to wedge on fences/corners and simply
@@ -911,7 +1002,7 @@ public class ButlerService implements ButlerHost {
 
     public void stop(Owner owner) {
         stopTask(owner);
-        say(owner, "Standing down, sir.");
+        confirm(owner, "Standing down, sir.");
     }
 
     // ==================== TASK REGISTER ====================
@@ -932,6 +1023,11 @@ public class ButlerService implements ButlerHost {
     @Override
     public void beginTask(Owner owner, String taskType) {
         if (recovery != null) recovery.taskStarted(owner, taskType);
+        switch (taskType) {
+            case "follow" -> milestones.reached(owner, com.gadgetman.jarvis.onboarding.Milestone.FOLLOWING);
+            case "mine", "branch_mine" -> milestones.reached(owner, com.gadgetman.jarvis.onboarding.Milestone.MINING);
+            default -> { }
+        }
     }
 
     /**

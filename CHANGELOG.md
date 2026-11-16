@@ -1,8 +1,95 @@
 # Jarvis Changelog
 
-## Unreleased
+## v0.18.0 (2026-11-15) — Jarvis settles in
+
+### Security
+
+- **AI actions need the player's permission** (also shipped as 0.17.1). Before,
+  any player could have Jarvis run console commands, give items, change game
+  rules, time or weather, or announce to everyone just by asking in chat: the
+  model picked the action and a player can always confirm their own request.
+  Now an action the AI picks runs only if the player has `jarvis.admin` or
+  `jarvis.admin.actions.<action>` (for example `jarvis.admin.actions.heal`);
+  `request_item` stays open, and summoning Jarvis himself is unchanged.
+  `/jarvis confirm` checks again. On Fabric and NeoForge, which have no
+  permission nodes, both mean op.
+  With streaming replies on, an admin action's reply is held for anyone
+  without `jarvis.admin` until the check is done, so a refused player no
+  longer hears "Here you go, sir" before the refusal (seen live).
 
 ### Added
+
+- **Jarvis Cloud activation: AI without your own API key.** `/jarvis cloud
+  activate [name]` puts a clickable link in chat. Open it, press **Activate**
+  (an email is optional), and within a few seconds Jarvis writes the key and
+  endpoint into config.yml himself and puts Claude-via-Jarvis-Cloud first in
+  the provider list. Nothing to copy or paste. `/jarvis cloud status` shows the
+  credits used and left this month (about how many chats or builds that is)
+  and when a trial ends; against a Jarvis Cloud without credits it shows
+  requests, as before.
+  - Works from the console, for anyone with `jarvis.admin`, and for the player
+    in a single-player game even with cheats off. The link lasts 15 minutes.
+  - Each install now has a random ID in `install-id` beside config.yml. Jarvis
+    Cloud binds a key to it and Jarvis sends it as `x-jarvis-server`, only to
+    Jarvis Cloud (`gc_` keys), never to other providers. It identifies nothing
+    about the owner or the machine.
+  - Chat lines can now carry links that open a web page (`RichLine.url`), on
+    Paper, Fabric and NeoForge.
+  - `cloud.url` in config.yml points at a different Jarvis Cloud, for testing.
+  - **Plans and billing.** `/jarvis cloud upgrade` (or `plans`) gives an admin
+    a link to the plans page, good for 30 minutes, where they can buy a plan or
+    manage the one they have. Before activating, anyone gets a link to the
+    public plans page instead.
+  - **Accounts.** `/jarvis cloud attach <code>` adds another server to this
+    server's GadgetCraft account, so they share one plan: the other server
+    shows the code on its account page (`/jarvis cloud upgrade`, Your
+    account, Add to an existing account). Admins only.
+  - **A Jarvis Cloud page in the bell menu**, from Steward and from Admin → AI
+    setup: status, Activate, Activate with a name, See the plans / Plans &
+    upgrade, Plan & usage, and Test Claude.
+
+- **One undo for everything he builds.** `/jarvis undo` takes down the last
+  job, whatever it was: an AI build, a simple shape, or a schematic paste,
+  WorldEdit's included. `/jarvis undo <n>` takes the last n, `/jarvis undo
+  list` shows the history with labels and ages, and `/jarvis redo` puts the
+  last undo back (one level). `/jarvis build undo` still works. "Jarvis, undo
+  that" or "put it back" in chat or voice does the same, and the bell menu's
+  Building page has **Undo last build**. Before, only AI builds could be undone,
+  and pastes told you to use WorldEdit's `//undo`, which the mods do not have.
+  - Undo moved out of the building assistant into `UndoService`, which every
+    placement path records into. A job is one batch: each block's position,
+    its full original state (so stairs and facing come back right) and the
+    block placed there, plus the world, a label and a timestamp.
+  - History is per player, newest first, `build.undo-history` deep (default
+    10), and saved to Jarvis's database, so it survives a restart. A row is
+    deleted only once its undo finishes, so a restart in the middle of one
+    loses nothing.
+  - Undo restores a few blocks per tick, as building does, and reports
+    "Restored 1,240 blocks". A block a player changed since is left alone and
+    counted as skipped.
+  - WorldEdit pastes now run on the server thread rather than off it, so the
+    region can be read before and after and the difference recorded. Regions
+    over a million blocks are pasted but not recorded, and say so.
+  - Not undone: mining, the blocks the mining jobs set down while they work
+    (undoing a lava plug would reopen the lava), and container contents.
+- **Jobs work without a summons.** `/jarvis mine`, `attack`, `guard`, `farm`,
+  `chop`, `fish`, `build`, a schematic paste, escorting you home, the death-drop
+  run, the lamplighter, or the same said in chat or by voice, now bring him if
+  he is not out: he appears beside you, says "On my way, sir." and starts. Bell
+  menu buttons do the same, and the status row reads "Pick a task and he'll
+  come". If he is out in another world he is moved to you first, and
+  `/jarvis summon` now does that too rather than answering "I'm already
+  here". `butler.auto-summon: false` restores "Summon me first".
+  - One `ButlerService.ensurePresent` replaces the "summon first" checks in
+    `ButlerService`, `BuildingAssistant`, `SchematicLibrary`, `EscortService`
+    and `RecoveryService`; spawning moved into the one helper `summon` uses.
+  - An adapter record with no body (Citizens keeps one while his chunk is
+    unloaded) still counts as present, as before: re-summoning would destroy
+    that NPC and its inventory.
+  - Depositing still needs him out; a butler fetched only to empty bags he
+    does not have would be no use.
+- **config.yml:** `build.undo-history` replaces `build.undo-timeout` and
+  `build.max-undo-size`, which were never read.
 
 - **NeoForge for Minecraft 26.1.2 and 26.2.** The same mod, built for the
   older games: NeoForge 26.1.2.x and 26.2.0.x. 26.3 renamed four things the
@@ -12,6 +99,157 @@
   `src/mc26.3`. Nothing else differs. A build picks the copy with
   `-Pmc_compat`; see `jarvis-neoforge/gradle.properties`. The NeoForge CI
   job builds and boots a server for all three versions.
+
+- **A proper welcome.** New players get the controller bell and an offer of a
+  short interactive tutorial that walks them through the bell, summoning,
+  talking to Jarvis, chests, mining, deposits and undo, reacting to what they
+  actually do (one reminder per step, and it survives a restart). Admins who
+  join a server with no AI set up get three clickable ways to fix that: free
+  local Ollama, a free Gemini key, or Jarvis Cloud (also on the bell's AI setup
+  page, and as `/jarvis setup ollama|gemini`). Tracked per player in the
+  database, so wiping player data doesn't welcome everyone again.
+  `onboarding:` in config; `/jarvis tutorial`.
+
+- **Five-minute free start.** On boot Jarvis reports which AI providers are
+  usable and, if none are, prints the three fastest ways to get one (Ollama, a
+  free Gemini key, the Jarvis Cloud trial); an op who joins gets the same in
+  chat. `/jarvis setup` re-checks. Free providers now lead the default priority
+  list. API keys can be `env:NAME` to read an environment variable, and a blank
+  key reads the provider's usual variable (`GEMINI_API_KEY`, …) unless
+  `ai.env-keys` is off.
+- **Jarvis remembers.** Conversations and notable events (deaths, portal
+  trips) are kept per player in the database, condensed by the light model as
+  they grow, and brought into every reply, so "where did I say my base was?"
+  works after a restart. `/jarvis memory` shows what he knows; `/jarvis memory
+  forget` wipes it. Settings under `memory.conversation`.
+- **Build guardrails.** AI builds show a particle preview and wait for yes
+  (say yes/no, or click [Build it]/[Cancel]); dangerous blocks are refused,
+  size and distance are capped, and each permission group gets a cooldown and
+  daily budget that only finished builds spend. Ops (`jarvis.build.bypass`)
+  skip the limits but still get the preview. `build.guardrails` and
+  `build.limits`; `preview-seconds: 0` turns the preview off.
+- **Reward bundles.** Define named command bundles in config (`bundles:`);
+  Jarvis can trigger them by name when what a player says fits, with
+  once-per-player, cooldown, admin-only and permission rules kept in the
+  database, and the model can't compose raw commands. `/jarvis bundle list`
+  and `/jarvis bundle run <name> [player]` to test.
+
+- **Fast path for simple commands.** "follow me", "stop", "mine 10 iron" and
+  the like run instantly without an AI call; only sentences the local parser
+  can't place go to the model. `intent.fast-path` in config; add your own
+  aliases under `extra-phrases`.
+- **Jarvis shows he's thinking.** While a sentence is with the AI he turns to
+  you, swings an arm now and then, and an action-bar line reads "Jarvis is
+  thinking…". Off with `intent.thinking-feedback.enabled: false`; `animate`
+  and `action-bar` switch each half off.
+- **Jarvis knows where you are.** Chat requests now carry your health, food,
+  held item, time, weather, light, biome and nearby hostile mobs and players,
+  plus what Jarvis himself is doing and carrying, so "what should I do?" gets
+  a real answer. A new `knowledge.yml` holds server facts and named locations
+  he treats as true ("where is the market?"). `ai.context.level` (0–3) sets
+  how much is sent; `/jarvis reload` re-reads the file.
+
+### Changed
+- **Voice models are installed only when you ask.** Jarvis no longer fetches
+  the speech models (about 210 MB from huggingface.co) on his own when voice
+  is turned on. `/jarvis voice download` lists the three files, their size,
+  where they come from and where they go, with a **[Download them]** link;
+  `/jarvis voice download confirm` fetches them, with progress in the log and
+  in `/jarvis voice`. Or download them yourself and drop them in the models
+  folder. The bell's Voice setup page has a **Speech models** button for the
+  same. Store rules (Modrinth) don't allow content to be downloaded after
+  install without being asked.
+
+- **Replies stream.** Jarvis's sentences appear as the model writes them
+  instead of all at once; actions still wait for the full reply. Replies the
+  safety checks may rewrite (an unasked announcement, a teleport for a "where
+  is" question) are still shown whole. `ai.streaming` to tune or disable; Jarvis
+  Cloud and voice replies stay buffered.
+
+### Fixed
+
+- **Jokes get told, and "come here" works through the AI.** A summon with no
+  creature is Jarvis himself, but the guard against mobs nobody asked for
+  treated it as a mob: "tell me a joke about creepers" came back as "I could
+  summon something, sir", and "could you come over here" got the same offer
+  instead of bringing him. Now an unasked summon of Jarvis is answered in the
+  model's own words, and one that asks for him (come, here, summon, where are
+  you) brings him.
+- **No stray quote lines while streaming.** A closing quote or bracket after
+  `.`, `!` or `?` stays with its sentence, and a piece with no words in it is
+  never a chat line of its own (a lone `'` was).
+- **The night skips with Jarvis summoned.** On Fabric and NeoForge the butler
+  is a fake player that joins through the real player list, so the game
+  waited for him to go to bed too: the owner alone in bed was "1/2 players
+  sleeping" and the night never passed. A mixin on `SleepStatus` now leaves
+  fake players out of both counts, which also fixes that message. The
+  `playersSleepingPercentage` rule is unchanged.
+- **He is not listed as a player on the mods.** For the same reason he was in
+  the tab list, in `/list`, and in the player count and name sample the
+  multiplayer server list shows. He is out of all three now. His tab-list
+  entry is still sent, unlisted, because a client needs it to draw him in
+  his skin.
+- **Paper: the same guarantee, made explicit.** A Citizens player NPC is in
+  the level's player list, which is what the night-skip check reads, so
+  rather than rely on Citizens' internals the butler is now marked
+  sleep-ignored every time Citizens spawns his entity (first spawn, world
+  change, chunk reload). The game counts a sleep-ignored player as asleep.
+  Citizens already keeps him out of the tab list and `/list`.
+
+- **No more spare Jarvises.** Citizens keeps NPCs in `saves.yml`, so after a
+  crash or hard stop the old butler came back on the next start while Jarvis
+  spawned a new one, and extras piled up. Every butler is now tagged with its
+  owner, and tagged leftovers are removed when Citizens finishes loading.
+  Untagged NPCs named "Jarvis" (from older versions) are listed in the log
+  with their ids for `/npc remove`.
+
+- **No world changes nobody asked for.** Time, weather, game mode, difficulty,
+  game rules, summons and mob/item clears now need the player's words to ask
+  for them ("make it day", "stop the rain", "spawn a cow"); otherwise Jarvis
+  offers instead of changing the world. `/jarvis stop the rain` and the like
+  are now read as sentences instead of running `/jarvis stop`.
+
+- **No free gifts nobody asked for.** Asked "what should I do next?", a small
+  model would hand over a diamond sword or heal you to full. Items, heals,
+  food, enchantments and potion effects now need the player to ask ("give
+  me…", "I'm hungry", "heal me"); otherwise Jarvis offers instead.
+
+- **No more silent or blank replies.** When the model answers with an empty
+  chat reply, Jarvis now says "Ask me again?" instead of nothing; when it picks
+  an announcement with no message, he uses the text from your request
+  ("announce that the market opens at noon"), and asks what to announce only
+  when there is none, instead of offering to post a blank line to everyone.
+
+- **One order, one answer.** A chat order such as "follow me" or "stop" got
+  two replies: Jarvis's answer and then the action's own "Right behind you,
+  sir." line. Chat orders now get one reply; slash commands and bell buttons
+  keep theirs.
+- **Answers stay private.** Asking Jarvis a question could post his answer to
+  every player as `[Server] …` ("Said it."): the model used `server_say` to
+  talk. He now has a plain `chat` action, and `server_say`, `broadcast`,
+  `announce_all`, `schedule_broadcast` and `discord_broadcast` only run when
+  the player asks for an announcement ("announce", "tell everyone", …).
+- **Questions get answers, not briefings.** "What should I do next?" made the
+  model run the status report and attach the whole estate briefing. The
+  report now runs only when asked for (report, status, briefing, TPS, lag);
+  anything else is answered as plain chat.
+- **"Where is…" no longer teleports you.** Asking where a place is could make
+  the model pick `teleport` and move you on the spot. Teleport and warp now run
+  only when you ask to be moved ("take me to", "tp me", "send me"); otherwise
+  Jarvis tells you the coordinates. Teleport and warp also ask Confirm/Cancel
+  first now, so nobody is moved without saying yes.
+- **Builds: real windows, no stray cobwebs, sensible chairs.** Every window
+  opening now gets glass (shutters go beside it, not in it), cobwebs appear only
+  when you ask for something abandoned or haunted, and a stair used as a chair
+  stands alone by the table instead of stacking into stairs to nowhere.
+
+### Developer tooling
+
+- **MCP server for testing.** `tools/jarvis-mcp` lets Claude Code drive a
+  running test server over RCON — status, `/jarvis` commands, chat-as-player,
+  log tailing — so feature blocks can be exercised in-game from the terminal.
+  New console-only `/jarvis say-as <player> <text>`, off unless
+  `dev.allow-say-as: true`. Not part of the plugin jar.
 
 ## v0.17.0 (2026-09-20) — the same butler on Fabric and NeoForge
 

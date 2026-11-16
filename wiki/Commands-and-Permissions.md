@@ -10,7 +10,7 @@ help` prints this list in game.
 
 | Command | What it does |
 |---|---|
-| `/jarvis summon` | Bring Jarvis to you |
+| `/jarvis summon` | Bring Jarvis to you. Not needed before a job: any order brings him (`butler.auto-summon`) |
 | `/jarvis dismiss` | Send Jarvis away; he keeps issued gear, hands back the rest |
 | `/jarvis return` | Recall him to your side |
 | `/jarvis follow` | Follow you and carry loot |
@@ -65,7 +65,11 @@ help` prints this list in game.
 | Command | What it does |
 |---|---|
 | `/jarvis build <description>` | Design and build it |
-| `/jarvis build undo` | Revert the last build |
+| `/jarvis undo` | Undo the last thing he built or pasted — AI builds, shapes and schematics alike |
+| `/jarvis undo <n>` | Undo the last n of them, newest first |
+| `/jarvis undo list` | What can be undone, with labels and ages |
+| `/jarvis redo` | Put back what the last undo took down (one level) |
+| `/jarvis build undo` | The same as `/jarvis undo`, kept for old habits |
 | `/jarvis build cancel` / `/jarvis cancelbuild` | Stop the build in progress |
 | `/jarvis build wall\|floor\|pillar\|cube [size]` | Simple shapes, no AI |
 | `/jarvis paste <name>` | Paste a schematic by name, no AI |

@@ -11,6 +11,7 @@ import com.gadgetman.jarvis.core.platform.Task;
 import com.gadgetman.jarvis.core.platform.World;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.core.world.BlockPos;
+import com.gadgetman.jarvis.core.world.Vec3;
 import com.gadgetman.jarvis.core.world.BlockState;
 import com.gadgetman.jarvis.core.world.Facing;
 import com.gadgetman.jarvis.core.world.Ids;
@@ -24,12 +25,10 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
 import java.util.Iterator;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -60,14 +59,38 @@ public class BuildingAssistant {
     private final ExperienceMemory memory;
     private final DatabaseManager database;
     private final ProgressionManager progression;
+    private final UndoService undo;
 
     private final Map<UUID, BuildState> activeBuilds = new ConcurrentHashMap<>();
-    private final Map<UUID, Deque<UndoEntry>> undoHistory = new ConcurrentHashMap<>();
+
+    // ---- FB-07 guardrails ----
+    private BuildPolicy.Limits policy;
+    private int previewSeconds = 20;
+    private BuildQuota quota;
+    private com.gadgetman.jarvis.ConfirmationManager confirmations;
+    /** Plans waiting for the player's yes, with their particle outline. Server thread only. */
+    private final Map<UUID, PendingBuild> pending = new ConcurrentHashMap<>();
+    /** The pending-confirmation action name for a previewed build. */
+    public static final String CONFIRM_ACTION = "build_confirm";
+
+    private static final class PendingBuild {
+        final World world;
+        final List<BlockPlacement> placements;
+        final Runnable build;
+        final long expiresAt;
+        Task outline;
+
+        PendingBuild(World world, List<BlockPlacement> placements, Runnable build, long expiresAt) {
+            this.world = world;
+            this.placements = placements;
+            this.build = build;
+            this.expiresAt = expiresAt;
+        }
+    }
 
     // Configuration
     private int blocksPerTick = 50;
     private int progressUpdateInterval = 100;
-    private boolean enableUndo = true;
     private int maxAiBlocks = 5000;
 
     // Script planner
@@ -79,10 +102,11 @@ public class BuildingAssistant {
 
     /**
      * @param progression may be null when the service ladder is off
+     * @param undo where every build is recorded, so one undo covers it
      */
     public BuildingAssistant(Platform platform, ButlerService butlers, AIConnector ai,
                              ExperienceMemory memory, DatabaseManager database,
-                             ProgressionManager progression) {
+                             ProgressionManager progression, UndoService undo) {
         this.platform = platform;
         this.log = platform.log();
         this.butlers = butlers;
@@ -90,7 +114,10 @@ public class BuildingAssistant {
         this.memory = memory;
         this.database = database;
         this.progression = progression;
+        this.undo = undo;
         loadConfig();
+        this.quota = database == null ? null
+                : new BuildQuota(platform, database, System::currentTimeMillis, java.time.ZoneId.systemDefault());
         log.info("Building assistant initialized");
     }
 
@@ -98,8 +125,10 @@ public class BuildingAssistant {
         Config cfg = platform.config();
         blocksPerTick = cfg.getInt("build.blocks-per-tick", 50);
         progressUpdateInterval = cfg.getInt("build.progress-update-interval", 100);
-        enableUndo = cfg.getBoolean("build.enable-undo", true);
         maxAiBlocks = cfg.getInt("build.max-ai-blocks", 5000);
+        policy = BuildPolicy.from(cfg);
+        previewSeconds = cfg.getInt("build.guardrails.preview-seconds", 20);
+        if (quota != null) quota.reload(cfg);
 
         planner = cfg.getString("build.planner", "script").toLowerCase(Locale.ROOT);
         int scriptMaxBlocks = cfg.getInt("build.script.max-blocks", 50000);
@@ -121,7 +150,7 @@ public class BuildingAssistant {
                 try {
                     scriptPlanner = new ScriptBuildPlanner(log, scriptMaxBlocks,
                             scriptTimeoutMs, scriptMaxHorizontal, scriptMaxVertical, scriptMaxFillVolume,
-                            validBlockNames);
+                            validBlockNames, new HashSet<>(platform.blockTypes().itemOnlyIds()));
                 } catch (NoClassDefFoundError e) {
                     log.warn("GraalJS is only partly present (" + e.getMessage() + "); using the JSON planner.");
                     scriptPlanner = null;
@@ -157,7 +186,8 @@ public class BuildingAssistant {
         int placedBlocks;
         Task task;
         final long startTime = System.currentTimeMillis();
-        final List<BuildAction> actions = new ArrayList<>(); // For undo
+        /** What this build has replaced, for undo. Set when the build starts. */
+        UndoService.Recorder undo;
 
         /**
          * Blocks whose look depends on their neighbours -- glass panes, iron
@@ -200,37 +230,6 @@ public class BuildingAssistant {
         }
     }
 
-    /**
-     * One undoable batch. Carries whether the build was AI-planned so undoing a
-     * hand-built shape cannot demote an unrelated AI build in memory.
-     */
-    private static class UndoEntry {
-        final World world;
-        final List<BuildAction> actions;
-        final boolean aiGenerated;
-        /**
-         * The experience this batch produced, so undo demotes the row it
-         * actually reverted. Held by reference: the id is filled in by the
-         * async insert, and this sees it. Null for hand-built shapes and for
-         * builds that never got recorded.
-         */
-        final BuildExperience experience;
-
-        UndoEntry(World world, List<BuildAction> actions, boolean aiGenerated, BuildExperience experience) {
-            this.world = world;
-            this.actions = actions;
-            this.aiGenerated = aiGenerated;
-            this.experience = experience;
-        }
-    }
-
-    /**
-     * What a placement replaced, states and all. Restoring only the id would
-     * turn a staircase the build covered into a stack of default-facing stairs
-     * on undo.
-     */
-    private record BuildAction(BlockPos pos, BlockState original, String newId) { }
-
     // ==================== BUILD COMMANDS ====================
 
     /** Start an AI-powered build. */
@@ -241,11 +240,21 @@ public class BuildingAssistant {
             return;
         }
 
-        // Check if NPC is summoned
-        if (!butlers.isSpawned(player)) {
-            player.message(Colors.RED + "Summon Jarvis first with /jarvis summon");
+        if (pending.containsKey(player.id())) {
+            player.message(Colors.YELLOW + "Jarvis: There's a build waiting for your yes or no, sir.");
             return;
         }
+        // FB-07: the cooldown and daily budget, before the model is asked anything.
+        if (quota != null) {
+            String refused = quota.checkStart(player);
+            if (refused != null) {
+                player.message(Colors.YELLOW + "Jarvis: " + Colors.WHITE + refused);
+                return;
+            }
+        }
+
+        // Bring him if he is not out (butler.auto-summon)
+        if (!butlers.ensurePresent(player)) return;
 
         World world = platform.world(player.world()).orElse(null);
         if (world == null) return;
@@ -315,20 +324,30 @@ public class BuildingAssistant {
                     return;
                 }
 
-                // Enforce size limit
-                if (placements.size() > maxAiBlocks) {
+                // Enforce size limit. JSON plans only: a script plan already
+                // ran inside the script planner's own budget (build.script
+                // max-blocks), and cutting a sorted-bottom-up list here left
+                // big builds with only their lower half.
+                if (scriptPlanner == null && placements.size() > maxAiBlocks) {
                     placements = placements.subList(0, maxAiBlocks);
                 }
 
                 final List<BlockPlacement> finalPlacements = placements;
                 final String finalResponse = response;
                 platform.scheduler().sync(() -> {
-                    BuildState state = executeBuild(player, world, description, finalPlacements, true);
-                    if (state != null) {
-                        state.situationJson = situationJson;
-                        state.planJson = finalResponse;
-                        state.provider = provider;
-                    }
+                    Runnable build = () -> {
+                        BuildState state = executeBuild(player, world, description, finalPlacements, true);
+                        if (state != null) {
+                            state.situationJson = situationJson;
+                            state.planJson = finalResponse;
+                            state.provider = provider;
+                        }
+                    };
+                    // FB-07: the plan is final here (the cleaners have run). Refuse what
+                    // the guardrails forbid, then show it and wait for a yes.
+                    if (!guard(player, world, origin, finalPlacements)) return;
+                    if (previewSeconds > 0) preview(player, world, finalPlacements, build);
+                    else build.run();
                 });
 
             } catch (Exception e) {
@@ -448,6 +467,35 @@ public class BuildingAssistant {
                         + result.blocks.size() + " blocks from " + result.fillCalls
                         + " fill and " + result.setBlockCalls + " setBlock calls"
                         + (attempt > 0 ? " (after " + attempt + " repair)" : ""));
+                if (!result.substitutions.isEmpty()) {
+                    log.warn("Build script used block ids that do not exist; corrected without a repair call: "
+                            + result.substitutions);
+                }
+                if (!result.doorwayClears.isEmpty()) {
+                    log.info("Cleared " + result.doorwayClears.size() + " block(s) out of doorways: "
+                            + String.join(", ", result.doorwayClears));
+                }
+                if (!result.droppedItems.isEmpty()) {
+                    log.warn("Build script asked for items that are not blocks; left them out without a repair call: "
+                            + result.droppedItems);
+                }
+                if (!result.ladderKeeps.isEmpty()) {
+                    log.info("Kept " + result.ladderKeeps.size() + " ladder rung(s) the script overwrote: "
+                            + String.join(", ", result.ladderKeeps));
+                }
+                if (!result.ladderHatches.isEmpty()) {
+                    log.info("Cut " + result.ladderHatches.size() + " hatch(es) above ladders that stopped under a floor: "
+                            + String.join(", ", result.ladderHatches));
+                }
+                if (!result.hangingTrims.isEmpty()) {
+                    log.info("Trimmed " + result.hangingTrims.size() + " hanging block(s) below head height: "
+                            + String.join(", ", result.hangingTrims));
+                }
+                if (!result.walkwayClears.isEmpty()) {
+                    log.info("Opened a walking path into closed-off rooms by removing "
+                            + result.walkwayClears.size() + " block(s): "
+                            + String.join(", ", result.walkwayClears));
+                }
 
                 List<BlockPlacement> placements = new ArrayList<>(result.blocks.size());
                 for (ScriptBuildPlanner.PlannedBlock b : result.blocks) {
@@ -589,6 +637,7 @@ public class BuildingAssistant {
         state.queue.addAll(placements);
         state.totalBlocks = placements.size();
         state.aiGenerated = aiGenerated;
+        state.undo = undo.begin(player, world, (aiGenerated ? "AI build: " : "build: ") + description, aiGenerated);
 
         activeBuilds.put(player.id(), state);
 
@@ -620,9 +669,7 @@ public class BuildingAssistant {
                     }
 
                     // Record for undo
-                    if (enableUndo) {
-                        state.actions.add(new BuildAction(placement.pos, original, placement.state.id()));
-                    }
+                    state.undo.record(placement.pos, original, placement.state.id());
 
                     // Place the block, keeping states when the plan supplied them.
                     world.setBlock(placement.pos, placement.state, false);
@@ -808,9 +855,7 @@ public class BuildingAssistant {
         if (reason != null) player.message(Colors.GRAY + "  (" + reason + ")");
 
         // Whatever did get placed still needs to be revertible.
-        if (enableUndo && !state.actions.isEmpty()) {
-            history(player).addLast(new UndoEntry(state.world, state.actions, state.aiGenerated, null));
-        }
+        undo.commit(state.undo);
 
         if (state.aiGenerated && memory != null) {
             memory.record(BuildExperience.now(
@@ -824,13 +869,140 @@ public class BuildingAssistant {
         }
     }
 
-    private Deque<UndoEntry> history(Owner player) {
-        return undoHistory.computeIfAbsent(player.id(), k -> new ArrayDeque<>());
+    // ==================== GUARDRAILS (FB-07) ====================
+
+    /** Called by JarvisCore once the confirmation manager exists. */
+    public void setConfirmations(com.gadgetman.jarvis.ConfirmationManager confirmations) {
+        this.confirmations = confirmations;
+    }
+
+    /** Tests: a quota with a fake clock. */
+    void useQuota(BuildQuota quota) {
+        this.quota = quota;
+    }
+
+    /** The policy and the day's block budget; false (with the reasons said) when the plan may not be built. */
+    private boolean guard(Owner player, World world, BlockPos origin, List<BlockPlacement> placements) {
+        List<BlockPos> positions = new ArrayList<>(placements.size());
+        List<String> specs = new ArrayList<>(placements.size());
+        for (BlockPlacement p : placements) {
+            positions.add(p.pos);
+            specs.add(p.spec);
+        }
+        List<String> violations = player.hasPermission(BuildQuota.BYPASS) ? List.of()
+                : BuildPolicy.check(policy, positions, specs, player.pos().block(), world.minY(), world.maxY());
+        if (!violations.isEmpty()) {
+            player.message(Colors.RED + "Jarvis: I can't build that, sir: " + String.join("; ", violations) + ".");
+            log.info("Build refused for " + player.name() + ": " + String.join("; ", violations));
+            return false;
+        }
+        if (quota != null) {
+            String refused = quota.checkBlocks(player, placements.size());
+            if (refused != null) {
+                player.message(Colors.YELLOW + "Jarvis: " + Colors.WHITE + refused);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Outline the plan with particles and ask; nothing is placed until {@link #confirmPending}. */
+    private void preview(Owner player, World world, List<BlockPlacement> placements, Runnable build) {
+        List<BlockPos> positions = new ArrayList<>(placements.size());
+        for (BlockPlacement p : placements) positions.add(p.pos);
+        BlockPos[] box = BuildPolicy.bounds(positions);
+        List<Vec3> outline = outlinePoints(box[0], box[1], positions);
+
+        PendingBuild pb = new PendingBuild(world, placements, build,
+                System.currentTimeMillis() + previewSeconds * 1000L);
+        pending.put(player.id(), pb);
+        pb.outline = platform.scheduler().every(0L, 10L, t -> {
+            if (System.currentTimeMillis() > pb.expiresAt) {
+                if (pending.remove(player.id(), pb)) {
+                    t.cancel();
+                    clearConfirmation(player);
+                    player.message(Colors.GRAY + "Jarvis: The preview ran out; nothing was built.");
+                }
+                return;
+            }
+            for (Vec3 v : outline) world.particle(v, "end_rod", 1, 0.0);
+        });
+        if (confirmations != null) {
+            confirmations.setPending(player.id(), CONFIRM_ACTION, new org.json.JSONObject(),
+                    "build " + placements.size() + " blocks");
+        }
+        int w = box[1].x() - box[0].x() + 1, h = box[1].y() - box[0].y() + 1, d = box[1].z() - box[0].z() + 1;
+        // Plans also clear their insides with air; say how many real blocks go in.
+        int solid = 0;
+        for (BlockPlacement p : placements) if (!BuildPolicy.isAir(p.spec)) solid++;
+        player.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + solid + " blocks, " + w + "x" + h + "x" + d
+                + ". Say " + Colors.GREEN + "yes" + Colors.WHITE + " to build or " + Colors.RED + "no" + Colors.WHITE
+                + " to cancel.");
+        player.rich(new com.gadgetman.jarvis.core.text.RichLine()
+                .link(Colors.GREEN + "[Build it]", "/jarvis confirm", "Place the " + solid + " blocks")
+                .link(Colors.RED + " [Cancel]", "/jarvis cancel", "Drop this plan"));
+        player.message(Colors.GRAY + "The outline shows for " + previewSeconds + "s.");
+    }
+
+    /** The box's twelve edges, one point per block, plus a sparse sample of the blocks themselves. */
+    static List<Vec3> outlinePoints(BlockPos min, BlockPos max, List<BlockPos> blocks) {
+        List<Vec3> out = new ArrayList<>();
+        double x0 = min.x(), y0 = min.y(), z0 = min.z(), x1 = max.x() + 1, y1 = max.y() + 1, z1 = max.z() + 1;
+        for (double x = x0; x <= x1; x++) {
+            for (double[] yz : new double[][]{{y0, z0}, {y0, z1}, {y1, z0}, {y1, z1}}) out.add(new Vec3(x, yz[0], yz[1]));
+        }
+        for (double y = y0 + 1; y < y1; y++) {
+            for (double[] xz : new double[][]{{x0, z0}, {x0, z1}, {x1, z0}, {x1, z1}}) out.add(new Vec3(xz[0], y, xz[1]));
+        }
+        for (double z = z0 + 1; z < z1; z++) {
+            for (double[] xy : new double[][]{{x0, y0}, {x0, y1}, {x1, y0}, {x1, y1}}) out.add(new Vec3(xy[0], xy[1], z));
+        }
+        int step = Math.max(1, blocks.size() / 60);
+        for (int i = 0; i < blocks.size(); i += step) {
+            BlockPos b = blocks.get(i);
+            out.add(new Vec3(b.x() + 0.5, b.y() + 0.5, b.z() + 0.5));
+        }
+        return out;
+    }
+
+    public boolean hasPending(Owner player) {
+        return pending.containsKey(player.id());
+    }
+
+    /** The player said yes: stop the outline and build. False when nothing was waiting. */
+    public boolean confirmPending(Owner player) {
+        PendingBuild pb = pending.remove(player.id());
+        if (pb == null) return false;
+        if (pb.outline != null) pb.outline.cancel();
+        clearConfirmation(player);
+        pb.build.run();
+        return true;
+    }
+
+    /** The player said no: stop the outline and drop the plan. False when nothing was waiting. */
+    public boolean cancelPending(Owner player) {
+        PendingBuild pb = pending.remove(player.id());
+        if (pb == null) return false;
+        if (pb.outline != null) pb.outline.cancel();
+        clearConfirmation(player);
+        player.message(Colors.GRAY + "Jarvis: Plan dropped, sir. Nothing was built.");
+        return true;
+    }
+
+    private void clearConfirmation(Owner player) {
+        if (confirmations != null && CONFIRM_ACTION.equals(confirmations.getPendingAction(player.id()))) {
+            confirmations.clearPending(player.id());
+        }
     }
 
     /** Complete a build. */
     private void completeBuild(Owner player, BuildState state) {
         activeBuilds.remove(player.id());
+        // FB-07: only a finished AI build spends the day's budget.
+        if (state.aiGenerated && quota != null) {
+            int placed = state.placedBlocks;
+            platform.scheduler().async(() -> quota.spend(player.id(), placed));
+        }
 
         // Remember the plan that worked. The label is free: a build that ran to
         // completion and was left alone is a success by definition.
@@ -849,15 +1021,8 @@ public class BuildingAssistant {
 
         // Save to undo history, carrying the experience so a later undo demotes
         // this build rather than whichever success happens to be newest.
-        if (enableUndo && !state.actions.isEmpty()) {
-            Deque<UndoEntry> history = history(player);
-
-            // Limit undo history size
-            while (history.size() >= 10) {
-                history.removeFirst();
-            }
-            history.addLast(new UndoEntry(state.world, state.actions, state.aiGenerated, experience));
-        }
+        state.undo.setExperience(experience);
+        undo.commit(state.undo);
 
         // Building is a discipline like any other — credit it, or the service
         // record shows a permanent zero for blocks laid while the score that
@@ -886,8 +1051,8 @@ public class BuildingAssistant {
         player.message(Colors.GREEN + "========================================");
         player.message(Colors.WHITE + "  Blocks placed: " + state.placedBlocks);
         player.message(Colors.WHITE + "  Time: " + duration + " seconds");
-        if (enableUndo) {
-            player.message(Colors.GRAY + "  Use /jarvis build undo to revert");
+        if (undo.isEnabled()) {
+            player.message(Colors.GRAY + "  Use /jarvis undo to revert");
         }
         player.message(Colors.GREEN + "========================================");
 
@@ -896,6 +1061,7 @@ public class BuildingAssistant {
 
     /** Cancel an active build. */
     public void cancelBuild(Owner player) {
+        if (cancelPending(player)) return;   // FB-07: a preview waiting for yes
         cancelBuildInternal(player, "Cancelled by player", true);
     }
 
@@ -920,9 +1086,7 @@ public class BuildingAssistant {
         player.message(Colors.GRAY + "Placed " + state.placedBlocks + " of " + state.totalBlocks + " blocks.");
 
         // Still allow undo of partial build
-        if (enableUndo && !state.actions.isEmpty()) {
-            history(player).addLast(new UndoEntry(state.world, state.actions, state.aiGenerated, null));
-        }
+        undo.commit(state.undo);
 
         if (playerInitiated && state.aiGenerated && memory != null) {
             memory.record(BuildExperience.now(
@@ -936,55 +1100,14 @@ public class BuildingAssistant {
         }
     }
 
-    /** Undo the last build. */
+    /** Undo the last thing Jarvis built. The same as {@code /jarvis undo}. */
     public void undoLastBuild(Owner player) {
-        if (!enableUndo) {
-            player.message(Colors.RED + "Undo is disabled in config.");
-            return;
-        }
-
-        Deque<UndoEntry> history = undoHistory.get(player.id());
-        if (history == null || history.isEmpty()) {
-            player.message(Colors.GRAY + "No builds to undo.");
-            return;
-        }
-
-        UndoEntry entry = history.removeLast();
-        List<BuildAction> actions = entry.actions;
-        player.message(Colors.YELLOW + "Undoing " + actions.size() + " blocks...");
-
-        // Undo in reverse order
-        int undone = 0;
-        for (int i = actions.size() - 1; i >= 0; i--) {
-            BuildAction action = actions.get(i);
-
-            // Only undo if block hasn't been modified by someone else
-            if (entry.world.block(action.pos()).id().equals(action.newId())) {
-                entry.world.setBlock(action.pos(), action.original(), false);
-                undone++;
-            }
-        }
-
-        player.message(Colors.GREEN + "Reverted " + undone + " blocks.");
-
-        // Reverting an AI build shortly after it finished is the clearest
-        // "that plan was wrong" signal there is. Hand-built shapes share this
-        // undo stack, so the flag matters.
-        if (entry.aiGenerated && undone > 0 && memory != null) {
-            if (entry.experience != null) {
-                memory.markUndone(entry.experience);
-            } else {
-                memory.markRecentBuildUndone(player.id());
-            }
-        }
+        undo.undo(player, 1);
     }
 
     /** Build a simple shape without AI. */
     public void buildSimpleStructure(Owner player, String type, int size) {
-        if (!butlers.isSpawned(player)) {
-            player.message(Colors.RED + "Summon Jarvis first!");
-            return;
-        }
+        if (!butlers.ensurePresent(player)) return;
         World world = platform.world(player.world()).orElse(null);
         if (world == null) return;
 

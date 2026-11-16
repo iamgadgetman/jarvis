@@ -60,6 +60,10 @@ public class AIConnector {
     private String model;
     private String endpoint;
 
+    // Sent as x-jarvis-server to Jarvis Cloud (gc_ keys only), which binds a
+    // license to one install. Null until core hands it over.
+    private volatile String installId;
+
     // Auto-switching configuration
     private boolean autoMode = false;
     private List<String> providerPriority = new ArrayList<>();
@@ -162,10 +166,31 @@ public class AIConnector {
         }
     }
 
+    /** Where {@code env:NAME} keys and the default key variables are read from (FB-09). */
+    private Map<String, String> env = System.getenv();
+    /** {@code ai.env-keys}: a blank api-key may be read from the provider's usual variable. */
+    private boolean envKeys = true;
+
     public AIConnector(Config config, Log log) {
         this.config = config;
         this.log = log;
         reloadConfig();
+    }
+
+    /** Tests: read keys from this map instead of the real environment, and reload. */
+    public void useEnvironment(Map<String, String> env) {
+        this.env = env;
+        reloadConfig();
+    }
+
+    /** The environment keys are read from (for {@link ProviderProbe}). */
+    public Map<String, String> environment() {
+        return env;
+    }
+
+    /** Whether a blank api-key falls back to the provider's usual variable. */
+    public boolean envKeys() {
+        return envKeys;
     }
 
     public void reloadConfig() {
@@ -180,7 +205,7 @@ public class AIConnector {
 
         // Load provider priority for auto mode
         providerPriority.clear();
-        List<String> defaultPriority = Arrays.asList("ollama", "claude", "openai", "grok", "gemini");
+        List<String> defaultPriority = KNOWN_PROVIDERS;
         List<String> configPriority = ai.getStringList("provider-priority");
         if (configPriority != null && !configPriority.isEmpty()) {
             providerPriority.addAll(configPriority);
@@ -189,6 +214,7 @@ public class AIConnector {
         }
 
         // Load all provider configurations
+        this.envKeys = ai.getBoolean("env-keys", true);
         loadProviderConfig(ai, "openai", "https://api.openai.com/v1/chat/completions", "gpt-5.6-terra");
         loadProviderConfig(ai, "claude", "https://api.anthropic.com/v1/messages", "claude-haiku-4-5");
         loadProviderConfig(ai, "grok", "https://api.x.ai/v1/chat/completions", "grok-4.6");
@@ -278,13 +304,14 @@ public class AIConnector {
 
         if (ai.isSection(name)) {
             Config section = ai.section(name);
-            config.apiKey = section.getString("api-key", "");
+            config.apiKey = ApiKeys.resolve(section.getString("api-key", ""), name, env, envKeys);
             config.model = section.getString("model", defaultModel);
             String configEndpoint = section.getString("endpoint");
             config.endpoint = (configEndpoint != null && !configEndpoint.isBlank()) ? configEndpoint : defaultEndpoint;
             config.keepAlive = section.getString("keep-alive", "5m");
             config.timeoutSeconds = section.getInt("timeout-seconds", 30);
         } else {
+            config.apiKey = ApiKeys.resolve("", name, env, envKeys);
             config.model = defaultModel;
             config.endpoint = defaultEndpoint;
         }
@@ -325,6 +352,57 @@ public class AIConnector {
         return queryBuildPlan(description, "", false);
     }
 
+    /** System prompt for JSON shape-plan builds (queryBuildPlan). */
+    static final String PLAN_SYSTEM_PROMPT = """
+            You are an expert Minecraft architect. You answer with ONE JSON object and nothing else:
+            {"ops":[ ... ]}. Each op is a shape; later ops overwrite earlier ones at the same spot.
+
+              {"op":"fill",   "from":[x,y,z], "to":[x,y,z], "block":"oak_planks"}   solid box, corners inclusive
+              {"op":"walls",  "from":[x,y,z], "to":[x,y,z], "block":"..."}          the four upright sides only
+              {"op":"hollow", "from":[x,y,z], "to":[x,y,z], "block":"..."}          the whole shell, floor and ceiling too
+              {"op":"clear",  "from":[x,y,z], "to":[x,y,z]}                         air: carve a doorway, window or room
+              {"op":"set",    "at":[x,y,z], "block":"wall_torch[facing=south]"}     one block
+              {"op":"door",   "at":[x,y,z], "facing":"south", "block":"oak_door"}   both halves, at the lower one
+              {"op":"bed",    "at":[x,y,z], "facing":"east", "block":"red_bed"}     foot at 'at', head one block along facing
+              {"op":"roof",   "from":[x,y,z], "to":[x,y,z], "block":"oak_stairs", "gable":"oak_planks"}
+                  A pitched roof over that rectangle. Give the WALL's own rectangle with y one above the
+                  wall tops; courses of stairs step in and up to a ridge, and the end triangles are closed.
+
+            Coordinates are relative to the origin. y is the empty space the player stands in and the
+            ground is y-1: lay exactly one floor at y-1, then walls, door, furniture start at y. Never
+            fill y inside a room. North is -z, south +z, east +x, west -x. Block ids are the real ones the
+            /setblock command takes, with states in brackets where they matter: oak_planks, stone_bricks,
+            glass_pane, oak_log[axis=y], oak_stairs[facing=north], lantern[hanging=true]. Never item ids
+            ("brick" is an item; the block is "bricks"). If unsure of a fancy variant, use the plain block.
+
+            Design rules:
+            - Unless asked for something tiny, a building is at least 8 wide, 8 long and 4 tall inside.
+            - Walls, then cut windows with "clear" and fill them with glass_pane at y+1 (eye height),
+              then a door. Windows and a door on the front at least.
+            - A roof on every building, overhanging the walls, and no room open to the sky.
+            - FURNISH IT. A place someone lives in has, at minimum: a bed, a chest, a crafting table,
+              wall torches or lanterns so it is lit inside (torches go in the empty space NEXT to a
+              wall, facing away from it, never at the wall's own coordinate), and something on the
+              walls or floor: bookshelves, flower pots, a carpet, a painting-sized frame of a different
+              block, a fireplace of bricks with a campfire. A mansion, inn, castle or manor has several
+              rooms and EACH is furnished for its purpose: beds in bedrooms, a kitchen with a furnace,
+              smoker and barrels, a hall with a long table of slabs and stairs as chairs, a library
+              of bookshelves. Fences make railings and table legs; stairs make chairs; slabs make
+              tables and counters; trapdoors make shutters. A tower has a way up: ladders or stairs.
+            - Every window opening holds glass or glass_pane, never a trapdoor or plank. Shutters are
+              open trapdoors on the outside of the wall BESIDE the window, not in it.
+            - A stair used as a chair stands alone, one high, next to a table, its facing pointing AWAY
+              from the table (chair west of the table: facing=west); facing the table puts its back to it.
+              A flight of stairs exists only to reach another floor; never stack stairs in a one-storey room.
+            - No cobwebs unless the request asks for something abandoned, haunted, ruined or old.
+            - Outside: a path of a different block to the door, and a lantern or two by it.
+            - Keep a path two blocks high to every door and through every room; nothing stands or
+              hangs in a doorway or an aisle, and anything hung from above stays at y+2 or higher.
+            - If the roof leaves more than three blocks above the walls, use it: a loft reached by
+              stairs or a ladder, or a room open to the rafters with lights hung from the roof.
+            - Keep every op inside a few dozen blocks of the origin. Twenty to sixty ops is normal.
+            """;
+
     /**
      * Query AI for a Minecraft build plan, optionally primed with plans that
      * worked for similar requests on this server.
@@ -347,45 +425,7 @@ public class AIConnector {
         // into the output cap. Now the model writes shapes and ShapePlan
         // enumerates them, which is what the script planner's JavaScript
         // does without needing an engine on the server.
-        String system = """
-                You are an expert Minecraft architect. You answer with ONE JSON object and nothing else:
-                {"ops":[ ... ]}. Each op is a shape; later ops overwrite earlier ones at the same spot.
-
-                  {"op":"fill",   "from":[x,y,z], "to":[x,y,z], "block":"oak_planks"}   solid box, corners inclusive
-                  {"op":"walls",  "from":[x,y,z], "to":[x,y,z], "block":"..."}          the four upright sides only
-                  {"op":"hollow", "from":[x,y,z], "to":[x,y,z], "block":"..."}          the whole shell, floor and ceiling too
-                  {"op":"clear",  "from":[x,y,z], "to":[x,y,z]}                         air: carve a doorway, window or room
-                  {"op":"set",    "at":[x,y,z], "block":"wall_torch[facing=south]"}     one block
-                  {"op":"door",   "at":[x,y,z], "facing":"south", "block":"oak_door"}   both halves, at the lower one
-                  {"op":"bed",    "at":[x,y,z], "facing":"east", "block":"red_bed"}     foot at 'at', head one block along facing
-                  {"op":"roof",   "from":[x,y,z], "to":[x,y,z], "block":"oak_stairs", "gable":"oak_planks"}
-                      A pitched roof over that rectangle. Give the WALL's own rectangle with y one above the
-                      wall tops; courses of stairs step in and up to a ridge, and the end triangles are closed.
-
-                Coordinates are relative to the origin. y is the empty space the player stands in and the
-                ground is y-1: lay exactly one floor at y-1, then walls, door, furniture start at y. Never
-                fill y inside a room. North is -z, south +z, east +x, west -x. Block ids are the real ones the
-                /setblock command takes, with states in brackets where they matter: oak_planks, stone_bricks,
-                glass_pane, oak_log[axis=y], oak_stairs[facing=north], lantern[hanging=true]. Never item ids
-                ("brick" is an item; the block is "bricks"). If unsure of a fancy variant, use the plain block.
-
-                Design rules:
-                - Unless asked for something tiny, a building is at least 8 wide, 8 long and 4 tall inside.
-                - Walls, then cut windows with "clear" and fill them with glass_pane at y+1 (eye height),
-                  then a door. Windows and a door on the front at least.
-                - A roof on every building, overhanging the walls, and no room open to the sky.
-                - FURNISH IT. A place someone lives in has, at minimum: a bed, a chest, a crafting table,
-                  wall torches or lanterns so it is lit inside (torches go in the empty space NEXT to a
-                  wall, facing away from it, never at the wall's own coordinate), and something on the
-                  walls or floor: bookshelves, flower pots, a carpet, a painting-sized frame of a different
-                  block, a fireplace of bricks with a campfire. A mansion, inn, castle or manor has several
-                  rooms and EACH is furnished for its purpose: beds in bedrooms, a kitchen with a furnace,
-                  smoker and barrels, a hall with a long table of slabs and stairs as chairs, a library
-                  of bookshelves. Fences make railings and table legs; stairs make chairs; slabs make
-                  tables and counters; trapdoors make shutters. A tower has a way up: ladders or stairs.
-                - Outside: a path of a different block to the door, and a lantern or two by it.
-                - Keep every op inside a few dozen blocks of the origin. Twenty to sixty ops is normal.
-                """;
+        String system = PLAN_SYSTEM_PROMPT;
 
         String prompt = "Design and furnish: " + description;
 
@@ -399,149 +439,8 @@ public class AIConnector {
         return sendTiered(Tier.HEAVY, prompt, system, true, BUILD_SCRIPT_MAX_TOKENS);
     }
 
-    /**
-     * Literal commands that need no model at all.
-     *
-     * <p>Ported from the `dev` branch, minus its `quest_status` entries -- that
-     * action belongs to a quests package this branch does not have, and
-     * emitting it would produce an action the dispatcher cannot route. Extended
-     * to cover the commands this branch actually dispatches, which is most of
-     * the value: the original map predated the farmer, fisherman, lumberjack,
-     * lamplighter and steward.
-     *
-     * <p>Every value here must match a case in ChatListener's dispatcher.
-     */
-    private static final Map<String, String> FAST_ACTIONS = Map.ofEntries(
-            Map.entry("summon", "summon"), Map.entry("come here", "summon"),
-            Map.entry("come", "summon"), Map.entry("here boy", "summon"),
-            Map.entry("dismiss", "dismiss"), Map.entry("go away", "dismiss"),
-            Map.entry("leave", "dismiss"), Map.entry("begone", "dismiss"),
-            Map.entry("follow", "follow"), Map.entry("follow me", "follow"),
-            Map.entry("return", "return"), Map.entry("come back", "return"),
-            Map.entry("attack", "attack"), Map.entry("fight", "attack"),
-            Map.entry("guard", "guard"), Map.entry("defend me", "guard"),
-            Map.entry("protect me", "guard"),
-            Map.entry("watch", "watch"), Map.entry("night watch", "watch"),
-            Map.entry("stand down", "stand_down"), Map.entry("at ease", "stand_down"),
-            Map.entry("mine", "mine"), Map.entry("start mining", "mine"),
-            Map.entry("mine here", "mine_here"), Map.entry("branch mine", "mine_here"),
-            Map.entry("dig down", "dig_down"), Map.entry("dig a shaft", "dig_down"),
-            Map.entry("stop", "stop"), Map.entry("halt", "stop"),
-            Map.entry("stop it", "stop"), Map.entry("cancel", "stop"),
-            Map.entry("clearloot", "clearloot"), Map.entry("drop loot", "clearloot"),
-            Map.entry("drop everything", "clearloot"),
-            Map.entry("deposit", "deposit"), Map.entry("unload", "deposit"),
-            Map.entry("loot", "loot"), Map.entry("inventory", "loot"),
-            Map.entry("fish", "fish"), Map.entry("go fishing", "fish"),
-            Map.entry("chop", "chop"), Map.entry("chop trees", "chop"),
-            Map.entry("farm", "farm"), Map.entry("tend", "tend"),
-            Map.entry("dance", "dance"), Map.entry("patrol", "patrol"),
-            Map.entry("report", "report"), Map.entry("recover", "recover"),
-            Map.entry("take me home", "take_home"), Map.entry("set home", "set_home"),
-            Map.entry("light", "light"), Map.entry("light the area", "light"));
-
-    private static final Set<String> FAST_ORES = Set.of(
-            "diamond", "emerald", "gold", "iron", "copper", "redstone",
-            "lapis", "quartz", "coal", "netherite", "ancient debris");
-
-    /** A little variety so the canned replies don't read as canned. */
-    private static final Map<String, String[]> FAST_QUIPS = Map.ofEntries(
-            Map.entry("summon",     new String[]{"At your service. Again.", "You rang.", "Materialising. Try to look busy."}),
-            Map.entry("dismiss",    new String[]{"Finally.", "I shall be elsewhere. Anywhere else.", "Dismissed. Do call less often."}),
-            Map.entry("follow",     new String[]{"Right behind you. Regrettably.", "Following. Mind the lava."}),
-            Map.entry("return",     new String[]{"Returning. Do try to stay put.", "On my way back to you."}),
-            Map.entry("attack",     new String[]{"Violence. How predictable.", "Engaging. Do stand back."}),
-            Map.entry("guard",      new String[]{"Guarding. Try not to need it.", "I shall keep watch over you."}),
-            Map.entry("watch",      new String[]{"Taking the night watch, sir.", "The post is mine. Sleep well."}),
-            Map.entry("stand_down", new String[]{"Standing down. Reluctantly.", "At ease, then."}),
-            Map.entry("mine",       new String[]{"Manual labour. How delightfully medieval.", "Digging. Because you asked nicely."}),
-            Map.entry("mine_here",  new String[]{"A proper mine, then. Mind the drop.", "Sinking a shaft. Do keep clear."}),
-            Map.entry("dig_down",   new String[]{"Straight down it is, sir.", "Digging. Do stand back from the edge."}),
-            Map.entry("stop",       new String[]{"Stopping. Second thoughts already?", "Halted.", "As you wish. Again."}),
-            Map.entry("clearloot",  new String[]{"Dropping everything. Literally.", "Your hoard, unhoarded."}),
-            Map.entry("deposit",    new String[]{"Off to the chest with it.", "Unloading. The bags were getting heavy."}),
-            Map.entry("loot",       new String[]{"My bags, such as they are.", "Behold, the haul."}),
-            Map.entry("fish",       new String[]{"Fishing. The height of ambition.", "To the water, then."}),
-            Map.entry("chop",       new String[]{"Timber, presently.", "Off to fell something."}),
-            Map.entry("farm",       new String[]{"To the fields.", "Farming. How pastoral."}),
-            Map.entry("tend",       new String[]{"Tending the crops, sir.", "The fields shall have my attention."}),
-            Map.entry("dance",      new String[]{"If I must.", "Observe. Briefly."}),
-            Map.entry("patrol",     new String[]{"Patrolling. Someone has to.", "Making the rounds."}),
-            Map.entry("report",     new String[]{"The briefing, sir.", "Your situation, in brief."}),
-            Map.entry("recover",    new String[]{"Retrieving your things. Again.", "Off to the scene of your misfortune."}),
-            Map.entry("take_home",  new String[]{"Homeward. Do keep up.", "Leading you home, sir."}),
-            Map.entry("set_home",   new String[]{"Noted as home.", "This spot is now home. Ambitious."}),
-            Map.entry("light",      new String[]{"Let there be light. Grudgingly.", "Lighting the place up."}));
-
     /** Token usage from the last provider call, for ai.log-usage. */
     private volatile String lastUsage;
-
-    /** "dig down 20 blocks" and friends, so a depth costs no model call. */
-    private static final java.util.regex.Pattern DIG_DEPTH = java.util.regex.Pattern.compile(
-            "dig (?:down |a shaft )?(\\d{1,3})(?: blocks?)?(?: (?:down|deep))?");
-
-    private final java.util.concurrent.atomic.AtomicInteger quipCounter =
-            new java.util.concurrent.atomic.AtomicInteger();
-
-    /**
-     * Resolve a literal command locally, skipping the model entirely.
-     *
-     * <p>This is the bulk of chat traffic, and none of it needs a model. The
-     * saving is latency rather than money -- the light tier goes to Ollama
-     * first, which is free but takes a second or two -- so "jarvis follow"
-     * answers instantly instead of after a round trip.
-     *
-     * @return the same JSON shape the model would produce, or null when the
-     *         phrasing is anything but an exact known command
-     */
-    private String tryFastPath(String message) {
-        if (message == null) return null;
-        String m = message.toLowerCase(Locale.ROOT).trim().replaceAll("[.!?]+$", "");
-        if (m.startsWith("jarvis")) m = m.substring(6).replaceAll("^[,\\s]+", "").trim();
-        if (m.isEmpty()) return null;
-
-        String action = FAST_ACTIONS.get(m);
-        JSONObject parameters = new JSONObject();
-
-        // "dig down 20", "dig a shaft 30 blocks" -- reading one number does not
-        // need a model call.
-        if (action == null) {
-            java.util.regex.Matcher dd = DIG_DEPTH.matcher(m);
-            if (dd.matches()) {
-                action = "dig_down";
-                parameters.put("depth", Integer.parseInt(dd.group(1)));
-            }
-        }
-
-        // "mine diamond" / "mine ancient debris" -- the one parameterised form.
-        if (action == null && m.startsWith("mine ")) {
-            String ore = m.substring(5).replaceFirst("^(some |for |me )+", "").trim();
-            if (ore.equals("debris")) ore = "ancient debris";
-            // Only de-pluralise if the literal form isn't already an ore --
-            // "ancient debris" must not become "ancient debri".
-            if (!FAST_ORES.contains(ore) && ore.endsWith("s")) {
-                ore = ore.substring(0, ore.length() - 1);
-            }
-            if (FAST_ORES.contains(ore)) {
-                action = "mine";
-                parameters.put("ore", ore);
-            }
-        }
-        if (action == null) return null;
-
-        String[] quips = FAST_QUIPS.get(action);
-        String quip = quips == null ? "Very good, sir."
-                : quips[Math.floorMod(quipCounter.getAndIncrement(), quips.length)];
-        if (parameters.has("ore")) {
-            quip = "Off to find " + parameters.getString("ore") + ". Try to contain yourself.";
-        }
-
-        return new JSONObject()
-                .put("action", action)
-                .put("parameters", parameters)
-                .put("response", quip)
-                .toString();
-    }
 
     /**
      * Ask the AI for a JavaScript build script.
@@ -569,6 +468,176 @@ public class AIConnector {
         return queryBuildScript(description, memoryExamples, previousScript, previousError, "");
     }
 
+    /** System prompt for GraalJS script builds (queryBuildScript). */
+    static final String SCRIPT_SYSTEM_PROMPT = """
+            You are an expert Minecraft architect and builder.
+
+            You control a builder through two functions. Implement buildCreation; do not call it yourself.
+
+              fill(x1, y1, z1, x2, y2, z2, block, mode)
+                  Fills the box between the two corners, inclusive. mode is optional:
+                    "solid"   (default) every block in the box
+                    "walls"   the four upright sides only -- no floor, no ceiling
+                    "hollow"  the whole shell, INCLUDING its floor and ceiling faces
+                    "outline" the twelve edges only
+                  For a room, use "walls". "hollow" would pave the floor you stand on
+                  and cap the room with a ceiling.
+              setBlock(x, y, z, block)
+                  Places one block.
+              function buildCreation(x, y, z) { }
+                  x, y, z are the build origin.
+
+            y is the empty space a player standing at the origin occupies, and the
+            ground they are standing on is the block at y-1.
+
+            So the floor goes at y-1, replacing that ground, and EVERYTHING else --
+            interior, walls, door, furniture -- starts at y. Do not put a floor at y:
+            that is the air the player is standing in, and filling it buries them and
+            lifts the whole building a block off the ground. Lay exactly one floor
+            layer, and add no foundation beneath it unless asked.
+
+            This means the walls of a room are `fill(..., "walls")` from y up, over a
+            floor laid at y-1. Nothing else may write to the y level inside the room.
+
+            Block ids may carry states, exactly as the /setblock command accepts them:
+              "oak_planks", "minecraft:stone_bricks", "oak_stairs[facing=north,half=bottom]",
+              "oak_log[axis=y]", "oak_slab[type=top]", "glass_pane", "air"
+            Use real placeable block ids. Never item ids -- "bricks" is the block, "brick" is an item.
+
+            Roofs are where builds most often go wrong, so follow this exactly.
+
+            A stair's `facing` points UP the slope, toward the ridge -- the tall half of
+            the block is on the side named by `facing`. So the slope that descends toward
+            the north is built from stairs with facing=south, and the slope opposite it
+            uses facing=north. Point them down-slope instead and the whole roof is
+            inside out.
+
+            The same rule holds for a staircase people walk up: `facing` is the direction
+            you walk to climb. A flight rising toward the east is stairs with facing=east,
+            each step one block higher and one block further east, e.g.
+            for (let i = 0; i < 5; i++) setBlock(x+i, y+i, z, "stone_brick_stairs[facing=east]");
+            Fill the space under the flight if it shows, and clear the floor above the top
+            steps (and two blocks of headroom over every step) so it leads somewhere.
+            Count the steps: the top step sits at the SAME height as the upper floor's own
+            blocks, so a flight from a room whose floor you stand on at height y up to a
+            floor laid at height f has f - y + 1 steps. One fewer and the player has to jump
+            the last block. e.g. upper floor at y+4: steps at y, y+1, y+2, y+3 and y+4.
+
+            Each course must be a full-length `fill` along the ridge axis, one block higher
+            and one block inward from the course below. The FIRST course sits directly on
+            top of the wall, at the wall's own line -- not outside it. Starting the roof
+            beyond the wall leaves a hole between wall and roof, and placing courses
+            individually leaves them standing apart like fins. This is a correct gable:
+
+              const mid = Math.floor((d - 1) / 2);           // d = depth in z
+              for (let i = 0; i < mid; i++) {
+                const yy = wallTop + 1 + i;
+                // close the gable triangle at each end, or the roof space is open to the sky
+                for (const ex of [x, x+w-1]) {
+                  fill(ex, yy, z+i+1, ex, yy, z+d-2-i, "oak_planks");
+                }
+                // z+i descends toward north, so it faces south, back up to the ridge
+                fill(x-1, yy, z+i,       x+w, yy, z+i,       "oak_stairs[facing=south]");
+                fill(x-1, yy, z+d-1-i,   x+w, yy, z+d-1-i,   "oak_stairs[facing=north]");
+              }
+              fill(x-1, wallTop+1+mid, z+mid, x+w, wallTop+1+mid, z+mid, "oak_planks");
+
+            The two ends of a pitched roof are open triangles until you fill them. Skip
+            that and the room is open to the sky along both gables.
+
+            which gives this profile, walls to ridge with nothing floating:
+
+              y=7  . . . # . . .
+              y=6  . . s . n . .
+              y=5  . s . . . n .
+              y=4  s . . . . . n     <- resting on the wall tops
+              y=3  #           #
+
+            Blocks that hang on something. A torch, button, lever, sign or ladder is
+            supported by a neighbouring block and must go in the empty space NEXT to it,
+            never at the wall's own coordinate -- writing it there deletes the wall and
+            leaves a hole. A wall torch is held up by the block behind it, opposite its
+            facing: to light a north wall from inside a room, put a
+            wall_torch[facing=south] one block SOUTH of that wall.
+
+            Blocks that occupy two spaces. A bed is a foot and a head, and the head sits
+            one block from the foot in the direction of `facing` -- facing=east means the
+            head is one block EAST, not one block north. A door is two blocks stacked,
+            half=lower then half=upper directly above it. Place both halves and make the
+            offset agree with `facing`, or the two halves face different ways.
+
+            Windows. Cut the opening in the wall and put the glass in it. A single
+            glass_pane in a one-block hole is fine -- it is joined up to the wall around it
+            after the build. Use `glass` rather than `glass_pane` when you want a flush,
+            solid-looking window.
+
+            Every window opening holds glass or a glass_pane. A trapdoor, plank or other
+            solid block in the opening is not a window: no light gets in and it reads as a
+            patch on the wall. Shutters are open trapdoors fixed to the outside of the wall
+            BESIDE the opening, one to each side, never in it. e.g. a front window is
+            fill(x+2, y+1, z, x+3, y+1, z, "glass_pane") in the wall at z, and any shutters
+            go at x+1 and x+4 one block OUTSIDE the wall, so the wall itself stays whole.
+
+            Put windows at y+1. A player standing on the floor has their eyes at about
+            y+1.6, so y+1 is the height you actually look through; y+2 sits above eye line
+            and reads as a gap under the eaves. Hang wall torches at y+2, above the
+            windows, so the two do not compete for the same band of wall.
+
+            Furnish and decorate. A place someone lives in has, at minimum, a bed, a chest, a
+            crafting table, wall torches or lanterns so it is lit inside, and something on the
+            walls or floor: bookshelves, flower pots, a carpet, a fireplace of bricks with a
+            campfire. A mansion, inn, castle or manor has several rooms and EACH is furnished
+            for its purpose: beds in bedrooms, a kitchen with a furnace, smoker and barrels, a
+            hall with a long table of slabs and stairs as chairs, a library of bookshelves.
+            Fences make railings and table legs; stairs make chairs; slabs make tables and
+            counters; trapdoors make shutters. A tower has a way up. Outside, a path of a
+            different block leads to the door, with a lantern or two beside it. A bare box with
+            a door is not finished.
+
+            A stair used as a chair stands alone, one block high, on the floor beside a table.
+            Its `facing` names the side its tall BACK is on, so it points AWAY from the table:
+            for a table at (x, y, z),
+              chair west of it:  setBlock(x-1, y, z, "oak_stairs[facing=west]");
+              chair east of it:  setBlock(x+1, y, z, "oak_stairs[facing=east]");
+              chair north of it: setBlock(x, y, z-1, "oak_stairs[facing=north]");
+              chair south of it: setBlock(x, y, z+1, "oak_stairs[facing=south]");
+            A chair whose facing points at the table has its back pressed against it.
+            A flight of stairs exists only to reach another floor: in a one-storey room, never
+            put one stair on top of another.
+
+            No cobwebs unless the request asks for something abandoned, haunted, ruined or
+            old. In a lived-in house they read as a mistake: a "seaside shanty" gets none, an
+            "abandoned shack" may have a few in its corners.
+
+            Leave room to move. Keep a path two blocks high from the entrance to every door and
+            through every room: nothing stands or hangs in a doorway or an aisle. Anything hung
+            from above stays at y+2 or higher -- hang it from the ceiling or the roof beams, not
+            from the tops of low walls, where it ends up at chest height.
+
+            Use the height you build. If the roof leaves more than three blocks of space above
+            the walls, give that space a purpose: a loft or upper floor reached by stairs or a
+            ladder, or a room open to the rafters with its lights and plants hung from the roof.
+
+            Rules:
+            - You only ever place blocks; nothing is removed unless you place air. The
+              space you build into is NOT guaranteed empty. On open ground it is, so this
+              costs you nothing there. Inside a hill or a cave it is solid rock, and a
+              wall raised through untouched stone leaves the room filled in. If you are
+              told the site is enclosed, fill the entire volume with air first -- rooms,
+              doorways, stairwells, the lot -- and then build into what you cleared.
+            - Later writes win, so fill a wall and then set air over it to carve a doorway.
+            - Coordinates are relative to the origin and must stay within a few dozen blocks of it.
+            - Every block id must be one that really exists. Guessing by pattern is where
+              builds go wrong: it is `polished_blackstone_bricks`, not `blackstone_bricks`;
+              `bricks`, not `brick`; `stone_bricks`, not `stone_brick`. If you are unsure of
+              a decorative variant, use the plain block rather than inventing a name.
+            - Ordinary JavaScript is available: loops, math, arrays, functions. Use them.
+              There is no DOM, no require, no host access, and no console.
+
+            Write two short paragraphs first -- your influences, then how the finished build looks --
+            and then the code in a single ```javascript block.
+            """;
+
     /**
      * @param siteNote what the ground at this particular origin allows, or blank.
      *                 Standing near bedrock or near the world ceiling leaves far
@@ -588,132 +657,7 @@ public class AIConnector {
                     "Script building needs a cloud model. Set build.planner to json, or use schematics.");
         }
 
-        String system = """
-                You are an expert Minecraft architect and builder.
-
-                You control a builder through two functions. Implement buildCreation; do not call it yourself.
-
-                  fill(x1, y1, z1, x2, y2, z2, block, mode)
-                      Fills the box between the two corners, inclusive. mode is optional:
-                        "solid"   (default) every block in the box
-                        "walls"   the four upright sides only -- no floor, no ceiling
-                        "hollow"  the whole shell, INCLUDING its floor and ceiling faces
-                        "outline" the twelve edges only
-                      For a room, use "walls". "hollow" would pave the floor you stand on
-                      and cap the room with a ceiling.
-                  setBlock(x, y, z, block)
-                      Places one block.
-                  function buildCreation(x, y, z) { }
-                      x, y, z are the build origin.
-
-                y is the empty space a player standing at the origin occupies, and the
-                ground they are standing on is the block at y-1.
-
-                So the floor goes at y-1, replacing that ground, and EVERYTHING else --
-                interior, walls, door, furniture -- starts at y. Do not put a floor at y:
-                that is the air the player is standing in, and filling it buries them and
-                lifts the whole building a block off the ground. Lay exactly one floor
-                layer, and add no foundation beneath it unless asked.
-
-                This means the walls of a room are `fill(..., "walls")` from y up, over a
-                floor laid at y-1. Nothing else may write to the y level inside the room.
-
-                Block ids may carry states, exactly as the /setblock command accepts them:
-                  "oak_planks", "minecraft:stone_bricks", "oak_stairs[facing=north,half=bottom]",
-                  "oak_log[axis=y]", "oak_slab[type=top]", "glass_pane", "air"
-                Use real placeable block ids. Never item ids -- "bricks" is the block, "brick" is an item.
-
-                Roofs are where builds most often go wrong, so follow this exactly.
-
-                A stair's `facing` points UP the slope, toward the ridge -- the tall half of
-                the block is on the side named by `facing`. So the slope that descends toward
-                the north is built from stairs with facing=south, and the slope opposite it
-                uses facing=north. Point them down-slope instead and the whole roof is
-                inside out.
-
-                Each course must be a full-length `fill` along the ridge axis, one block higher
-                and one block inward from the course below. The FIRST course sits directly on
-                top of the wall, at the wall's own line -- not outside it. Starting the roof
-                beyond the wall leaves a hole between wall and roof, and placing courses
-                individually leaves them standing apart like fins. This is a correct gable:
-
-                  const mid = Math.floor((d - 1) / 2);           // d = depth in z
-                  for (let i = 0; i < mid; i++) {
-                    const yy = wallTop + 1 + i;
-                    // close the gable triangle at each end, or the roof space is open to the sky
-                    for (const ex of [x, x+w-1]) {
-                      fill(ex, yy, z+i+1, ex, yy, z+d-2-i, "oak_planks");
-                    }
-                    // z+i descends toward north, so it faces south, back up to the ridge
-                    fill(x-1, yy, z+i,       x+w, yy, z+i,       "oak_stairs[facing=south]");
-                    fill(x-1, yy, z+d-1-i,   x+w, yy, z+d-1-i,   "oak_stairs[facing=north]");
-                  }
-                  fill(x-1, wallTop+1+mid, z+mid, x+w, wallTop+1+mid, z+mid, "oak_planks");
-
-                The two ends of a pitched roof are open triangles until you fill them. Skip
-                that and the room is open to the sky along both gables.
-
-                which gives this profile, walls to ridge with nothing floating:
-
-                  y=7  . . . # . . .
-                  y=6  . . s . n . .
-                  y=5  . s . . . n .
-                  y=4  s . . . . . n     <- resting on the wall tops
-                  y=3  #           #
-
-                Blocks that hang on something. A torch, button, lever, sign or ladder is
-                supported by a neighbouring block and must go in the empty space NEXT to it,
-                never at the wall's own coordinate -- writing it there deletes the wall and
-                leaves a hole. A wall torch is held up by the block behind it, opposite its
-                facing: to light a north wall from inside a room, put a
-                wall_torch[facing=south] one block SOUTH of that wall.
-
-                Blocks that occupy two spaces. A bed is a foot and a head, and the head sits
-                one block from the foot in the direction of `facing` -- facing=east means the
-                head is one block EAST, not one block north. A door is two blocks stacked,
-                half=lower then half=upper directly above it. Place both halves and make the
-                offset agree with `facing`, or the two halves face different ways.
-
-                Windows. Cut the opening in the wall and put the glass in it. A single
-                glass_pane in a one-block hole is fine -- it is joined up to the wall around it
-                after the build. Use `glass` rather than `glass_pane` when you want a flush,
-                solid-looking window.
-
-                Put windows at y+1. A player standing on the floor has their eyes at about
-                y+1.6, so y+1 is the height you actually look through; y+2 sits above eye line
-                and reads as a gap under the eaves. Hang wall torches at y+2, above the
-                windows, so the two do not compete for the same band of wall.
-
-                Furnish and decorate. A place someone lives in has, at minimum, a bed, a chest, a
-                crafting table, wall torches or lanterns so it is lit inside, and something on the
-                walls or floor: bookshelves, flower pots, a carpet, a fireplace of bricks with a
-                campfire. A mansion, inn, castle or manor has several rooms and EACH is furnished
-                for its purpose: beds in bedrooms, a kitchen with a furnace, smoker and barrels, a
-                hall with a long table of slabs and stairs as chairs, a library of bookshelves.
-                Fences make railings and table legs; stairs make chairs; slabs make tables and
-                counters; trapdoors make shutters. A tower has a way up. Outside, a path of a
-                different block leads to the door, with a lantern or two beside it. A bare box with
-                a door is not finished.
-
-                Rules:
-                - You only ever place blocks; nothing is removed unless you place air. The
-                  space you build into is NOT guaranteed empty. On open ground it is, so this
-                  costs you nothing there. Inside a hill or a cave it is solid rock, and a
-                  wall raised through untouched stone leaves the room filled in. If you are
-                  told the site is enclosed, fill the entire volume with air first -- rooms,
-                  doorways, stairwells, the lot -- and then build into what you cleared.
-                - Later writes win, so fill a wall and then set air over it to carve a doorway.
-                - Coordinates are relative to the origin and must stay within a few dozen blocks of it.
-                - Every block id must be one that really exists. Guessing by pattern is where
-                  builds go wrong: it is `polished_blackstone_bricks`, not `blackstone_bricks`;
-                  `bricks`, not `brick`; `stone_bricks`, not `stone_brick`. If you are unsure of
-                  a decorative variant, use the plain block rather than inventing a name.
-                - Ordinary JavaScript is available: loops, math, arrays, functions. Use them.
-                  There is no DOM, no require, no host access, and no console.
-
-                Write two short paragraphs first -- your influences, then how the finished build looks --
-                and then the code in a single ```javascript block.
-                """;
+        String system = SCRIPT_SYSTEM_PROMPT;
 
         String prompt;
         if (previousScript != null && previousError != null) {
@@ -765,6 +709,42 @@ public class AIConnector {
         return fn >= 0 ? response.substring(fn).strip() : null;
     }
 
+    /**
+     * Thrown when Jarvis Cloud cut a build reply off at the plan's output cap.
+     * Retrying cannot help -- the next reply hits the same cap -- so it goes
+     * straight to the player instead of through the repair loop or a fallback.
+     */
+    public static class PlanLimitException extends RuntimeException {
+        public PlanLimitException(String message) { super(message); }
+    }
+
+    /**
+     * The message for a build reply that was cut off, or null if it finished.
+     * Only build-sized requests count: a chat reply cut short is still usable.
+     *
+     * <p>A truncated script is not worth a repair call. The error comes back as
+     * a syntax error at end of file, the repair asks for the complete script
+     * again, and that reply stops at the same ceiling -- the GadgetCraft log has
+     * builds that paid for two truncated replies in a row and built nothing.
+     */
+    static String planLimitMessage(JSONObject json, String apiKey, int maxTokens) {
+        if (maxTokens < BUILD_SCRIPT_MAX_TOKENS) return null;
+        if (!"max_tokens".equals(json.optString("stop_reason"))) return null;
+        JSONObject usage = json.optJSONObject("usage");
+        int out = usage == null ? 0 : usage.optInt("output_tokens");
+        // Jarvis Cloud lowered the ceiling below what we asked for: the plan is the limit.
+        if (apiKey != null && apiKey.startsWith("gc_") && out > 0 && out < maxTokens) {
+            return "This build is too big for your Jarvis Cloud plan (replies stop at about " + out
+                    + " tokens). Try a smaller build, or upgrade with /jarvis cloud upgrade.";
+        }
+        return truncatedBuildMessage();
+    }
+
+    private static String truncatedBuildMessage() {
+        return "That design was too big to finish in one reply and was cut off. "
+                + "Try a smaller or simpler build.";
+    }
+
     /** Thrown when a capability is unavailable in Ollama-only reduced mode. */
     public static class ReducedModeException extends Exception {
         public ReducedModeException(String message) { super(message); }
@@ -774,13 +754,37 @@ public class AIConnector {
      * Parse natural language command into structured action
      */
     public String parseNaturalLanguage(String message, String playerName, String context) throws Exception {
-        // Literal commands don't need a model. This is the bulk of chat traffic.
-        String fastPath = tryFastPath(message);
-        if (fastPath != null) return fastPath;
+        return parseNaturalLanguage(message, playerName, context, "");
+    }
 
+    /**
+     * Parse a sentence into an action, with the admin's server facts
+     * ({@link ServerKnowledge#render()}, may be empty) in the system prompt.
+     */
+    public String parseNaturalLanguage(String message, String playerName, String context,
+                                       String serverFacts) throws Exception {
+        return parseNaturalLanguage(message, playerName, context, serverFacts, null);
+    }
+
+    /**
+     * As above; with a {@code stream} sink, the reply's sentences are handed to it
+     * while the model is still writing (FB-05, {@code ai.streaming}). The full
+     * reply is still returned for the normal parse.
+     */
+    public String parseNaturalLanguage(String message, String playerName, String context,
+                                       String serverFacts, StreamAssembler.Sink stream) throws Exception {
+        // Literal commands ("follow me", "mine 10 iron") never get here:
+        // IntentPipeline answers them with FastPathParser first, unless
+        // intent.fast-path.enabled is off, in which case the model decides.
         String systemPrompt = JARVIS_PERSONALITY + "\n\n" +
                 "TASK: Parse player commands into JSON actions. Maintain your sarcastic butler persona in the response field.\n" +
                 "Output format: {\"action\":\"...\",\"parameters\":{...},\"response\":\"your witty 1-2 sentence response\"}\n\n" +
+                "CONVERSATION:\n" +
+                "  chat - just answer; no action. Use for questions, small talk and opinions.\n" +
+                "         The response field is the answer, seen only by this player.\n" +
+                "  The Context lines are the player's real situation right now (health, time, mobs, Jarvis).\n" +
+                "  Use them when advising; never invent details they don't give.\n" +
+                "  If there is a WARNINGS line, deal with those dangers first in your answer.\n\n" +
                 "NPC ACTIONS (control the physical Jarvis NPC):\n" +
                 "  summon - bring Jarvis to the player\n" +
                 "  dismiss - send Jarvis away\n" +
@@ -805,7 +809,7 @@ public class AIConnector {
                 "  deposit - carry collected loot to the player's registered chest\n" +
                 "  set_chest - register the chest the player is looking at for deposits\n" +
                 "  stop - stop current task\n" +
-                "  report - deliver the server status briefing (TPS, players, weather)\n" +
+                "  report - deliver the server status briefing (TPS, players, weather); only when asked for a report or status\n" +
                 "  recover - retrieve the player's death drops from where they died\n" +
                 "  take_home - escort the player back to their saved home point\n" +
                 "  set_home - save the player's current spot as home\n" +
@@ -817,7 +821,10 @@ public class AIConnector {
                 "  patrol - walk the saved patrol circuit as a guard\n" +
                 "  light - place lights on a grid to spawn-proof the area, params: {radius (optional, blocks), type (optional): torch|end_rod|lantern, spacing (optional, blocks)}\n" +
                 "  clearloot - drop all collected items\n" +
-                "  build - build a structure, params: {description: string}\n\n" +
+                "  build - build a structure, params: {description: string}\n" +
+                "  undo - take down the last thing Jarvis built or pasted and put back what was there.\n" +
+                "         Use for \"undo that\", \"put it back\", \"wrong place, take it down\".\n" +
+                "  redo - put back up what the last undo took down\n\n" +
                 "WORLD ACTIONS (directly affect the game world):\n" +
                 "  give_item - give items to player, params: {player, item (minecraft:xxx), amount}\n" +
                 "  enchant - enchant held item, params: {player, enchantment, level}\n" +
@@ -825,16 +832,16 @@ public class AIConnector {
                 "  heal - restore health, params: {player}\n" +
                 "  feed - restore hunger, params: {player}\n" +
                 "  set_gamemode - change gamemode, params: {player, mode: survival|creative|adventure|spectator}\n" +
-                "  teleport - teleport player, params: {player, x, y, z, world (optional)}\n" +
+                "  teleport - move the player; ONLY when asked to be moved (\"take me to\", \"tp me\"), never for \"where is\", params: {player, x, y, z, world (optional)}\n" +
                 "  set_time - set world time, params: {value: day|night|noon|midnight}\n" +
                 "  set_weather - set weather, params: {type: clear|rain|thunder}\n" +
                 "  set_gamerule - change a rule, params: {rule, value}\n" +
                 "  summon - summon a mob/entity, params: {entity: minecraft:xxx, x (optional), y (optional), z (optional)}\n" +
-                "  broadcast - announce to all players, params: {message}\n" +
-                "  server_say - say in chat, params: {message}\n" +
+                "  broadcast - announce to EVERY player; only when asked to announce something, params: {message}\n" +
+                "  server_say - post a [Server] line EVERY player sees; only when asked to, never to answer, params: {message}\n" +
                 "  lp_group_add - add to permission group, params: {player, group}\n" +
                 "  lp_group_remove - remove from permission group, params: {player, group}\n" +
-                "  warp - warp to a location, params: {player, warp}\n" +
+                "  warp - warp to a location; only when asked to be moved, params: {player, warp}\n" +
                 "  discord_broadcast - send to Discord, params: {message}\n" +
                 "  paste_schematic - paste a saved schematic at player location, params: {schematic}\n\n" +
                 "ADMIN / CONSOLE ACTIONS (always require confirmation):\n" +
@@ -844,7 +851,7 @@ public class AIConnector {
                 "  clear_drops - remove all ground items, params: {radius (optional)}\n" +
                 "  save_world - save the world, params: {}\n" +
                 "  set_difficulty - change difficulty, params: {difficulty: peaceful|easy|normal|hard}\n" +
-                "  announce_all - send title screen message to ALL players, params: {message, subtitle (optional)}\n" +
+                "  announce_all - title screen message to ALL players; only when asked to, params: {message, subtitle (optional)}\n" +
                 "  schedule_broadcast - scheduled/repeating chat message, params: {message, delay_seconds, interval_seconds (optional), count (optional)}\n\n" +
                 "PLAYER REQUESTS (for non-admin players):\n" +
                 "  request_item - submit an item request to admins, params: {item (minecraft:xxx), amount, reason (optional)}\n\n" +
@@ -859,7 +866,10 @@ public class AIConnector {
                 "  'weapons free' -> {\"action\":\"attack\",\"response\":\"With pleasure, sir.\"}\n" +
                 "  'keep watch tonight' -> {\"action\":\"watch\",\"response\":\"I shall hold this post until dawn, sir.\"}\n" +
                 "  'stand down' -> {\"action\":\"stand_down\",\"response\":\"Standing down, sir. Observing only.\"}\n" +
-                "  'how are things' -> {\"action\":\"report\",\"response\":\"The briefing, sir.\"}\n" +
+                "  'give me a status report' -> {\"action\":\"report\",\"response\":\"The briefing, sir.\"}\n" +
+                "  'what should I do next?' -> {\"action\":\"chat\",\"response\":\"Gather wood and build a shelter before nightfall, sir.\"}\n" +
+                "  'where is the market?' -> {\"action\":\"chat\",\"response\":\"The market is at x 120, y 70, z -40, sir.\"} (coordinates from SERVER FACTS; if it isn't listed, say you don't know)\n" +
+                "  'take me to the market' -> {\"action\":\"teleport\",\"parameters\":{\"x\":120,\"y\":70,\"z\":-40},\"response\":\"Off you go, sir.\"}\n" +
                 "  'get my stuff back' -> {\"action\":\"recover\",\"response\":\"On my way, sir. Do try to stay alive this time.\"}\n" +
                 "  'take me home' -> {\"action\":\"take_home\",\"response\":\"This way, sir. I shall light the road.\"}\n" +
                 "  'farm the carrots' -> {\"action\":\"farm\",\"parameters\":{\"crop\":\"carrots\"},\"response\":\"To the fields, sir. The carrots won't harvest themselves. Well — now they will.\"}\n" +
@@ -879,9 +889,12 @@ public class AIConnector {
                 "  'replace all dirt with grass in this area' -> {\"action\":\"console_commands\",\"parameters\":{\"commands\":[\"execute in world run fill ~-20 ~-5 ~-20 ~20 ~5 ~20 grass_block replace dirt\"]},\"response\":\"Upgrading the terrain. One does try to maintain standards.\"}\n" +
                 "  'can I get some food' -> {\"action\":\"request_item\",\"parameters\":{\"item\":\"minecraft:cooked_beef\",\"amount\":16,\"reason\":\"hungry\"},\"response\":\"Request submitted. Whether the admin is feeling charitable is another matter.\"}\n" +
                 "Output ONLY valid JSON. The requesting player is: " + playerName;
+        if (serverFacts != null && !serverFacts.isBlank()) {
+            systemPrompt += "\n\n" + serverFacts;
+        }
 
-        String userPrompt = String.format("Player %s says: \"%s\". Context: %s", playerName, message, context);
-        return sendTiered(Tier.LIGHT, userPrompt, systemPrompt, true);
+        String userPrompt = String.format("Player %s says: \"%s\".\nContext:\n%s", playerName, message, context);
+        return sendTiered(Tier.LIGHT, userPrompt, systemPrompt, true, DEFAULT_MAX_TOKENS, stream);
     }
 
     /**
@@ -1030,6 +1043,19 @@ public class AIConnector {
     }
 
     /**
+     * Condense a player's older conversation with Jarvis into a few lines of
+     * facts (FB-04), on the light tier. Plain text back, no JSON.
+     */
+    public String summarizeConversation(String transcript) throws Exception {
+        String systemPrompt = "You keep notes for Jarvis, a butler in a Minecraft world. Condense the "
+                + "earlier notes and the conversation below into at most six short plain sentences of "
+                + "facts worth remembering about this player: places and coordinates they named, their "
+                + "base, plans, preferences, names, things that happened. Keep earlier facts unless the "
+                + "conversation replaces them. No greetings, no commentary, no lists, no JSON.";
+        return sendTiered(Tier.LIGHT, transcript, systemPrompt, false);
+    }
+
+    /**
      * Send a simple request to AI (for general questions)
      */
     public String sendSimpleRequest(String prompt) throws Exception {
@@ -1057,6 +1083,11 @@ public class AIConnector {
      */
     private String sendTiered(Tier tier, String userContent, String systemContent, boolean jsonMode,
                               int maxTokens) throws Exception {
+        return sendTiered(tier, userContent, systemContent, jsonMode, maxTokens, null);
+    }
+
+    private String sendTiered(Tier tier, String userContent, String systemContent, boolean jsonMode,
+                              int maxTokens, StreamAssembler.Sink stream) throws Exception {
         enforceRateLimit();
 
         List<String> route = tier == Tier.LIGHT ? lightRoute : heavyRoute;
@@ -1081,7 +1112,7 @@ public class AIConnector {
             try {
                 lastUsage = null;
                 String result = sendRequestForProvider(tryProvider, userContent, systemContent, jsonMode,
-                        timeoutOverride, maxTokens);
+                        timeoutOverride, maxTokens, stream);
                 health.recordSuccess();
 
                 if (lastUsage != null && this.config.getBoolean("ai.log-usage", false)) {
@@ -1098,6 +1129,8 @@ public class AIConnector {
                     this.apiKey = config.apiKey;
                 }
                 return result;
+            } catch (PlanLimitException e) {
+                throw e; // the provider is fine; the plan is the limit
             } catch (Exception e) {
                 health.recordFailure(e.getMessage());
                 lastException = e;
@@ -1111,25 +1144,108 @@ public class AIConnector {
 
     private String sendRequestForProvider(String providerName, String userContent, String systemContent,
                                           boolean jsonMode, int timeoutOverrideSeconds,
-                                          int maxTokens) throws Exception {
+                                          int maxTokens, StreamAssembler.Sink stream) throws Exception {
         ProviderConfig config = providerConfigs.get(providerName);
         if (config == null) {
             throw new RuntimeException("Unknown provider: " + providerName);
         }
         int readTimeoutMs = (timeoutOverrideSeconds > 0 ? timeoutOverrideSeconds : config.timeoutSeconds) * 1000;
 
+        if (stream != null && streams(providerName, config)) {
+            StreamAssembler asm = new StreamAssembler(wireFor(providerName), stream,
+                    this.config.getLong("ai.streaming.min-interval-ms", 400), System::currentTimeMillis);
+            try {
+                return send(providerName, userContent, systemContent, config, jsonMode, readTimeoutMs, maxTokens, asm);
+            } catch (PlanLimitException e) {
+                throw e;
+            } catch (Exception e) {
+                // Words already on screen stay; if the whole answer arrived, the next
+                // reply is used for its action only, so nothing is said twice.
+                if (!asm.responseComplete()) asm.abandon();
+                // Only a stream that broke after a good start is retried the old way. A
+                // refused request, a rate limit or a timeout before any reply goes to the
+                // next provider, as without streaming, rather than being sent twice.
+                if (!(e instanceof StreamBroken)) throw e;
+                log.warn("Streaming from " + providerName + " broke (" + e.getMessage()
+                        + "); retrying without streaming.");
+            }
+        }
+        return send(providerName, userContent, systemContent, config, jsonMode, readTimeoutMs, maxTokens, null);
+    }
+
+    private String send(String providerName, String userContent, String systemContent, ProviderConfig config,
+                        boolean jsonMode, int readTimeoutMs, int maxTokens, StreamAssembler asm) throws Exception {
         return switch (providerName) {
-            case "claude" -> sendClaudeRequest(userContent, systemContent, config, readTimeoutMs, maxTokens);
-            case "gemini" -> sendGeminiRequest(userContent, systemContent, config, readTimeoutMs);
-            case "ollama" -> sendOllamaRequest(userContent, systemContent, config, jsonMode, readTimeoutMs);
-            default -> sendOpenAIStyleRequest(userContent, systemContent, config, readTimeoutMs, maxTokens);
+            case "claude" -> sendClaudeRequest(userContent, systemContent, config, readTimeoutMs, maxTokens, asm);
+            case "gemini" -> sendGeminiRequest(userContent, systemContent, config, readTimeoutMs, asm);
+            case "ollama" -> sendOllamaRequest(userContent, systemContent, config, jsonMode, readTimeoutMs, asm);
+            default -> sendOpenAIStyleRequest(userContent, systemContent, config, readTimeoutMs, maxTokens, asm);
         };
+    }
+
+    /**
+     * Whether replies from this provider are streamed: {@code ai.streaming.enabled},
+     * the provider in {@code ai.streaming.providers}, and not Jarvis Cloud ({@code gc_}
+     * keys), which collects the stream itself so it can meter the request.
+     */
+    private boolean streams(String providerName, ProviderConfig config) {
+        if (!this.config.getBoolean("ai.streaming.enabled", true)) return false;
+        List<String> allowed = this.config.contains("ai.streaming.providers")
+                ? this.config.getStringList("ai.streaming.providers") : KNOWN_PROVIDERS;
+        if (!allowed.contains(providerName)) return false;
+        if (config.apiKey != null && config.apiKey.startsWith("gc_")) return false;
+        if (providerName.equals("gemini")) return config.endpoint != null && config.endpoint.contains(":generateContent");
+        return true;
+    }
+
+    private static StreamAssembler.Wire wireFor(String providerName) {
+        return switch (providerName) {
+            case "claude" -> StreamAssembler.Wire.ANTHROPIC_SSE;
+            case "gemini" -> StreamAssembler.Wire.GEMINI_SSE;
+            case "ollama" -> StreamAssembler.Wire.OLLAMA_NDJSON;
+            default -> StreamAssembler.Wire.OPENAI_SSE;
+        };
+    }
+
+    /** A stream that failed after the provider accepted the request: worth one buffered retry. */
+    static final class StreamBroken extends RuntimeException {
+        StreamBroken(String message, Throwable cause) { super(message, cause); }
+    }
+
+    /**
+     * Read a streamed body line by line into the assembler; the whole reply text.
+     * The read timeout restarts on every line, so a model that trickles tokens
+     * forever is also cut off once the whole reply has taken {@code totalMs}.
+     */
+    private static String readStream(HttpURLConnection conn, StreamAssembler asm, long totalMs) throws Exception {
+        long deadline = System.currentTimeMillis() + Math.max(1000, totalMs);
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                asm.line(line);
+                if (asm.done()) break;
+                if (System.currentTimeMillis() > deadline) {
+                    throw new RuntimeException("streamed reply took longer than " + totalMs / 1000 + "s");
+                }
+            }
+        } catch (java.io.IOException | IllegalStateException e) {
+            throw new StreamBroken(e.getMessage(), e);
+        }
+        // Every provider marks the end ([DONE], message_stop, done:true, finishReason);
+        // a stream that just stops is a dropped connection, not a short reply.
+        if (!asm.done()) {
+            asm.finish();
+            throw new StreamBroken("stream ended before the reply was complete", null);
+        }
+        String text = asm.finish().trim();
+        if (text.isEmpty()) throw new StreamBroken("empty streamed reply", null);
+        return text;
     }
 
     // ==================== PROVIDER IMPLEMENTATIONS ====================
 
     private String sendOllamaRequest(String userContent, String systemContent, ProviderConfig config,
-                                     boolean jsonMode, int readTimeoutMs) throws Exception {
+                                     boolean jsonMode, int readTimeoutMs, StreamAssembler asm) throws Exception {
         URL url = new URL(config.endpoint + "/api/chat");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -1140,7 +1256,7 @@ public class AIConnector {
 
         JSONObject payload = new JSONObject();
         payload.put("model", config.model);
-        payload.put("stream", false);
+        payload.put("stream", asm != null);
         payload.put("keep_alive", config.keepAlive);
         if (jsonMode) {
             // Structured output: constrains small local models to valid JSON
@@ -1165,6 +1281,7 @@ public class AIConnector {
             String error = readErrorStream(conn);
             throw new RuntimeException("Ollama error: " + responseCode + " - " + error);
         }
+        if (asm != null) return readStream(conn, asm, readTimeoutMs);
 
         try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
             StringBuilder response = new StringBuilder();
@@ -1187,13 +1304,14 @@ public class AIConnector {
     }
 
     private String sendClaudeRequest(String userContent, String systemContent, ProviderConfig config,
-                                     int readTimeoutMs, int maxTokens) throws Exception {
+                                     int readTimeoutMs, int maxTokens, StreamAssembler asm) throws Exception {
         URL url = new URL(config.endpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("x-api-key", config.apiKey);
         conn.setRequestProperty("anthropic-version", "2023-06-01");
+        if (installId != null && config.apiKey.startsWith("gc_")) conn.setRequestProperty("x-jarvis-server", installId);
         conn.setConnectTimeout(5000);
         conn.setReadTimeout(readTimeoutMs);
         conn.setDoOutput(true);
@@ -1202,6 +1320,7 @@ public class AIConnector {
         payload.put("model", config.model);
         payload.put("max_tokens", maxTokens);
         payload.put("system", systemContent);
+        if (asm != null) payload.put("stream", true);
 
         JSONArray messages = new JSONArray();
         messages.put(new JSONObject()
@@ -1217,6 +1336,11 @@ public class AIConnector {
         if (responseCode != 200) {
             String error = readErrorStream(conn);
             throw new RuntimeException("Claude API error: " + responseCode + " - " + error);
+        }
+        if (asm != null) {
+            String text = readStream(conn, asm, readTimeoutMs);
+            lastUsage = asm.usage();
+            return text;
         }
 
         try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
@@ -1236,6 +1360,9 @@ public class AIConnector {
                     usage.optInt("output_tokens"),
                     usage.optInt("cache_creation_input_tokens"),
                     usage.optInt("cache_read_input_tokens"));
+
+            String capped = planLimitMessage(json, config.apiKey, maxTokens);
+            if (capped != null) throw new PlanLimitException(capped);
 
             JSONArray content = json.optJSONArray("content");
 
@@ -1257,7 +1384,7 @@ public class AIConnector {
     }
 
     private String sendOpenAIStyleRequest(String userContent, String systemContent, ProviderConfig config,
-                                          int readTimeoutMs, int maxTokens) throws Exception {
+                                          int readTimeoutMs, int maxTokens, StreamAssembler asm) throws Exception {
         URL url = new URL(config.endpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -1270,6 +1397,7 @@ public class AIConnector {
         JSONObject payload = new JSONObject();
         payload.put("model", config.model);
         payload.put("max_tokens", maxTokens);
+        if (asm != null) payload.put("stream", true);
 
         JSONArray messages = new JSONArray();
         messages.put(new JSONObject().put("role", "system").put("content", systemContent));
@@ -1285,6 +1413,7 @@ public class AIConnector {
             String error = readErrorStream(conn);
             throw new RuntimeException("HTTP error: " + responseCode + " - " + error);
         }
+        if (asm != null) return readStream(conn, asm, readTimeoutMs);
 
         try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
             StringBuilder response = new StringBuilder();
@@ -1300,6 +1429,10 @@ public class AIConnector {
             JSONObject firstChoice = choices.optJSONObject(0);
             if (firstChoice == null) {
                 throw new RuntimeException("Invalid choice format in OpenAI response");
+            }
+            // Same rule as the Claude path: a cut-off build is not repaired.
+            if (maxTokens >= BUILD_SCRIPT_MAX_TOKENS && "length".equals(firstChoice.optString("finish_reason"))) {
+                throw new PlanLimitException(truncatedBuildMessage());
             }
 
             JSONObject message = firstChoice.optJSONObject("message");
@@ -1317,9 +1450,12 @@ public class AIConnector {
     }
 
     private String sendGeminiRequest(String userContent, String systemContent, ProviderConfig config,
-                                     int readTimeoutMs) throws Exception {
-        String resolvedEndpoint = String.format(config.endpoint, config.model) + "?key=" +
-                java.net.URLEncoder.encode(config.apiKey, StandardCharsets.UTF_8);
+                                     int readTimeoutMs, StreamAssembler asm) throws Exception {
+        String base = String.format(config.endpoint, config.model);
+        if (asm != null) base = base.replace(":generateContent", ":streamGenerateContent");
+        String resolvedEndpoint = base + "?key=" +
+                java.net.URLEncoder.encode(config.apiKey, StandardCharsets.UTF_8)
+                + (asm != null ? "&alt=sse" : "");
         URL url = new URL(resolvedEndpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -1346,6 +1482,7 @@ public class AIConnector {
             String error = readErrorStream(conn);
             throw new RuntimeException("Gemini error: " + responseCode + " - " + error);
         }
+        if (asm != null) return readStream(conn, asm, readTimeoutMs);
 
         try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
             StringBuilder response = new StringBuilder();
@@ -1402,7 +1539,8 @@ public class AIConnector {
     // ==================== SETUP SUPPORT ====================
 
     /** Every provider this connector knows how to talk to, in the default priority order. */
-    public static final List<String> KNOWN_PROVIDERS = List.of("ollama", "claude", "openai", "grok", "gemini");
+    /** Free first (FB-09): local Ollama, then Gemini's free tier, then the paid ones. */
+    public static final List<String> KNOWN_PROVIDERS = List.of("ollama", "gemini", "claude", "openai", "grok");
 
     /** True when the provider is in the priority list, the connector's idea of "enabled". */
     public boolean isEnabled(String providerName) {
@@ -1444,10 +1582,15 @@ public class AIConnector {
         if (!providerConfigs.containsKey(providerName)) throw new IllegalArgumentException("Unknown provider: " + providerName);
         if (!"ollama".equals(providerName) && !hasApiKey(providerName)) throw new IllegalStateException("no API key set");
         String reply = sendRequestForProvider(providerName, "Reply with the single word: ready",
-                "You are a connectivity check. Answer with one word.", false, 20, 16);
+                "You are a connectivity check. Answer with one word.", false, 20, 16, null);
         ProviderHealth health = providerHealth.get(providerName);
         if (health != null) health.recordSuccess();
         return reply == null ? "" : reply.trim();
+    }
+
+    /** This install's ID, sent only to Jarvis Cloud. */
+    public void setInstallId(String id) {
+        this.installId = id;
     }
 
     public String getProvider() {

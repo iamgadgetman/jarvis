@@ -25,19 +25,58 @@ ai:
   reduced-mode:
     allow-risky-actions: false   # Ollama-only mode: allow console/permission actions
 
+  # ---- World context (FB-03) ----
+  # Every chat request carries a few short lines about the speaker's situation,
+  # so "what should I do?" gets a real answer. About 60-150 tokens at level 3;
+  # with log-usage on, each request logs its context size.
+  context:
+    # 0 = nothing
+    # 1 = you: health, food, held item, game mode
+    # 2 = + where you are (biome, y, surface/underground), time, weather, light,
+    #     and Jarvis: his task, health, tool, useful cargo (torches, food, ores)
+    # 3 = + hostile mobs and other players near you
+    level: 2
+    hostile-radius: 16     # Blocks around you counted for hostile mobs (level 3)
+    player-radius: 32      # Blocks around you for naming other players (level 3)
+    # Server facts and named places Jarvis treats as true, in plugins/Jarvis/.
+    # Re-read on /jarvis reload. Missing file = no facts. See knowledge.yml.
+    knowledge-file: knowledge.yml
+
+  # ---- Streaming replies (FB-05) ----
+  # Jarvis's chat replies appear sentence by sentence while the model is still
+  # writing, instead of all at once at the end; actions still wait for the whole
+  # reply. Jarvis Cloud replies are never streamed (the service meters them whole),
+  # and voice replies are spoken whole.
+  streaming:
+    enabled: true
+    min-interval-ms: 400   # Floor between chat lines so fast models don't spam
+    providers: [openai, claude, gemini, grok, ollama]   # Remove one to keep it buffered
+
   # Provider priority for auto mode (tried top-to-bottom)
   # Providers without API keys (except ollama) are skipped.
   #
-  # ollama is first on purpose: it is free and local, so a server that runs it
+  # Free options first. ollama is free and local, so a server that runs it
   # pays nothing for routine chat parsing. If it is not installed the call
   # fails fast (connection refused) and the provider is put on an exponential
   # cooldown up to 5 minutes, so the cost to everyone else is negligible.
+  # gemini is next because Google's free tier needs only a key from
+  # aistudio.google.com. The paid providers follow.
+  # On startup Jarvis logs one line saying which of these can answer;
+  # /jarvis setup checks again.
   provider-priority:
     - ollama
+    - gemini
     - claude
     - openai
     - grok
-    - gemini
+
+  # API keys. Each provider's api-key below can hold the key itself, or
+  # "env:NAME" to read environment variable NAME so the key stays out of
+  # this file. With env-keys on, a blank api-key also reads the provider's
+  # usual variable: GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY,
+  # XAI_API_KEY. Turn it off if those variables are set for something else
+  # on this machine and you don't want Jarvis to spend on them.
+  env-keys: true
 
   # OpenAI - https://platform.openai.com/
   #   gpt-5.6-terra  balanced intelligence/cost (default)
@@ -70,7 +109,8 @@ ai:
     endpoint: ""  # Leave blank for default
     timeout-seconds: 30
 
-  # Google Gemini - https://aistudio.google.com/
+  # Google Gemini - https://aistudio.google.com/ (free tier: get a key, no card)
+  #   export GEMINI_API_KEY=... before starting the server, or paste it below.
   #   gemini-3.7-flash       latest and most capable Flash (default)
   #   gemini-3.5-flash-lite  fastest and cheapest
   gemini:
@@ -104,6 +144,20 @@ ai:
 # keyword matching rather than failing.
 memory:
   enabled: true
+
+  # ---- Conversation memory (FB-04) ----
+  # What Jarvis remembers of each player, across restarts: their recent lines,
+  # a summary of older ones written by the light-tier model, and notable events.
+  # Separate from the build memory below; memory.enabled doesn't switch it off.
+  # /jarvis memory shows a player what he knows; /jarvis memory forget wipes it.
+  conversation:
+    enabled: true
+    recent-turns: 8          # Verbatim turns sent with each request (3 on Ollama-only servers)
+    summarize-after: 30      # Unsummarized turns before the light model condenses them
+                             # (one light-tier call each time; the newest recent-turns stay verbatim)
+    keep-days: 90            # Raw turns older than this are pruned once summarized (0 = keep all).
+                             # The summary stays. Pruned turns also leave /jarvis export-dataset.
+    record-events: true      # Deaths and portal trips become memory lines
 
   # Pull it first:  ollama pull nomic-embed-text
   # Uses ai.ollama.endpoint above -- one box, one setting.
@@ -303,14 +357,39 @@ combat:
 
 # ========== BUILDING CONFIGURATION ==========
 build:
+  # ---- Guardrails (FB-07) ----
+  # Checked on every AI-designed build after it is planned and before anything
+  # is placed. Players with jarvis.build.bypass (ops, by default) skip them.
+  guardrails:
+    # Never placed by an AI build. Empty = these defaults; [none] = nothing blocked.
+    blocked-blocks: [tnt, lava, lava_bucket, command_block, chain_command_block,
+                     repeating_command_block, structure_block, barrier, bedrock,
+                     end_portal_frame, spawner, fire]
+    max-blocks: 8000        # Largest plan, in blocks. A real AI mansion here was 4229.
+    max-size: 48            # Longest edge of the build's bounding box
+    max-distance: 64        # From the player to the nearest edge of the build
+    # A particle outline shows the plan, and nothing is placed until the player
+    # says yes (or clicks [Build it]); no, [Cancel] or the timeout drops it.
+    # 0 = no preview: build as soon as it is planned.
+    preview-seconds: 20
+  # Rationing per permission group. jarvis.build.limit.<group> puts a player in
+  # <group> (first match, in this order); everyone else is "default". Only builds
+  # that finish count, and the counts survive a restart. Days are server-local.
+  # -1 = no limit for that number.
+  limits:
+    default: { cooldown-seconds: 120, daily-builds: 5, daily-blocks: 6000 }
+    trusted: { cooldown-seconds: 30, daily-builds: 30, daily-blocks: 60000 }
+
   # Performance
   blocks-per-tick: 50            # Blocks to place per tick
   progress-update-interval: 100  # Show progress every N blocks
   
   # Features
-  enable-undo: true              # Allow build undo (NEW in 0.0.6)
-  undo-timeout: 300              # Seconds before undo expires
-  max-undo-size: 10000           # Max blocks that can be undone
+  enable-undo: true              # /jarvis undo for everything he builds: AI builds,
+                                 # shapes and schematic pastes (WorldEdit ones too)
+  undo-history: 10               # Jobs kept per player, newest first. Saved in the
+                                 # database, so undo survives a restart. Mining is not
+                                 # undoable, and chest contents are not restored.
   
   # Materials
   # A plan naming something that is not a block (a painting, an item frame,
@@ -337,6 +416,37 @@ build:
 
   max-ai-blocks: 5000            # Max blocks for JSON-planner builds
   ai-timeout: 30                 # Seconds to wait for AI response
+
+# ========== REWARD BUNDLES (FB-08) ==========
+# Named lists of console commands that you write. Jarvis can trigger one by
+# name when a player's words fit its description ("I found my first
+# diamond!"), and /jarvis bundle run <name> [player] runs one by hand. The
+# model only ever picks a name from this list; it never writes a command.
+# Players can tell Jarvis anything, so keep AI bundles to fun rewards and use
+# once-per-player or a cooldown on anything worth having.
+#
+# Per bundle:
+#   description       shown to the model; say when it should be given
+#   commands          run as the console, in order (a leading / is fine)
+#                     placeholders: {player} {uuid} {x} {y} {z} {world};
+#                     PlaceholderAPI %placeholders% too, if it's installed
+#   once-per-player   true = each player gets it once, ever (default false)
+#   cooldown-minutes  wait this long before the same player gets it again (0)
+#   ai                false = only /jarvis bundle run can give it (default true)
+#   permission        when set, Jarvis gives it only to players with this node
+# Uses are kept in the database, so restarts don't reset them.
+bundles: {}
+#  first-diamond:
+#    description: "Celebrate a player's first diamond"
+#    once-per-player: true
+#    commands:
+#      - "give {player} minecraft:cooked_beef 8"
+#      - "title {player} title {\"text\":\"Diamonds!\",\"color\":\"aqua\"}"
+#      - "playsound minecraft:ui.toast.challenge_complete master {player}"
+#  shrine-blessing:
+#    description: "Reward for reaching the hidden shrine"
+#    cooldown-minutes: 1440
+#    commands: ["effect give {player} minecraft:regeneration 60 1"]
 
 # ========== MINING (v0.1.0 rework) ==========
 mining:
@@ -415,14 +525,17 @@ voice:
   gate: wake-word
 
   # Where the listening and talking happen:
-  #   embedded  whisper.cpp and Piper inside this server (default). Nothing
-  #             to install; about 200 MB of models fetched on first use into
-  #             <data dir>/models, a few hundred MB of memory while voice is on.
+  #   embedded  whisper.cpp and Piper inside this server (default). Needs
+  #             three model files, about 210 MB, in <data dir>/models; nothing
+  #             fetches them unasked. /jarvis voice download lists them and,
+  #             with "confirm", fetches them; or download them yourself (the
+  #             log names them and their URLs). A few hundred MB of memory
+  #             while voice is on.
   #   server    an OpenAI-compatible speech server elsewhere on your network
   #             (see endpoint, stt-model, tts-model below).
   engine: embedded
   models-dir: models             # Under the data directory
-  # Where the model files are fetched from. A mirror that keeps the same
+  # Where /jarvis voice download fetches the model files from. A mirror that keeps the same
   # paths (ggerganov/whisper.cpp/..., rhasspy/piper-voices/...) can stand in
   # for a server whose outbound traffic is filtered; or fetch the three files
   # elsewhere and drop them in models-dir (the log names them and their URLs).
@@ -491,6 +604,25 @@ natural-language:
   require-prefix: false          # Must start with prefix
   cooldown-ms: 2000              # Millisecond cooldown between commands
 
+# Plain orders ("follow me", "stop", "guard", "mine 10 iron", "chop 5 trees")
+# are understood locally and run at once, with no AI call. Questions, "if",
+# "and", "then" and anything else unusual still go to the model. Never runs
+# console commands, permission changes or gamerules.
+intent:
+  fast-path:
+    enabled: true          # Parse simple commands locally before asking the AI
+    log-hits: false        # Log "[fast-path] follow" lines to see what it catches
+    extra-phrases:         # Your own aliases, phrase -> action. Targets must be Jarvis's own
+                           # actions (follow, guard, stop, mine, take_home, ...); anything else,
+                           # such as heal or give_item, is ignored with a warning in the log.
+      "heel": follow
+      "chill": stand_down
+  thinking-feedback:       # While a sentence is with the AI (not for fast-path hits)
+    enabled: true          # Show that Jarvis is working on an answer
+    action-bar: true       # "Jarvis is thinking..." above the hotbar, dots cycling
+    animate: true          # He turns to face you and swings an arm every few seconds
+    text: "Jarvis is thinking"   # Words shown before the cycling dots
+
 # ========== DATABASE CONFIGURATION ==========
 databases:
   file: databases.yml            # Database configuration file
@@ -545,6 +677,20 @@ dev:
   debug-mode: false              # Extra debug logging
   test-mode: false               # Skip some validations
   log-api-calls: false           # Log all API calls
+  # /jarvis say-as <player> <text> from the server console: the player "says" the
+  # text to Jarvis, and his replies are copied to the server log. For driving a
+  # test server from tools (tools/jarvis-mcp over RCON). Leave off on a real server:
+  # anyone with console or RCON access could speak as any online player.
+  allow-say-as: false
+
+# ========== BUTLER (v0.18.0) ==========
+butler:
+  # An order with nobody summoned brings him: /jarvis mine, "Jarvis, chop
+  # some trees", a schematic paste or a bell-menu button just works. He
+  # appears beside you, says "On my way, sir." and starts the job; if he is
+  # out in another world he comes over first. false: jobs answer "Summon me
+  # first" until you /jarvis summon, as before 0.18.0.
+  auto-summon: true
 
 # ========== DEFENDER (v0.4.0) ==========
 defender:
@@ -600,6 +746,25 @@ steward:
   recovery:
     auto: false                  # true = fetch death drops without being asked
     max-distance: 192.0          # How far he'll travel for a recovery run
+
+# ========== ONBOARDING (FB-11) ==========
+# A player's first join, handled once: the controller bell, two written lines
+# (no model call) and an offer of a short tutorial. "First" means Jarvis has
+# no record of welcoming them (the onboarding_state table), so wiping player
+# data doesn't welcome everyone again. /jarvis tutorial reset <player> forgets one.
+onboarding:
+  welcome:
+    enabled: true
+    give-bell: true            # Hand the controller bell on a player's first join
+    offer-tutorial: true       # Ask once; /jarvis tutorial always works regardless
+    existing-players: false    # Also welcome players who were here before this version (they get a quiet row otherwise)
+  tutorial:
+    enabled: true              # /jarvis tutorial, and the Tutorial button on the bell
+    reminder-minutes: 10       # One nudge per step if they wander off; 0 = none
+  # Admins who join while no AI provider can answer get one line with three
+  # buttons (free local Ollama, a free Gemini key, Jarvis Cloud). Once per
+  # restart per admin, only while nothing works. never = say nothing.
+  admin-nag: once-per-restart
 
 # ========== NETHER PORTALS (v0.16.0) ==========
 # Three separate things, and only the first one costs anything:

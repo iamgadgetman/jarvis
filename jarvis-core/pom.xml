@@ -6,7 +6,7 @@
     <parent>
         <groupId>com.gadgetman</groupId>
         <artifactId>jarvis-parent</artifactId>
-        <version>0.17.0</version>
+        <version>0.18.0</version>
     </parent>
 
     <artifactId>jarvis-core</artifactId>
@@ -55,6 +55,20 @@
             <artifactId>polyglot</artifactId>
             <version>${graaljs.version}</version>
             <scope>provided</scope>
+        </dependency>
+        <!-- The engine itself, so tests can run real build scripts through
+             the planner. Servers get it from the library loader instead. -->
+        <dependency>
+            <groupId>org.graalvm.js</groupId>
+            <artifactId>js-language</artifactId>
+            <version>${graaljs.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.truffle</groupId>
+            <artifactId>truffle-runtime</artifactId>
+            <version>${graaljs.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>

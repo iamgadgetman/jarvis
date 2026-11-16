@@ -9,6 +9,7 @@ import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Subscription;
 import com.gadgetman.jarvis.core.platform.events.ButlerInteractEvent;
 import com.gadgetman.jarvis.core.platform.events.ItemUseEvent;
+import com.gadgetman.jarvis.onboarding.Milestone;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.core.ui.Menu;
 import com.gadgetman.jarvis.core.ui.MenuClick;
@@ -63,12 +64,14 @@ public class Menus {
             if (!mayUseMenu(e.who())) return;
             platform.ui().open(e.who(), main(e.who()));
             e.who().sound(Ids.SOUND_BLOCK_BELL_USE, 1f, 1f);
+            core.milestones().reached(e.who(), Milestone.BELL);
         }));
         subscriptions.add(platform.events().on(ButlerInteractEvent.class, e -> {
             if (!e.ownerId().equals(e.clicker().id())) return;
             e.cancel().accept(true);
             if (!mayUseMenu(e.clicker())) return;
             platform.ui().open(e.clicker(), main(e.clicker()));
+            core.milestones().reached(e.clicker(), Milestone.BELL);
         }));
     }
 
@@ -145,6 +148,7 @@ public class Menus {
     public void openMainMenu(Owner p) {
         if (!mayUseMenu(p)) return;
         platform.ui().open(p, main(p));
+        core.milestones().reached(p, Milestone.BELL);
     }
 
     private void open(Owner p, Menu menu) {
@@ -241,7 +245,8 @@ public class Menus {
         // Row 5 — status, and it is clickable when there is something to stop
         String task = npc.describeCurrentTask(p.id());
         if (!summoned) {
-            m.label(40, item(Ids.GRAY_DYE, Colors.GRAY + "Not summoned", Colors.DARK_GRAY + "Summon him to begin"));
+            m.label(40, item(Ids.GRAY_DYE, Colors.GRAY + "Not summoned", Colors.DARK_GRAY
+                    + (npc.autoSummon() ? "Pick a task and he'll come" : "Summon him to begin")));
         } else if (task != null) {
             m.put(40, item(Ids.LIME_DYE, Colors.GREEN + task, Colors.GRAY + "Click to stop"),
                     c -> { if (npc.describeCurrentTask(p.id()) != null) { npc.stop(p); close(p); } });
@@ -253,9 +258,25 @@ public class Menus {
             m.put(45, item(Ids.COMMAND_BLOCK, Colors.DARK_RED + "Admin", Colors.GRAY + "Requests, reload, AI health"),
                     c -> { if (p.hasPermission("jarvis.admin")) open(p, admin(p)); });
         }
+        // FB-11: the tutorial sits on the front page until it's done, then
+        // moves to the Steward page.
+        if (tutorialOffered() && !core.tutorial().isDone(p)) {
+            m.put(49, tutorialButton(p), c -> run(p, "tutorial"));
+        }
         m.put(53, item(Ids.OAK_DOOR, Colors.WHITE + "Close"), c -> close(p));
 
         return m.build();
+    }
+
+    private boolean tutorialOffered() {
+        return core.tutorial() != null && cfg().getBoolean("onboarding.tutorial.enabled", true);
+    }
+
+    private Item tutorialButton(Owner p) {
+        boolean running = core.tutorial().current(p) != null;
+        return item(Ids.WRITABLE_BOOK, Colors.GREEN + "Tutorial",
+                Colors.GRAY + (running ? "Repeat the current step" : "Five minutes: the bell, talking, chests, mining"),
+                Colors.DARK_GRAY + "/jarvis tutorial");
     }
 
     // ==================== MINING ====================
@@ -413,6 +434,18 @@ public class Menus {
                 c -> run(p, "schematic", "scan"));
         m.put(12, item(Ids.BARRIER, Colors.RED + "Cancel build", Colors.GRAY + "Stop the build in progress"),
                 c -> run(p, "cancelbuild"));
+        var undo = core.undo();
+        int undoable = undo == null ? 0 : undo.historySize(p);
+        if (undo != null && undo.isEnabled() && undoable > 0) {
+            var last = undo.historyOf(p).get(0);
+            m.put(14, item(Ids.CLOCK, Colors.YELLOW + "Undo last build",
+                    Colors.GRAY + "Put back " + last.label(),
+                    Colors.DARK_GRAY + last.size() + " blocks; " + undoable + " in the history"),
+                    c -> run(p, "undo"));
+        } else {
+            m.label(14, unavailable("Undo last build",
+                    undo != null && !undo.isEnabled() ? "Undo is off in config" : "Nothing he built to undo"));
+        }
         m.put(13, item(Ids.WRITABLE_BOOK, Colors.GREEN + "Custom build",
                 Colors.GRAY + "Describe it in chat and he plans it", Colors.DARK_GRAY + "Same as /jarvis build <description>"),
                 c -> askInChat(p, "What shall I build, sir? Describe it in a line.", description -> {
@@ -518,6 +551,10 @@ public class Menus {
                 c -> run(p, "ai"));
         m.put(14, item(Ids.NAME_TAG, Colors.WHITE + "Version", Colors.GRAY + "What is actually running"),
                 c -> run(p, "version"));
+        m.put(15, cloudButton(), c -> open(p, cloud(p, who -> open(who, steward(who)))));
+        if (tutorialOffered() && core.tutorial().isDone(p)) {
+            m.put(16, tutorialButton(p), c -> run(p, "tutorial", "start"));
+        }
 
         m.put(31, back(), c -> open(p, main(p)));
         return m.build();
@@ -659,10 +696,16 @@ public class Menus {
                 c -> { if (p.hasPermission("jarvis.admin")) { v.setEnabled(!v.enabled()); open(p, voiceSetup(p)); } });
         boolean embedded = v.engine().equals("embedded");
         m.put(11, item(embedded ? Ids.NOTE_BLOCK : Ids.COMPASS, Colors.AQUA + "Engine: " + v.engine(),
-                        Colors.GRAY + (embedded ? "Whisper and Piper inside the server; models fetched on first use"
+                        Colors.GRAY + (embedded ? "Whisper and Piper inside the server; needs its models installed"
                                 : "A speech server on your network"),
                         Colors.DARK_GRAY + "Click to switch to " + (embedded ? "server" : "embedded")),
                 c -> { if (p.hasPermission("jarvis.admin")) { v.setEngine(embedded ? "server" : "embedded"); open(p, voiceSetup(p)); } });
+        if (embedded) {
+            m.put(14, item(Ids.CHEST, Colors.AQUA + "Speech models",
+                            Colors.GRAY + "Listening and speaking models, " + com.gadgetman.jarvis.voice.SpeechModels.DEFAULT_SIZE,
+                            Colors.DARK_GRAY + "Click to see what is fetched, and from where"),
+                    c -> { if (p.hasPermission("jarvis.admin")) run(p, "voice", "download"); });
+        }
         if (!embedded) {
             m.put(14, item(Ids.COMPASS, Colors.AQUA + "Speech server", Colors.WHITE + v.endpoint(),
                             Colors.GRAY + "Where transcription and his voice come from", Colors.DARK_GRAY + "Click to type a new address"),
@@ -757,8 +800,19 @@ public class Menus {
                 }
             });
         }
+        m.put(15, cloudButton(), c -> open(p, cloud(p, who -> open(who, aiSetup(who)))));
         m.put(16, item(Ids.BOOK, Colors.WHITE + "Routing status", Colors.GRAY + "Light and heavy routes, in chat"),
                 c -> run(p, "ai"));
+        // FB-11: the three free ways to get an AI answering, as on an admin's join line.
+        m.put(19, item(Ids.CAMPFIRE, Colors.GREEN + "Use a free local model",
+                Colors.GRAY + "Ollama on your own machine", Colors.DARK_GRAY + "/jarvis setup ollama"),
+                c -> run(p, "setup", "ollama"));
+        m.put(20, item(Ids.AMETHYST_SHARD, Colors.AQUA + "Use a free Gemini key",
+                Colors.GRAY + "Where to get it and where it goes", Colors.DARK_GRAY + "/jarvis setup gemini"),
+                c -> run(p, "setup", "gemini"));
+        m.put(21, item(Ids.SPYGLASS, Colors.WHITE + "Check providers",
+                Colors.GRAY + "Which can answer right now", Colors.DARK_GRAY + "/jarvis setup"),
+                c -> run(p, "setup"));
         m.put(22, backTo("the admin page"), c -> open(p, admin(p)));
         return m.build();
     }
@@ -794,7 +848,7 @@ public class Menus {
                     }));
         } else {
             m.put(11, item(Ids.COMPASS, Colors.YELLOW + "Server: " + Colors.WHITE + s.endpoint(provider),
-                    Colors.GRAY + "Click, then type the address in chat.", Colors.DARK_GRAY + "For example http://10.0.0.5:11434"),
+                    Colors.GRAY + "Click, then type the address in chat.", Colors.DARK_GRAY + "For example http://192.0.2.10:11434"),
                     c -> askInChat(p, "Where is the Ollama server? (Currently " + s.endpoint(provider) + ".)", url -> {
                         if (!s.setEndpoint(provider, url)) {
                             p.message(Colors.RED + "Jarvis: An address starts with http:// or https://, sir. Left as it was.");
@@ -831,6 +885,86 @@ public class Menus {
                 });
 
         m.put(22, backTo("the providers"), c -> open(p, aiSetup(p)));
+        return m.build();
+    }
+
+    // ==================== JARVIS CLOUD ====================
+
+    /**
+     * Jarvis Cloud: where it stands, and the two commands. Reached from the
+     * Steward page as well as AI setup, because in single-player the owner
+     * may not have cheats on and so never sees the admin page.
+     *
+     * <p>{@code back} is the page it was opened from.
+     */
+    private Item cloudButton() {
+        boolean active = core.cloud() != null && core.cloud().isActive();
+        return item(Ids.BEACON, Colors.AQUA + "Jarvis Cloud",
+                Colors.GRAY + (active ? "Active: plan and usage" : "Hosted AI: activate with a link"));
+    }
+
+    private Menu cloud(Owner p, Consumer<Owner> back) {
+        Builder m = new Builder("Jarvis — Cloud", 3);
+        var cloud = core.cloud();
+        boolean active = cloud.isActive();
+        boolean waiting = cloud.isWaiting();
+        boolean mayActivate = p.hasPermission("jarvis.admin") || platform.singleplayer();
+
+        if (active) {
+            m.label(4, item(Ids.BEACON, Colors.GREEN + "Jarvis Cloud is active",
+                    Colors.GRAY + "Claude, through Jarvis Cloud", Colors.DARK_GRAY + cloud.baseUrl()));
+        } else if (waiting) {
+            m.label(4, item(Ids.CLOCK, Colors.YELLOW + "Waiting for approval",
+                    Colors.GRAY + "Click the link in chat to finish", Colors.DARK_GRAY + "It lasts 15 minutes"));
+        } else {
+            m.label(4, item(Ids.GRAY_DYE, Colors.GRAY + "Jarvis Cloud is not active",
+                    Colors.GRAY + "Hosted AI with no key to copy", Colors.DARK_GRAY + cloud.baseUrl()));
+        }
+
+        if (active) {
+            m.label(11, unavailable("Activate", "Already active here"));
+            m.label(12, unavailable("Activate with a name", "Already active here"));
+        } else if (waiting) {
+            m.label(11, unavailable("Activate", "A link is already waiting in chat"));
+            m.label(12, unavailable("Activate with a name", "A link is already waiting in chat"));
+        } else if (!mayActivate) {
+            m.label(11, unavailable("Activate", "Only an admin can turn it on"));
+            m.label(12, unavailable("Activate with a name", "Only an admin can turn it on"));
+        } else {
+            m.put(11, item(Ids.NETHER_STAR, Colors.GREEN + "Activate",
+                            Colors.GRAY + "Jarvis posts a link in chat;", Colors.GRAY + "approve it in your browser"),
+                    c -> run(p, "cloud", "activate"));
+            m.put(12, item(Ids.NAME_TAG, Colors.AQUA + "Activate with a name",
+                            Colors.GRAY + "Label this server first,", Colors.GRAY + "so you know it on the approval page"),
+                    c -> askInChat(p, "What shall I call this server on the approval page?",
+                            name -> run(p, "cloud", "activate", name)));
+        }
+        if (!active) {
+            m.put(13, item(Ids.EMERALD, Colors.GREEN + "See the plans",
+                            Colors.GRAY + "Prices and limits, in your browser"),
+                    c -> run(p, "cloud", "upgrade"));
+        } else if (mayActivate) {
+            m.put(13, item(Ids.EMERALD, Colors.GREEN + "Plans & upgrade",
+                            Colors.GRAY + "Buy a plan or manage billing,", Colors.GRAY + "for this server, in your browser"),
+                    c -> run(p, "cloud", "upgrade"));
+        } else {
+            m.label(13, unavailable("Plans & upgrade", "Only an admin can buy a plan"));
+        }
+        m.put(14, item(Ids.BOOK, Colors.WHITE + "Plan & usage",
+                        Colors.GRAY + "Plan, requests this month, trial end"),
+                c -> run(p, "cloud", "status"));
+        if (active && p.hasPermission("jarvis.admin")) {
+            m.put(15, item(Ids.AMETHYST_SHARD, Colors.LIGHT_PURPLE + "Test Claude",
+                            Colors.GRAY + "One small request through Jarvis Cloud"),
+                    c -> {
+                        AiSettings s = core.aiSettings();
+                        p.message(Colors.GRAY + "Jarvis: Trying Claude through Jarvis Cloud...");
+                        s.test("claude", verdict -> p.message(
+                                (verdict.startsWith("failed") ? Colors.RED : Colors.GREEN) + "Jarvis: Claude " + verdict));
+                    });
+        }
+
+        m.put(22, backTo("the previous page"), c -> back.accept(p));
         return m.build();
     }
 

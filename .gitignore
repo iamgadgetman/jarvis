@@ -89,3 +89,7 @@ jarvis-neoforge/installer.out
 # Python bytecode from running the release scripts' tests
 __pycache__/
 *.pyc
+
+# tools/jarvis-mcp (developer tool, FB-10)
+tools/jarvis-mcp/node_modules/
+tools/jarvis-mcp/dist/

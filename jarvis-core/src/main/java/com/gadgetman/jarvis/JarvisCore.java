@@ -1,8 +1,14 @@
 package com.gadgetman.jarvis;
 
 import com.gadgetman.jarvis.ai.AIConnector;
+import com.gadgetman.jarvis.ai.ServerKnowledge;
+import com.gadgetman.jarvis.ai.WorldContext;
 import com.gadgetman.jarvis.ai.AiSettings;
+import com.gadgetman.jarvis.ai.CloudActivation;
+import com.gadgetman.jarvis.ai.InstallId;
+import com.gadgetman.jarvis.ai.ProviderProbe;
 import com.gadgetman.jarvis.building.BuildingAssistant;
+import com.gadgetman.jarvis.building.UndoService;
 import com.gadgetman.jarvis.commands.ActionExecutor;
 import com.gadgetman.jarvis.commands.CommandService;
 import com.gadgetman.jarvis.commands.CommandSink;
@@ -14,12 +20,19 @@ import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Subscription;
 import com.gadgetman.jarvis.core.platform.Task;
+import com.gadgetman.jarvis.core.platform.events.DeathEvent;
+import com.gadgetman.jarvis.core.platform.events.PortalEvent;
 import com.gadgetman.jarvis.core.platform.events.QuitEvent;
 import com.gadgetman.jarvis.core.text.Colors;
 import com.gadgetman.jarvis.intent.ChatTrigger;
 import com.gadgetman.jarvis.intent.IntentPipeline;
+import com.gadgetman.jarvis.memory.ConversationMemory;
 import com.gadgetman.jarvis.memory.ExperienceMemory;
 import com.gadgetman.jarvis.npc.ButlerService;
+import com.gadgetman.jarvis.onboarding.Milestones;
+import com.gadgetman.jarvis.onboarding.OnboardingStore;
+import com.gadgetman.jarvis.onboarding.Tutorial;
+import com.gadgetman.jarvis.onboarding.Welcome;
 import com.gadgetman.jarvis.npc.portal.PortalScout;
 import com.gadgetman.jarvis.progression.ProgressionManager;
 import com.gadgetman.jarvis.recovery.TaskRecoveryHandler;
@@ -36,6 +49,7 @@ import com.gadgetman.jarvis.ui.TaskMonitor;
 import com.gadgetman.jarvis.voice.VoiceConfig;
 import com.gadgetman.jarvis.voice.VoiceStatus;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -58,12 +72,17 @@ public final class JarvisCore {
     private final Log log;
 
     private AIConnector ai;
+    /** Server facts from knowledge.yml; swapped whole on reload, read from the async AI call. */
+    private volatile ServerKnowledge knowledge = ServerKnowledge.EMPTY;
     private DatabaseManager database;
     private ExperienceMemory memory;
+    private ConversationMemory conversation;
+    private com.gadgetman.jarvis.commands.BundleRegistry bundles;
     private TaskRecoveryHandler recovery;
     private ButlerService butlers;
     private ProgressionManager progression;
     private BuildingAssistant building;
+    private UndoService undo;
     private SchematicLibrary schematics;
     private SchematicExtras schematicExtras = SchematicExtras.NONE;
     private VoiceStatus voiceStatus = VoiceStatus.NONE;
@@ -78,11 +97,18 @@ public final class JarvisCore {
     private IntentPipeline intents;
     private Prompts prompts;
     private AiSettings aiSettings;
+    private String installId;
+    private CloudActivation cloud;
     private ChatTrigger chatTrigger;
     private Courtesies courtesies;
     private TaskMonitor taskMonitor;
     private Menus menus;
     private CommandService commands;
+    private final Milestones milestones = new Milestones();
+    private Tutorial tutorial;
+    private Welcome welcome;
+    /** Whether an AI can answer, for onboarding: TRUE, FALSE, or null before the first probe. */
+    private java.util.function.Supplier<Boolean> aiCheck = this::aiUsableFromProbe;
 
     private final List<Subscription> subscriptions = new ArrayList<>();
     private final List<Task> tasks = new ArrayList<>();
@@ -103,14 +129,37 @@ public final class JarvisCore {
         Config config = platform.config();
 
         ai = new AIConnector(config, log);
+        loadKnowledge();
+        installId = InstallId.load(platform.dataDir(), log);
+        ai.setInstallId(installId);
 
         database = new DatabaseManager(config, log, platform.dataDir());
         database.initializeDatabaseConnections();
 
         memory = new ExperienceMemory(config, log, platform.scheduler(), database);
+
+        // What he remembers of each player (FB-04): condensed conversation and
+        // notable events. All database work is off the server thread.
+        conversation = new ConversationMemory(platform, database, ai::summarizeConversation);
+        subscriptions.add(platform.events().on(DeathEvent.class, e -> {
+            if (!conversation.recordsEvents()) return;
+            String line = ConversationMemory.deathLine(e.message(), e.where());
+            platform.scheduler().async(() -> conversation.recordEvent(e.who().id(), line));
+        }));
+        subscriptions.add(platform.events().on(PortalEvent.class, e -> {
+            if (!conversation.recordsEvents()) return;
+            String line = ConversationMemory.portalLine(e.from(), e.to());
+            platform.scheduler().async(() -> conversation.recordEvent(e.who().id(), line));
+        }));
+        platform.scheduler().async(() -> conversation.prune(System.currentTimeMillis()));
+        tasks.add(platform.scheduler().every(1_728_000L, 1_728_000L,   // daily
+                self -> platform.scheduler().async(() -> conversation.prune(System.currentTimeMillis()))));
+        // Reward bundles (FB-08): admin-written command lists, triggered by name.
+        bundles = new com.gadgetman.jarvis.commands.BundleRegistry(platform, database, System::currentTimeMillis);
         recovery = new TaskRecoveryHandler(config, log, platform.scheduler(), ai);
 
         butlers = new ButlerService(platform, butlerBackend, recovery);
+        butlers.setMilestones(milestones);   // FB-11: the tutorial watches what he's asked to do
         log.info("NPC system initialized on " + butlerBackend.name() + ".");
 
         // Service record — created before anything can issue him a tool.
@@ -118,10 +167,14 @@ public final class JarvisCore {
         progression.attach(butlers);
         butlers.setProgression(progression);
 
-        building = new BuildingAssistant(platform, butlers, ai, memory, database, progression);
-        schematics = new SchematicLibrary(platform, butlers);
+        // One undo for everything he builds; the builders all record into it.
+        undo = new UndoService(platform, database, memory);
+        undo.setMilestones(milestones);
+        building = new BuildingAssistant(platform, butlers, ai, memory, database, progression, undo);
+        schematics = new SchematicLibrary(platform, butlers, undo);
         requestDecomposer = new RequestDecomposer(config, log, ai, database);
         confirmations = new ConfirmationManager(config.getLong("confirmation-timeout-seconds", 30));
+        building.setConfirmations(confirmations);   // FB-07: build previews wait on Confirm/Cancel
         requests = new PlayerRequestManager();
         duties = new DutyScheduler(platform);
         morningReport = new MorningReport(platform, butlers, requests, duties);
@@ -141,6 +194,26 @@ public final class JarvisCore {
         intents = new IntentPipeline(this);
         prompts = new Prompts(platform);
         aiSettings = new AiSettings(platform, ai);
+        cloud = new CloudActivation(platform, aiSettings, installId, new CloudActivation.HttpApi());
+
+        // FB-09: say on boot which AI providers can answer; if none, how to get one.
+        probeProviders(statuses -> {
+            log.info(ProviderProbe.statusLine(statuses));
+            if (ProviderProbe.usable(statuses).isEmpty()) {
+                for (String line : ProviderProbe.noProviderBox(platform.config().getString("ai.ollama.model", "mistral"))) log.warn(line);
+            }
+        });
+        // FB-11: first-join welcome, the tutorial, and the admin's "no AI yet" buttons
+        // (which replace FB-09's one-line join notice).
+        OnboardingStore onboardingStore = new OnboardingStore(database, log);
+        java.util.function.BiConsumer<Owner, String> speak = (who, line) -> voiceStatus.speak(who, line);
+        tutorial = new Tutorial(platform, onboardingStore, milestones,
+                () -> !Boolean.FALSE.equals(aiCheck.get()),
+                () -> config.getBoolean("build.enable-undo", true),
+                who -> butlers.isSpawned(who), speak, System::currentTimeMillis);
+        tutorial.start();
+        welcome = new Welcome(platform, onboardingStore, tutorial, () -> aiCheck.get(), speak, System::currentTimeMillis);
+        welcome.start();
         chatTrigger = new ChatTrigger(platform, intents, prompts);
         chatTrigger.start();
         courtesies = new Courtesies(platform, ai);
@@ -180,14 +253,48 @@ public final class JarvisCore {
         }));
     }
 
+    /** The last provider probe (FB-09), or null before the first one finishes. */
+    private volatile List<ProviderProbe.Status> providerStatus;
+
+    /**
+     * Check which AI providers can answer, off the server thread; the result
+     * comes back on it, and is kept for the op's join line.
+     */
+    public void probeProviders(java.util.function.Consumer<List<ProviderProbe.Status>> then) {
+        ProviderProbe probe = ProviderProbe.of(platform.config(), ai, aiSettings.enabled());
+        platform.scheduler().async(probe::run, statuses -> {
+            providerStatus = statuses;
+            if (then != null) then.accept(statuses);
+        });
+    }
+
+    public List<ProviderProbe.Status> providerStatus() { return providerStatus; }
+
+    private Boolean aiUsableFromProbe() {
+        List<ProviderProbe.Status> last = providerStatus;
+        return last == null ? null : !ProviderProbe.usable(last).isEmpty();
+    }
+
+    /**
+     * Replace how onboarding decides whether an AI can answer (TRUE, FALSE,
+     * or null for "not known yet"). Tests use it; the default reads the last
+     * provider probe.
+     */
+    public void setAiCheck(java.util.function.Supplier<Boolean> check) {
+        this.aiCheck = check == null ? this::aiUsableFromProbe : check;
+    }
+
     /** Stop everything, in the reverse of the order it started. */
     public void shutdown() {
+        if (cloud != null) cloud.stop();
         tasks.forEach(Task::cancel);
         tasks.clear();
         subscriptions.forEach(Subscription::cancel);
         subscriptions.clear();
         if (progression != null) progression.saveAll();
         if (menus != null) menus.shutdown();
+        if (welcome != null) welcome.shutdown();
+        if (tutorial != null) tutorial.shutdown();
         if (taskMonitor != null) taskMonitor.shutdown();
         if (courtesies != null) courtesies.shutdown();
         if (chatTrigger != null) chatTrigger.shutdown();
@@ -199,6 +306,7 @@ public final class JarvisCore {
             butlers.dismissAll();
         }
         if (building != null) building.shutdown();
+        if (undo != null) undo.flush();   // its queued writes, before the database goes
         if (database != null) database.closeDatabases();
         log.info("Jarvis AI Companion v" + version + " disabled.");
     }
@@ -207,12 +315,16 @@ public final class JarvisCore {
     public void reload() {
         platform.config().reload();
         if (ai != null) ai.reloadConfig();
+        loadKnowledge();
         if (memory != null) memory.reload();
+        if (conversation != null) conversation.reload();
+        if (bundles != null) bundles.reload(platform.config());
         if (recovery != null) recovery.reload();
         if (requestDecomposer != null) requestDecomposer.reload();
         if (remarks != null) remarks.reload();
         if (portalScout != null) portalScout.reload();
         voiceStatus.settingsChanged();
+        if (aiSettings != null) probeProviders(statuses -> log.info(ProviderProbe.statusLine(statuses)));
         log.info("Jarvis v" + version + " reloaded!");
     }
 
@@ -236,16 +348,39 @@ public final class JarvisCore {
     public Platform platform() { return platform; }
     public String version() { return version; }
     public AIConnector ai() { return ai; }
+
+    /** Admin-written server facts from knowledge.yml (FB-03); empty when there is none. */
+    public ServerKnowledge knowledge() { return knowledge; }
+
+    /** (Re)read knowledge.yml from the data folder; called at start and on /jarvis reload. */
+    private void loadKnowledge() {
+        String name = WorldContext.Settings.from(platform.config()).knowledgeFile();
+        Path dir = platform.dataDir();
+        Path file = dir.resolve(name).normalize();
+        if (!file.startsWith(dir.normalize())) {
+            log.warn("ai.context.knowledge-file must stay inside the Jarvis folder; ignoring " + name);
+            knowledge = ServerKnowledge.EMPTY;
+            return;
+        }
+        knowledge = ServerKnowledge.load(file, log);
+        if (!knowledge.isEmpty()) {
+            log.info("Server knowledge: " + knowledge.facts().size() + " facts, "
+                    + knowledge.locations().size() + " locations from " + name);
+        }
+    }
     public DatabaseManager database() { return database; }
     public ExperienceMemory memory() { return memory; }
     public TaskRecoveryHandler recovery() { return recovery; }
     public ButlerService butlers() { return butlers; }
     public ProgressionManager progression() { return progression; }
     public BuildingAssistant building() { return building; }
+    public UndoService undo() { return undo; }
     public SchematicLibrary schematics() { return schematics; }
     public RequestDecomposer requestDecomposer() { return requestDecomposer; }
     public ActionExecutor actions() { return actions; }
     public ConfirmationManager confirmations() { return confirmations; }
+    public ConversationMemory conversation() { return conversation; }
+    public com.gadgetman.jarvis.commands.BundleRegistry bundles() { return bundles; }
     public PlayerRequestManager requests() { return requests; }
     public DutyScheduler duties() { return duties; }
     public MorningReport morningReport() { return morningReport; }
@@ -256,8 +391,14 @@ public final class JarvisCore {
     public Prompts prompts() { return prompts; }
     /** The AI providers as an operator sets them up. */
     public AiSettings aiSettings() { return aiSettings; }
+    /** Jarvis Cloud activation and status ({@code /jarvis cloud}). */
+    public CloudActivation cloud() { return cloud; }
+    /** This install's random ID (see {@link InstallId}). */
+    public String installId() { return installId; }
     public TaskMonitor taskMonitor() { return taskMonitor; }
     public Menus menus() { return menus; }
+    public Milestones milestones() { return milestones; }
+    public Tutorial tutorial() { return tutorial; }
     public CommandSink commands() { return commands; }
 
     public void saveClipboard(Owner player, String name) {

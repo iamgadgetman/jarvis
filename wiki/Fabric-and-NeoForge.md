@@ -31,6 +31,10 @@ real entity that the game and other mods treat as a player. He is dressed in
 the skin of the Mojang account named Jarvis, the same skin Citizens fetches on
 Paper.
 
+He is not counted as one of the people on the server, though. He never needs
+to sleep for the night to pass, and he is left out of the tab list, `/list`,
+and the player count in the multiplayer server list.
+
 He walks on Jarvis's own A\* pathfinder rather than Citizens', opens doors,
 swims, climbs ladders, and breaks blocks at tool speed through the game's own
 game-mode code — so a protection mod sees an ordinary player breaking an

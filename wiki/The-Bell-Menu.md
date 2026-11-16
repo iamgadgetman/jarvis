@@ -13,13 +13,14 @@ The top rows are the things you do constantly:
 
 | | |
 |---|---|
-| **Summon** / **Dismiss** | Bring him out, send him away. Dismissing keeps his items |
+| **Summon** / **Dismiss** | Bring him out, send him away. Dismissing keeps his items. Summoning first is optional: any task button brings him |
 | **Come here** | Recall him to you |
 | **Follow** | Stay close and carry loot |
 | **Stop** | Halt whatever he is doing |
 | **Loot** | Open what he has collected |
 | **Deposit** / **Set deposit chest** | Deliver to your chest, or register the chest you are looking at |
 | **Clear loot** | Drop everything he carries, asks first |
+| **Tutorial** | Start or repeat the current step of the tutorial (`/jarvis tutorial`). Shown until you finish it; then it moves to the Steward page |
 
 The rest of the page opens the sub-pages:
 
@@ -28,9 +29,9 @@ The rest of the page opens the sub-pages:
 | **Mining** | Ores, branch mines, shafts |
 | **Combat & Guard** | Stances, night watch, patrol |
 | **Groundskeeping** | Farm, chop, fish, light the place |
-| **Building** | Custom build, and the schematic library |
+| **Building** | Custom build, the schematic library, and **Undo last build** |
 | **Household** | Home, escort, death drops |
-| **Steward** | Briefing, standing duties, AI status, version |
+| **Steward** | Briefing, standing duties, AI status, version, Jarvis Cloud, and **Tutorial** once you have finished it |
 | **Service record** | His rank, what he has earned, what is next. Shown only while progression is on |
 | **Settings** | Torches, pickup range, returns |
 | **Admin** | Only for admins — see below |
@@ -67,7 +68,10 @@ Visible only with `jarvis.admin`, or to operators on the mods.
 left-click opens its page, where you set the key or address, pick the model
 (chosen from what your Ollama server actually offers, or typed), and run a
 test that goes past the routing to the provider itself. Keys typed here are
-captured from chat without being shown or logged.
+captured from chat without being shown or logged. Below them are the quick
+starts: **Use a free local model** (`/jarvis setup ollama`), **Use a free
+Gemini key** (`/jarvis setup gemini`), **Jarvis Cloud**, and **Check
+providers** (`/jarvis setup`).
 
 **Voice setup** carries the engine (embedded or a speech server), the gate,
 whether he speaks his replies, a timing benchmark and a full status report.

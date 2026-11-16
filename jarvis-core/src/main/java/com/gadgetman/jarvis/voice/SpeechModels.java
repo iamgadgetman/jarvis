@@ -16,12 +16,14 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * The model files the embedded engine needs, and fetching them the first
- * time voice is turned on: a whisper.cpp model for listening (about 150 MB
- * for {@code base.en}) and a Piper voice for speaking (about 60 MB). They
- * live under the data directory, next to the config, and are fetched once.
- * The same one-time download as the AI models and his skin; nothing here
- * is bundled in the jar, which would make it three times the size.
+ * The model files the embedded engine needs: a whisper.cpp model for
+ * listening (about 150 MB for {@code base.en}) and a Piper voice for speaking
+ * (about 60 MB). They live under the data directory, next to the config.
+ * They are too big to bundle in the jar, and nothing fetches them on its own:
+ * an admin either puts the files there ({@link #manualInstructions}) or runs
+ * {@code /jarvis voice download}, which says what it will fetch and from
+ * where before it starts ({@link #download}). Store rules (Modrinth) don't
+ * allow a plugin to download content after install without being asked.
  */
 public final class SpeechModels {
 
@@ -32,7 +34,7 @@ public final class SpeechModels {
         public String describe() {
             return switch (state) {
                 case READY -> "ready";
-                case MISSING -> "not downloaded yet";
+                case MISSING -> "not installed (an admin can run /jarvis voice download)";
                 case DOWNLOADING -> "downloading, " + percent + "%" + (detail == null ? "" : " (" + detail + ")");
                 case FAILED -> "download failed: " + detail;
             };
@@ -42,6 +44,11 @@ public final class SpeechModels {
     private record Item(String label, String url, Path target) { }
 
     private static final long MIN_MODEL_BYTES = 1L << 20;
+    /** Roughly what {@link #download} fetches with the default model and voice. */
+    public static final String DEFAULT_SIZE = "about 210 MB";
+    /** One download per models folder, whichever instance asked: the command's or the engine's. */
+    private static final java.util.concurrent.ConcurrentHashMap<Path, SpeechModels> ACTIVE =
+            new java.util.concurrent.ConcurrentHashMap<>();
     /** Where both repositories live; a mirror that keeps the same paths can stand in. */
     public static final String DEFAULT_SOURCE = "https://huggingface.co";
 
@@ -137,29 +144,71 @@ public final class SpeechModels {
     }
 
     public Status status() {
+        SpeechModels running = ACTIVE.get(whisperFile);
+        if (running != null && running != this) return running.status;
+        if (status.state() != State.DOWNLOADING && status.state() != State.FAILED) {
+            status = ready() ? new Status(State.READY, 100, null) : new Status(State.MISSING, 0, null);
+        }
         return status;
     }
 
+    /** What {@link #download} would fetch, one line per file: name and URL. */
+    public List<String> plannedFiles() {
+        return items.stream().map(i -> i.target.getFileName() + "  from  " + i.url).toList();
+    }
+
+    /** The host the files come from, e.g. {@code huggingface.co}. */
+    public String sourceHost() {
+        return URI.create(items.get(0).url).getHost();
+    }
+
     /**
-     * Fetch whatever is missing, once, on a thread of its own, then run
-     * {@code onReady} there. A second call while a download runs does
-     * nothing; a call when everything is present runs {@code onReady} at
-     * once on the caller's thread.
+     * Run {@code onReady} on the caller's thread when the files are all here.
+     * When they are not, nothing happens: this never downloads (see
+     * {@link #download}).
      */
     public synchronized void ensure(Runnable onReady) {
         if (ready()) {
             status = new Status(State.READY, 100, null);
             if (onReady != null) onReady.run();
-            return;
+        } else if (status.state() == State.READY) {
+            status = new Status(State.MISSING, 0, null);
         }
-        if (download != null && download.isAlive()) return;
-        status = new Status(State.DOWNLOADING, 0, "starting");
-        download = new Thread(() -> fetchAll(onReady), "jarvis-speech-models");
-        download.setDaemon(true);
-        download.start();
     }
 
-    private void fetchAll(Runnable onReady) {
+    /**
+     * Fetch whatever is missing, on a thread of its own, then run
+     * {@code onReady} there; {@code onFail} gets the reason if it fails. Only
+     * an admin's explicit {@code /jarvis voice download confirm} calls this.
+     *
+     * @return false when the files are already here or a download is running
+     */
+    public synchronized boolean download(Runnable onReady, java.util.function.Consumer<String> onFail) {
+        if (ready()) {
+            status = new Status(State.READY, 100, null);
+            return false;
+        }
+        if (ACTIVE.putIfAbsent(whisperFile, this) != null) return false;
+        status = new Status(State.DOWNLOADING, 0, "starting");
+        download = new Thread(() -> {
+            try {
+                fetchAll(onReady, onFail);
+            } finally {
+                ACTIVE.remove(whisperFile, this);
+            }
+        }, "jarvis-speech-models");
+        download.setDaemon(true);
+        download.start();
+        return true;
+    }
+
+    /** Wait for a running download; for tests. */
+    void join() throws InterruptedException {
+        Thread t = download;
+        if (t != null) t.join();
+    }
+
+    private void fetchAll(Runnable onReady, java.util.function.Consumer<String> onFail) {
         try {
             Files.createDirectories(whisperFile.getParent());
             HttpClient http = HttpClient.newBuilder()
@@ -176,7 +225,8 @@ public final class SpeechModels {
         } catch (Exception e) {
             status = new Status(State.FAILED, 0, e.getMessage() == null ? e.toString() : e.getMessage());
             log.warn("Speech models could not be fetched: " + status.detail()
-                    + ". Jarvis will try again the next time voice is turned on. " + manualInstructions());
+                    + ". Run /jarvis voice download to try again. " + manualInstructions());
+            if (onFail != null) onFail.accept(status.detail());
         }
     }
 

@@ -1,5 +1,6 @@
 package com.gadgetman.jarvis.commands;
 
+import com.gadgetman.jarvis.memory.ConversationMemory;
 import com.gadgetman.jarvis.ConfirmationManager;
 import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.PlayerRequestManager;
@@ -7,6 +8,7 @@ import com.gadgetman.jarvis.ai.AIConnector;
 import com.gadgetman.jarvis.ai.AiSettings;
 import com.gadgetman.jarvis.voice.VoiceConfig;
 import com.gadgetman.jarvis.building.BuildingAssistant;
+import com.gadgetman.jarvis.building.UndoService;
 import com.gadgetman.jarvis.building.ScriptEngineProbe;
 import com.gadgetman.jarvis.core.platform.Audience;
 import com.gadgetman.jarvis.core.platform.Owner;
@@ -42,6 +44,15 @@ import java.util.Set;
  * {@link #jarvis}; this decides what the words mean.
  */
 public class CommandService implements CommandSink {
+
+    /**
+     * Subcommands that take no words after them. Followed by more words, the
+     * input is a sentence for the pipeline ("stop the rain", "follow the river").
+     */
+    static final java.util.Set<String> BARE_SUBCOMMANDS = java.util.Set.of(
+            "summon", "dismiss", "return", "attack", "stop", "follow", "fish", "dance",
+            "chest", "deposit", "loot", "confirm", "cancel", "requests", "quiet", "hush");
+
 
     /** Library match at or above this score answers the request directly. */
     private static final int SCHEMATIC_MATCH_THRESHOLD = 50;
@@ -91,7 +102,9 @@ public class CommandService implements CommandSink {
     private List<String> complete(List<String> args) {
         if (args.size() > 1) {
             List<String> pool;
-            if (args.get(0).equalsIgnoreCase("ai")) {
+            if (args.get(0).equalsIgnoreCase("cloud")) {
+                pool = args.size() == 2 ? List.of("activate", "attach", "status", "upgrade") : List.of();
+            } else if (args.get(0).equalsIgnoreCase("ai")) {
                 pool = args.size() == 2 ? AI_SUBCOMMANDS
                         : args.size() == 3 && !args.get(1).equalsIgnoreCase("status") ? AiSettings.PROVIDERS
                         : List.of();
@@ -99,9 +112,16 @@ public class CommandService implements CommandSink {
                 pool = args.size() == 2 ? VOICE_SUBCOMMANDS
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("gate") ? VoiceConfig.GATES
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("speak") ? List.of("on", "off")
+                        : args.size() == 3 && args.get(1).equalsIgnoreCase("download") ? List.of("confirm")
                         : args.size() == 3 && args.get(1).equalsIgnoreCase("engine") ? VoiceConfig.ENGINES
                         : args.size() == 3 && (args.get(1).equalsIgnoreCase("threads") || args.get(1).equalsIgnoreCase("bench")) ? List.of("0", "2", "4", "8")
                         : List.of();
+            } else if (args.get(0).equalsIgnoreCase("tutorial") && args.size() == 2) {
+                pool = List.of("start", "skip", "later", "stop", "reset");
+            } else if (args.get(0).equalsIgnoreCase("setup") && args.size() == 2) {
+                pool = List.of("ollama", "gemini", "pull");
+            } else if (args.get(0).equalsIgnoreCase("undo") && args.size() == 2) {
+                pool = List.of("list", "2", "3", "5");
             } else {
                 return List.of();
             }
@@ -157,6 +177,66 @@ public class CommandService implements CommandSink {
                 handleAiSetup(sender, args);
                 return;
             }
+            // FB-08: reward bundles. Admins (and the console) list and run them.
+            case "bundle", "bundles" -> {
+                if (!isAdmin(sender, asPlayer)) { sender.message(Colors.RED + "You don't have permission."); return; }
+                handleBundle(sender, asPlayer, args);
+                return;
+            }
+            // FB-09: which AI providers can answer, and how to get one if none can.
+            case "setup" -> {
+                if (!isAdmin(sender, asPlayer) && !platform.singleplayer()) {
+                    sender.message(Colors.RED + "You don't have permission.");
+                    return;
+                }
+                handleSetup(sender, args);
+                return;
+            }
+            // FB-10: a development hook so a tool (tools/jarvis-mcp over RCON) can
+            // talk to Jarvis as a player. Console only, and off unless dev.allow-say-as.
+            case "say-as", "sayas" -> {
+                handleSayAs(sender, asPlayer, args);
+                return;
+            }
+            // Jarvis Cloud. The console, an admin, or the player in a
+            // single-player game (who may not have cheats on) can set it up.
+            case "cloud" -> {
+                String what = args.size() > 1 ? args.get(1).toLowerCase(Locale.ROOT) : "status";
+                if (what.equals("status")) {
+                    core.cloud().status(sender);
+                    return;
+                }
+                boolean mayManage = isAdmin(sender, asPlayer) || platform.singleplayer();
+                // Anyone may see the public price list; a buying link for this
+                // server's license is for whoever may manage it.
+                if ((what.equals("upgrade") || what.equals("plans")) && (mayManage || !core.cloud().isActive())) {
+                    core.cloud().upgrade(sender);
+                    return;
+                }
+                if (!mayManage) {
+                    sender.message(Colors.RED + "You don't have permission.");
+                    return;
+                }
+                if (what.equals("activate")) {
+                    core.cloud().activate(sender, args.size() > 2 ? rest(args, 2) : null);
+                } else if (what.equals("attach")) {
+                    core.cloud().attach(sender, args.size() > 2 ? rest(args, 2) : null);
+                } else {
+                    sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "/jarvis cloud activate [name]"
+                            + Colors.GRAY + " turns on Jarvis Cloud AI; " + Colors.WHITE + "/jarvis cloud status" + Colors.GRAY + " shows the credits; "
+                            + Colors.WHITE + "/jarvis cloud upgrade" + Colors.GRAY + " opens plans, billing and your account; "
+                            + Colors.WHITE + "/jarvis cloud attach <code>" + Colors.GRAY + " adds another server to this one's account.");
+                }
+                return;
+            }
+            // FB-11: an admin (or the console) can make someone's next join a first join.
+            case "tutorial" -> {
+                if (args.size() > 1 && args.get(1).equalsIgnoreCase("reset")) {
+                    handleTutorialReset(sender, asPlayer, args);
+                    return;
+                }
+                // Everything else about the tutorial is the player's own: below.
+            }
             // Console-friendly like reload and debug: an admin dumping training data
             // is far more likely to be at a terminal than standing in the world.
             case "export-dataset", "exportdataset" -> {
@@ -177,6 +257,14 @@ public class CommandService implements CommandSink {
 
         if (args.isEmpty()) {
             showHelp(player);
+            return;
+        }
+
+        // "/jarvis stop the rain" is a sentence, not "/jarvis stop" with the rest
+        // thrown away (FB-15: it stood Jarvis down instead of clearing the weather).
+        if (args.size() > 1 && BARE_SUBCOMMANDS.contains(sub)) {
+            player.message(Colors.GOLD + "Jarvis: Very good, sir. On it...");
+            core.intents().submit(player, String.join(" ", args), IntentPipeline.Source.CONSOLE);
             return;
         }
 
@@ -251,6 +339,7 @@ public class CommandService implements CommandSink {
                             + Colors.RED + " to proceed.");
                 }
             }
+            case "tutorial" -> handleTutorial(player, args);
             case "bell" -> {
                 player.give(ControllerBell.create());
                 player.message(Colors.GREEN + "Your controller bell, sir. Ring when needed.");
@@ -258,6 +347,10 @@ public class CommandService implements CommandSink {
 
             // Building commands - the library first, the AI builder after
             case "build", "paste" -> handleBuild(player, sub, args);
+
+            // One undo for everything he builds: AI builds, shapes, schematics
+            case "undo" -> handleUndo(player, args);
+            case "redo" -> core.undo().redo(player);
 
             case "cancelbuild" -> {
                 if (core.building() == null) {
@@ -307,8 +400,9 @@ public class CommandService implements CommandSink {
                     npc.getEscortService().takeHome(player);
                 }
             }
-            case "confirm"   -> handleConfirm(player);
-            case "cancel"    -> handleCancel(player);
+            case "memory"    -> handleMemory(player, args);
+            case "confirm", "yes" -> handleConfirm(player);   // "yes"/"no" answer a build preview (FB-07)
+            case "cancel", "no"   -> handleCancel(player);
             case "requests"  -> handleRequests(player);
             case "approve", "deny" -> {
                 if (!player.hasPermission("jarvis.admin")) {
@@ -371,6 +465,204 @@ public class CommandService implements CommandSink {
         }
     }
 
+    // ==================== BUNDLES (FB-08) ====================
+
+    /**
+     * /jarvis bundle [list] — the configured bundles.
+     * /jarvis bundle run &lt;name&gt; [player] — run one for a player (yourself if
+     * you leave it out; the console must name one). The once-per-player and
+     * cooldown rules still apply, so this is also how to test them.
+     */
+    private void handleBundle(Audience sender, Optional<Owner> asPlayer, List<String> args) {
+        BundleRegistry reg = core.bundles();
+        if (reg == null) { sender.message(Colors.RED + "Bundles aren't loaded."); return; }
+        String verb = args.size() > 1 ? args.get(1).toLowerCase(Locale.ROOT) : "list";
+        if (verb.equals("list")) {
+            if (reg.all().isEmpty()) {
+                sender.message(Colors.GRAY + "Jarvis: No bundles yet, sir. Add some under bundles: in config.yml.");
+                return;
+            }
+            sender.message(Colors.GOLD + "Jarvis: Reward bundles:");
+            for (BundleRegistry.Bundle b : reg.all().values()) {
+                StringBuilder rules = new StringBuilder();
+                if (b.oncePerPlayer()) rules.append(" · once per player");
+                if (b.cooldownMinutes() > 0) rules.append(" · every ").append(b.cooldownMinutes()).append(" min");
+                if (!b.ai()) rules.append(" · admin only");
+                sender.message(Colors.WHITE + "  " + b.name() + Colors.GRAY
+                        + (b.description().isBlank() ? "" : " - " + b.description())
+                        + " (" + b.commands().size() + " command" + (b.commands().size() == 1 ? "" : "s") + rules + ")");
+            }
+            return;
+        }
+        if (!verb.equals("run") || args.size() < 3) {
+            sender.message(Colors.RED + "Usage: /jarvis bundle list | /jarvis bundle run <name> [player]");
+            return;
+        }
+        Optional<Owner> target = asPlayer;
+        if (args.size() > 3) {
+            String name = args.get(3);
+            target = platform.players().online().stream().filter(o -> o.name().equalsIgnoreCase(name)).findFirst();
+            if (target.isEmpty()) { sender.message(Colors.RED + name + " isn't online."); return; }
+        }
+        if (target.isEmpty()) { sender.message(Colors.RED + "From the console, name the player: /jarvis bundle run <name> <player>"); return; }
+        BundleRegistry.Result r = reg.trigger(target.get(), args.get(2), BundleRegistry.By.ADMIN);
+        sender.message((r.ran() ? Colors.GREEN : Colors.YELLOW) + "Jarvis: " + r.message());
+    }
+
+    // ==================== TUTORIAL (FB-11) ====================
+
+    /** /jarvis tutorial [start|skip|later|stop] — the player's own tutorial. */
+    private void handleTutorial(Owner player, List<String> args) {
+        var tutorial = core.tutorial();
+        String what = args.size() > 1 ? args.get(1).toLowerCase(Locale.ROOT) : "";
+        switch (what) {
+            case "" , "resume", "continue" -> tutorial.resume(player);
+            case "start", "restart" -> tutorial.startOver(player);
+            case "skip", "next" -> tutorial.skip(player);
+            case "later" -> tutorial.later(player);
+            case "stop", "end", "quit" -> tutorial.stop(player);
+            default -> player.message(Colors.RED + "Usage: /jarvis tutorial [start|skip|later|stop]"
+                    + (player.hasPermission("jarvis.tutorial.reset") ? " · /jarvis tutorial reset <player>" : ""));
+        }
+    }
+
+    /** /jarvis tutorial reset [player] — forget their welcome; the next join is a first join. */
+    private void handleTutorialReset(Audience sender, Optional<Owner> asPlayer, List<String> args) {
+        boolean allowed = asPlayer.map(o -> o.hasPermission("jarvis.tutorial.reset") || o.hasPermission("jarvis.admin"))
+                .orElse(true);
+        if (!allowed) { sender.message(Colors.RED + "You don't have permission."); return; }
+        Optional<Owner> target;
+        if (args.size() > 2) {
+            String name = args.get(2);
+            target = platform.players().online().stream().filter(o -> o.name().equalsIgnoreCase(name)).findFirst();
+            if (target.isEmpty()) {
+                sender.message(Colors.RED + name + " isn't online; reset them while they are.");
+                return;
+            }
+        } else if (asPlayer.isPresent()) {
+            target = asPlayer;
+        } else {
+            sender.message(Colors.RED + "Usage: /jarvis tutorial reset <player>");
+            return;
+        }
+        core.tutorial().reset(target.get().id());
+        sender.message(Colors.GREEN + "Jarvis: " + target.get().name()
+                + "'s welcome is forgotten, sir. Their next join is a first join.");
+    }
+
+    // ==================== SETUP (FB-09) ====================
+
+    /**
+     * /jarvis setup — run the provider probe and print where each stands.
+     * /jarvis setup pull [model] — the exact command to run on the Ollama host;
+     * nothing is run from here.
+     */
+    private void handleSetup(Audience sender, List<String> args) {
+        String what = args.size() > 1 ? args.get(1).toLowerCase(Locale.ROOT) : "";
+        String model = platform.config().getString("ai.ollama.model", "mistral");
+        if (what.equals("ollama")) {   // FB-11: the admin's [Use a free local model] button
+            sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "A free model on your own machine, sir:");
+            sender.message(Colors.WHITE + "  1. Install Ollama from " + Colors.AQUA + "ollama.com" + Colors.WHITE
+                    + " on this server or a PC it can reach.");
+            sender.message(Colors.WHITE + "  2. On that machine run: " + Colors.AQUA + "ollama pull " + model);
+            sender.message(Colors.WHITE + "  3. In config.yml, " + Colors.AQUA + "ai.ollama.endpoint" + Colors.WHITE
+                    + " is where it listens (now " + Colors.AQUA
+                    + platform.config().getString("ai.ollama.endpoint", "http://localhost:11434") + Colors.WHITE + ").");
+            sender.message(Colors.GRAY + "Then " + Colors.WHITE + "/jarvis reload" + Colors.GRAY + " and "
+                    + Colors.WHITE + "/jarvis setup" + Colors.GRAY + " to check.");
+            return;
+        }
+        if (what.equals("gemini")) {   // FB-11: the admin's [Use a free Gemini key] button
+            sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "Google's free Gemini tier, sir:");
+            sender.message(Colors.WHITE + "  1. Get a key at " + Colors.AQUA + "aistudio.google.com/apikey" + Colors.WHITE + ".");
+            sender.message(Colors.WHITE + "  2. Either set " + Colors.AQUA + "GEMINI_API_KEY" + Colors.WHITE
+                    + " in the server's environment and restart, or put "
+                    + Colors.AQUA + "api-key: \"env:GEMINI_API_KEY\"" + Colors.WHITE + " under ai.gemini,");
+            sender.message(Colors.WHITE + "     or from the console: " + Colors.AQUA + "jarvis ai key gemini <key>"
+                    + Colors.GRAY + " (not in chat: chat is logged).");
+            sender.message(Colors.GRAY + "Then " + Colors.WHITE + "/jarvis setup" + Colors.GRAY + " to check.");
+            return;
+        }
+        if (what.equals("pull")) {
+            String pull = args.size() > 2 ? args.get(2) : model;
+            sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "On the machine that runs Ollama, run:");
+            sender.message(Colors.AQUA + "  ollama pull " + pull);
+            sender.message(Colors.GRAY + "Then " + Colors.WHITE + "/jarvis setup" + Colors.GRAY + " to check again.");
+            return;
+        }
+        sender.message(Colors.GRAY + "Jarvis: Checking the AI providers, sir...");
+        core.probeProviders(statuses -> {
+            for (com.gadgetman.jarvis.ai.ProviderProbe.Status st : statuses) {
+                sender.message((st.usable() ? Colors.GREEN + "  ✔ " : Colors.GRAY + "  ✘ ") + st.text());
+            }
+            if (com.gadgetman.jarvis.ai.ProviderProbe.usable(statuses).isEmpty()) {
+                for (String line : com.gadgetman.jarvis.ai.ProviderProbe.noProviderBox(
+                        platform.config().getString("ai.ollama.model", "mistral"))) {
+                    sender.message(Colors.YELLOW + line);
+                }
+            } else {
+                sender.message(Colors.GOLD + "Jarvis: " + Colors.WHITE + "Ready to talk, sir.");
+            }
+        });
+    }
+
+    // ==================== DEVELOPMENT (FB-10) ====================
+
+    /**
+     * /jarvis say-as &lt;player&gt; &lt;text…&gt; — the named online player "says"
+     * the text to Jarvis, through the intent pipeline as a console source.
+     * Jarvis's replies go to that player as usual and are also written to the
+     * server log ("[say-as Gadget] Jarvis: …"), which is how a tool reading
+     * logs/latest.log sees them.
+     */
+    private void handleSayAs(Audience sender, Optional<Owner> asPlayer, List<String> args) {
+        if (asPlayer.isPresent()) {
+            sender.message(Colors.RED + "/jarvis say-as is for the server console only.");
+            return;
+        }
+        if (!platform.config().getBoolean("dev.allow-say-as", false)) {
+            sender.message(Colors.RED + "/jarvis say-as is off. Set dev.allow-say-as: true in config.yml "
+                    + "(development servers only), then /jarvis reload.");
+            return;
+        }
+        if (args.size() < 3) {
+            sender.message(Colors.RED + "Usage: /jarvis say-as <player> <what they say>");
+            return;
+        }
+        String name = args.get(1);
+        Optional<Owner> who = platform.players().online().stream()
+                .filter(o -> o.name().equalsIgnoreCase(name)).findFirst();
+        if (who.isEmpty()) {
+            sender.message(Colors.RED + name + " isn't online.");
+            return;
+        }
+        String text = rest(args, 2);
+        Owner player = who.get();
+        platform.log().info("[say-as " + player.name() + "] " + text);
+        core.intents().submit(player, text, IntentPipeline.Source.CONSOLE, sayAsResponder(player.name()));
+    }
+
+    /** The chat responder, plus a copy of every line in the server log. */
+    private IntentPipeline.Responder sayAsResponder(String name) {
+        IntentPipeline.Responder chat = IntentPipeline.CHAT_RESPONDER;
+        String tag = "[say-as " + name + "] ";
+        return new IntentPipeline.Responder() {
+            @Override public void speak(Owner p, String line) {
+                chat.speak(p, line);
+                platform.log().info(tag + "Jarvis: " + Colors.strip(line));
+            }
+            @Override public void feedback(Owner p, String line) {
+                chat.feedback(p, line);
+                platform.log().info(tag + Colors.strip(line));
+            }
+            @Override public boolean streams() { return chat.streams(); }
+            @Override public void speakPartial(Owner p, String sentence) {
+                chat.speakPartial(p, sentence);
+                platform.log().info(tag + "Jarvis: " + Colors.strip(sentence));
+            }
+        };
+    }
+
     // ==================== BUILDING ====================
 
     private void handleBuild(Owner player, String sub, List<String> args) {
@@ -384,7 +676,7 @@ public class CommandService implements CommandSink {
             player.message(Colors.RED + "Usage: /jarvis build <what you want>");
             player.message(Colors.GRAY + "Examples: /jarvis build castle");
             player.message(Colors.GRAY + "          /jarvis build a small oak cottage");
-            player.message(Colors.GRAY + "          /jarvis build undo  |  /jarvis build cancel");
+            player.message(Colors.GRAY + "          /jarvis undo  |  /jarvis build cancel");
             player.message(Colors.GRAY + "Use /jarvis schematic list to see available schematics");
             return;
         }
@@ -393,14 +685,19 @@ public class CommandService implements CommandSink {
         boolean isBuild = sub.equals("build");
         BuildingAssistant assistant = core.building();
 
-        // /jarvis build undo | cancel
-        if (isBuild && (first.equals("undo") || first.equals("cancel"))) {
+        // /jarvis build undo [n|list] — kept as an alias of /jarvis undo
+        if (isBuild && first.equals("undo")) {
+            handleUndo(player, args.subList(1, args.size()));
+            return;
+        }
+
+        // /jarvis build cancel
+        if (isBuild && first.equals("cancel")) {
             if (assistant == null) {
                 player.message(Colors.RED + "Building assistant not available");
                 return;
             }
-            if (first.equals("undo")) assistant.undoLastBuild(player);
-            else assistant.cancelBuild(player);
+            assistant.cancelBuild(player);
             return;
         }
 
@@ -453,6 +750,29 @@ public class CommandService implements CommandSink {
         } else {
             player.message(Colors.RED + "Building assistant not available");
         }
+    }
+
+    /**
+     * /jarvis undo — the last job; /jarvis undo &lt;n&gt; — the last n;
+     * /jarvis undo list — what can be undone. {@code args[0]} is "undo".
+     */
+    private void handleUndo(Owner player, List<String> args) {
+        UndoService undo = core.undo();
+        if (args.size() < 2) {
+            undo.undo(player, 1);
+            return;
+        }
+        String what = args.get(1).toLowerCase(Locale.ROOT);
+        if (what.equals("list") || what.equals("history")) {
+            undo.list(player);
+            return;
+        }
+        Optional<Integer> n = intArg(args, 1);
+        if (n.isEmpty() || n.get() < 1) {
+            player.message(Colors.RED + "Usage: /jarvis undo [n|list]");
+            return;
+        }
+        undo.undo(player, n.get());
     }
 
     private void handleSchematic(Owner player, List<String> args) {
@@ -722,18 +1042,81 @@ public class CommandService implements CommandSink {
     }
 
     private static final List<String> VOICE_SUBCOMMANDS = List.of(
-            "status", "enable", "disable", "engine", "endpoint", "gate", "speak", "threads", "bench", "test");
+            "status", "enable", "disable", "download", "engine", "endpoint", "gate", "speak", "threads", "bench", "test");
 
-    private static final String VOICE_USAGE = "Usage: /jarvis voice [status|enable|disable|engine <e>|endpoint <url>|gate <g>|speak on|off|threads <n>|bench [n]|test]";
+    private static final String VOICE_USAGE = "Usage: /jarvis voice [status|enable|disable|download|engine <e>|endpoint <url>|gate <g>|speak on|off|threads <n>|bench [n]|test]";
+
+    /** The embedded engine's model files, as config.yml names them. Built fresh so a reload's changes count. */
+    private com.gadgetman.jarvis.voice.SpeechModels speechModels() {
+        var cfg = platform.config();
+        return new com.gadgetman.jarvis.voice.SpeechModels(
+                platform.dataDir().resolve(cfg.getString("voice.models-dir", "models")),
+                cfg.getString("voice.whisper-model", "base.en"),
+                cfg.getString("voice.piper-voice", "en_GB-alan-medium"),
+                cfg.getString("voice.models-source", com.gadgetman.jarvis.voice.SpeechModels.DEFAULT_SOURCE),
+                platform.log());
+    }
+
+    private boolean speechModelsReady() {
+        try {
+            return speechModels().ready();
+        } catch (IllegalArgumentException e) {
+            return true;   // a malformed voice name; /jarvis voice download says what's wrong
+        }
+    }
+
+    /**
+     * {@code /jarvis voice download [confirm]}: nothing is fetched until an
+     * admin asks. Without {@code confirm} it lists what would come from where;
+     * with it, the download starts and reports back when done.
+     */
+    private void handleVoiceDownload(Audience sender, boolean confirmed) {
+        if (core.voiceConfig().engine().equals("server")) {
+            sender.message(Colors.YELLOW + "Jarvis: Voice uses a speech server, sir (voice.engine: server); there is nothing to download.");
+            return;
+        }
+        com.gadgetman.jarvis.voice.SpeechModels models;
+        try {
+            models = speechModels();
+        } catch (IllegalArgumentException e) {
+            sender.message(Colors.RED + "Jarvis: " + e.getMessage() + ", sir.");
+            return;
+        }
+        if (models.ready()) {
+            sender.message(Colors.GREEN + "Jarvis: The speech models are already installed, sir.");
+            return;
+        }
+        if (!confirmed) {
+            sender.message(Colors.GOLD + "Jarvis: Voice needs three model files, " + com.gadgetman.jarvis.voice.SpeechModels.DEFAULT_SIZE
+                    + " from " + models.sourceHost() + ", saved in " + models.whisperFile().getParent() + ":");
+            for (String line : models.plannedFiles()) sender.message(Colors.GRAY + "  " + line);
+            sender.rich(new RichLine()
+                    .link(Colors.GREEN + "[Download them]", "/jarvis voice download confirm", "Fetch the speech models now")
+                    .text(Colors.GRAY + "  or run /jarvis voice download confirm. You can also fetch them yourself and drop them in that folder."));
+            return;
+        }
+        boolean started = models.download(
+                () -> platform.scheduler().sync(() -> sender.message(Colors.GREEN
+                        + "Jarvis: The speech models are installed, sir. Voice is ready once it's on (/jarvis voice enable).")),
+                why -> platform.scheduler().sync(() -> sender.message(Colors.RED
+                        + "Jarvis: The speech models could not be fetched, sir: " + why + ". The server log says how to fetch them by hand.")));
+        sender.message(started
+                ? Colors.GOLD + "Jarvis: Fetching the speech models, sir. /jarvis voice status shows how far along it is."
+                : Colors.YELLOW + "Jarvis: That download is already under way, sir. /jarvis voice status shows how far along it is.");
+    }
 
     /** {@code /jarvis voice enable|disable|endpoint <url>|gate <g>|speak on|off|threads <n>|bench|test}, for the console. */
     private void handleVoiceSetup(Audience sender, List<String> args) {
         VoiceConfig v = core.voiceConfig();
         String what = args.get(1).toLowerCase(Locale.ROOT);
         switch (what) {
+            case "download" -> handleVoiceDownload(sender, args.size() > 2 && args.get(2).equalsIgnoreCase("confirm"));
             case "enable", "on" -> {
                 v.setEnabled(true);
                 sender.message(Colors.GREEN + "Jarvis: Voice on, sir. Speech server: " + Colors.WHITE + v.endpoint());
+                if (!v.engine().equals("server") && !speechModelsReady()) {
+                    sender.message(Colors.YELLOW + "Jarvis: The speech models aren't installed yet, sir. /jarvis voice download fetches them.");
+                }
             }
             case "disable", "off" -> {
                 v.setEnabled(false);
@@ -744,7 +1127,7 @@ public class CommandService implements CommandSink {
                 String why = v.setEngine(args.get(2));
                 sender.message(why != null ? Colors.RED + "Jarvis: " + why + ", sir."
                         : Colors.GREEN + "Jarvis: Speech engine set to " + Colors.WHITE + v.engine() + Colors.GREEN
-                        + (v.engine().equals("embedded") ? ". The models are fetched on first use." : ". Set the server with /jarvis voice endpoint."));
+                        + (v.engine().equals("embedded") ? ". /jarvis voice download installs its models." : ". Set the server with /jarvis voice endpoint."));
             }
             case "endpoint" -> {
                 if (args.size() < 3) { sender.message(Colors.RED + "Usage: /jarvis voice endpoint <http://host:port>"); return; }
@@ -896,14 +1279,75 @@ public class CommandService implements CommandSink {
         JSONObject params   = cm.getPendingParameters(player.id());
         cm.clearPending(player.id());
 
+        if (FORGET_ACTION.equals(actionType)) {   // FB-04: /jarvis memory forget
+            platform.scheduler().async(() -> { core.conversation().forget(player.id()); return Boolean.TRUE; },
+                    done -> player.message(Colors.GOLD + "Jarvis: " + Colors.WHITE
+                            + "Forgotten, sir. We have never met. Charmed, I'm sure."));
+            return;
+        }
+        if (BuildingAssistant.CONFIRM_ACTION.equals(actionType)) {   // FB-07: a previewed build
+            if (!core.building().confirmPending(player)) {
+                player.message(Colors.YELLOW + "Jarvis: That plan has gone, sir. Ask again.");
+            }
+            return;
+        }
+        // Checked again here: permissions can change while a prompt waits.
+        if (!ActionPermissions.allowed(player, actionType)) {
+            player.message(Colors.YELLOW + ActionPermissions.refusal(actionType));
+            return;
+        }
+
         String result = core.actions().execute(actionType, params, player);
         if (result != null) {
             player.message(Colors.GREEN + "[Jarvis] " + result);
         }
     }
 
+    /** The pending-confirmation action name for wiping a player's memory. */
+    static final String FORGET_ACTION = "memory_forget";
+
+    /**
+     * /jarvis memory — what Jarvis remembers of you: his notes, recent events
+     * and your last few lines. /jarvis memory forget — wipe it, after Confirm.
+     */
+    private void handleMemory(Owner player, List<String> args) {
+        ConversationMemory memory = core.conversation();
+        if (memory == null || !memory.isEnabled()) {
+            player.message(Colors.GRAY + "Jarvis: Conversation memory is off on this server (memory.conversation.enabled).");
+            return;
+        }
+        if (args.size() > 1 && args.get(1).equalsIgnoreCase("forget")) {
+            core.confirmations().setPending(player.id(), FORGET_ACTION, new JSONObject(),
+                    "forget everything you've told me, and what's happened to you");
+            player.message(Colors.YELLOW + "Jarvis: Forget everything you've told me, sir? This can't be undone.");
+            player.rich(new RichLine()
+                    .link(Colors.GREEN + "[Confirm]", "/jarvis confirm", "Wipe Jarvis's memory of you")
+                    .link(Colors.RED + " [Cancel]", "/jarvis cancel", "Keep it"));
+            player.message(Colors.GRAY + "Expires in " + core.confirmations().getTimeoutSeconds() + "s.");
+            return;
+        }
+        platform.scheduler().async(() -> memory.view(player.id()), view -> {
+            if (view.isEmpty()) {
+                player.message(Colors.GRAY + "Jarvis: I have nothing on you yet, sir. A clean slate.");
+                return;
+            }
+            player.message(Colors.GOLD + "Jarvis: What I remember, sir:");
+            if (!view.summary().isEmpty()) player.message(Colors.WHITE + "  " + view.summary());
+            if (!view.events().isEmpty()) {
+                player.message(Colors.YELLOW + "Lately:");
+                for (String e : view.events()) player.message(Colors.GRAY + "  - " + e);
+            }
+            if (!view.recent().isEmpty()) {
+                player.message(Colors.YELLOW + "You said, most recently:");
+                for (String r : view.recent()) player.message(Colors.GRAY + "  \"" + r + "\"");
+            }
+            player.message(Colors.DARK_GRAY + "/jarvis memory forget wipes it.");
+        });
+    }
+
     private void handleCancel(Owner player) {
         ConfirmationManager cm = core.confirmations();
+        if (core.building() != null && core.building().cancelPending(player)) return;   // FB-07
         if (!cm.hasPending(player.id())) {
             player.message(Colors.YELLOW + "Jarvis: Nothing to cancel.");
             return;
@@ -985,25 +1429,25 @@ public class CommandService implements CommandSink {
     /** Every subcommand the switch above accepts, for typo suggestions. */
     private static final List<String> KNOWN_COMMANDS = List.of(
             "about", "add", "ai", "approve", "queue", "rank", "tunnel", "ask", "attack", "bell",
-            "branch_mine", "briefing", "broadcast", "build", "cancel", "cancelbuild", "export-dataset",
+            "branch_mine", "briefing", "broadcast", "build", "bundle", "bundles", "cancel", "cancelbuild", "export-dataset",
             "chat", "chest", "chop", "chop_trees", "clearloot", "come", "confirm", "convert", "convertall",
             "dance", "defend", "delete", "deny", "deposit", "dig", "discord_broadcast", "dismiss", "duties",
             "duty", "enchant", "farm", "feed", "fight", "fish", "folder", "follow", "give_item", "guard",
             "heal", "help", "home", "inventory", "light", "light_area", "list", "litematic", "litematics",
-            "load", "loot", "lp_group_add", "lp_group_remove", "lumber", "mine", "mine_here", "mining",
-            "paste", "paste_schematic", "patrol", "potion_effect", "protect", "recover", "reload", "remove",
+            "load", "loot", "lp_group_add", "lp_group_remove", "lumber", "memory", "mine", "mine_here", "mining",
+            "paste", "paste_schematic", "patrol", "potion_effect", "protect", "recover", "redo", "reload", "remove",
             "report", "requests", "return", "rotate", "save", "scan", "schematic", "schematics", "sentry",
-            "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather",
-            "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "ver", "version", "voice",
-            "warp", "watch");
+            "say-as", "server_say", "set_chest", "set_gamemode", "set_gamerule", "set_time", "set_weather", "setup",
+            "stand_down", "status", "stop", "summon", "talk", "teleport", "tend", "tutorial", "undo", "ver", "version", "voice",
+            "warp", "watch", "yes", "no");
 
     /** The top-level words worth offering on tab. */
     private static final List<String> COMPLETIONS = List.of(
             "summon", "dismiss", "return", "follow", "stop", "attack", "guard", "watch", "mine", "dig",
             "tunnel", "farm", "tend", "chop", "fish", "dance", "light", "patrol", "chest", "deposit", "loot",
-            "clearloot", "bell", "build", "paste", "cancelbuild", "schematic", "ask", "ai", "report", "duties",
-            "duty", "recover", "home", "confirm", "cancel", "requests", "approve", "deny", "portal", "portals",
-            "quiet", "rank", "queue", "version", "voice", "help", "reload", "debug", "export-dataset");
+            "clearloot", "bell", "build", "paste", "undo", "redo", "cancelbuild", "schematic", "ask", "ai", "cloud", "setup", "bundle", "report", "duties",
+            "duty", "recover", "home", "memory", "confirm", "cancel", "requests", "approve", "deny", "portal", "portals",
+            "quiet", "rank", "queue", "version", "voice", "help", "tutorial", "reload", "debug", "export-dataset");
 
     /**
      * Closest command to a mistyped one, or null when nothing is close.
@@ -1250,11 +1694,35 @@ public class CommandService implements CommandSink {
             player.message(Colors.WHITE + "  /jarvis schematic rotate <name> <deg>" + Colors.GRAY + " - Paste rotated");
             player.message(Colors.WHITE + "  /jarvis schematic scan" + Colors.GRAY + " - Rescan schematic folder");
             player.message(Colors.WHITE + "  /jarvis build <name>" + Colors.GRAY + " - Quick paste (alias)");
+            player.message(Colors.WHITE + "  /jarvis undo [n]" + Colors.GRAY + " - Undo his last build or paste (or the last n)");
+            player.message(Colors.WHITE + "  /jarvis undo list" + Colors.GRAY + " - What he can undo");
+            player.message(Colors.WHITE + "  /jarvis redo" + Colors.GRAY + " - Put back what was last undone");
             player.message(Colors.YELLOW + "Litematic Conversion:");
             player.message(Colors.WHITE + "  /jarvis schematic litematic" + Colors.GRAY + " - List .litematic files");
             player.message(Colors.WHITE + "  /jarvis schematic convert <name>" + Colors.GRAY + " - Convert to .schem");
             player.message(Colors.WHITE + "  /jarvis schematic convertall" + Colors.GRAY + " - Convert all litematics");
         }
+
+        if (player.hasPermission("jarvis.admin")) {
+            player.message(Colors.YELLOW + "Reward bundles:");
+            player.message(Colors.WHITE + "  /jarvis bundle list" + Colors.GRAY + " - The bundles in config.yml");
+            player.message(Colors.WHITE + "  /jarvis bundle run <name> [player]" + Colors.GRAY + " - Run one (its rules still apply)");
+        }
+        player.message(Colors.YELLOW + "AI setup:");
+        player.message(Colors.WHITE + "  /jarvis setup" + Colors.GRAY + " - Which AI providers can answer, and free ways to get one");
+        player.message(Colors.WHITE + "  /jarvis setup pull [model]" + Colors.GRAY + " - The Ollama command to run on its host");
+        player.message(Colors.WHITE + "  /jarvis setup ollama|gemini" + Colors.GRAY + " - How to set up a free local model or Gemini key");
+        player.message(Colors.YELLOW + "Getting started:");
+        player.message(Colors.WHITE + "  /jarvis tutorial" + Colors.GRAY + " - A five-minute walk through what Jarvis does");
+        player.message(Colors.WHITE + "  /jarvis tutorial skip|stop|start" + Colors.GRAY + " - Pass a step, end it, or start over");
+        player.message(Colors.YELLOW + "Memory:");
+        player.message(Colors.WHITE + "  /jarvis memory" + Colors.GRAY + " - What Jarvis remembers of you");
+        player.message(Colors.WHITE + "  /jarvis memory forget" + Colors.GRAY + " - Wipe it (asks first)");
+        player.message(Colors.YELLOW + "Jarvis Cloud (AI without your own API key):");
+        player.message(Colors.WHITE + "  /jarvis cloud activate [name]" + Colors.GRAY + " - Get a link, click it, done");
+        player.message(Colors.WHITE + "  /jarvis cloud status" + Colors.GRAY + " - Credits used this month");
+        player.message(Colors.WHITE + "  /jarvis cloud upgrade" + Colors.GRAY + " - Plans, buying, billing, and your account");
+        player.message(Colors.WHITE + "  /jarvis cloud attach <code>" + Colors.GRAY + " - Add another server to this one's account");
 
         player.message(Colors.YELLOW + "Natural Language (just type it):");
         player.message(Colors.GRAY + "  Chat: 'jarvis kill all creepers'");

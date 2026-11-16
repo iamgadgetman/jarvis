@@ -77,6 +77,15 @@ public final class PaperPlatform implements Platform {
             }
             return out;
         }
+
+        @Override
+        public Set<String> itemOnlyIds() {
+            Set<String> out = new HashSet<>();
+            for (Material m : Material.values()) {
+                if (m.isItem() && !m.isBlock() && !m.isLegacy()) out.add(m.getKey().getKey());
+            }
+            return out;
+        }
     };
 
     public PaperPlatform(JavaPlugin plugin) {
@@ -124,6 +133,27 @@ public final class PaperPlatform implements Platform {
         List<World> out = new ArrayList<>();
         for (org.bukkit.World w : Bukkit.getWorlds()) out.add(new PaperWorld(w));
         return out;
+    }
+
+    @Override
+    public void runConsoleCommand(String command) {
+        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
+    }
+
+    /**
+     * PlaceholderAPI's %placeholders%, when it is installed. Called by
+     * reflection so the plugin needs no compile-time dependency on it.
+     */
+    @Override
+    public String expandPlaceholders(java.util.UUID player, String text) {
+        if (text.indexOf('%') < 0 || !Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) return text;
+        try {
+            Class<?> papi = Class.forName("me.clip.placeholderapi.PlaceholderAPI");
+            java.lang.reflect.Method set = papi.getMethod("setPlaceholders", org.bukkit.OfflinePlayer.class, String.class);
+            return (String) set.invoke(null, Bukkit.getOfflinePlayer(player), text);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return text;
+        }
     }
 
     @Override

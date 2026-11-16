@@ -38,12 +38,12 @@ class AiSettingsTest {
         s.setEnabled("claude", false);
         assertFalse(s.isEnabled("claude"));
         assertFalse(f.core.ai().isEnabled("claude"));
-        assertEquals(List.of("ollama", "openai", "grok", "gemini"), f.platform.config().getStringList("ai.provider-priority"));
+        assertEquals(List.of("ollama", "gemini", "openai", "grok"), f.platform.config().getStringList("ai.provider-priority"));
         assertEquals("disabled", s.status("claude"));
 
         s.setEnabled("claude", true);
         assertTrue(f.core.ai().isEnabled("claude"));
-        assertEquals(List.of("ollama", "claude", "openai", "grok", "gemini"), s.enabled(), "back in its usual place");
+        assertEquals(List.of("ollama", "gemini", "claude", "openai", "grok"), s.enabled(), "back in its usual place");
     }
 
     @Test

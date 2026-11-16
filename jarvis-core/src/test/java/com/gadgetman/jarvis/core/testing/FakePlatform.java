@@ -39,6 +39,8 @@ public final class FakePlatform implements Platform {
     private final Map<WorldId, FakeWorld> worlds = new LinkedHashMap<>();
     public final List<String> logLines = new ArrayList<>();
     public double tps = 20.0;
+    /** Pretend to be an integrated (single-player) server. */
+    public boolean singleplayer = false;
 
     private final Log log = new Log() {
         @Override public void info(String msg) { logLines.add("INFO " + msg); }
@@ -58,6 +60,7 @@ public final class FakePlatform implements Platform {
     }
 
     @Override public String name() { return "fake"; }
+    @Override public boolean singleplayer() { return singleplayer; }
     @Override public Config config() { return config; }
     @Override public Log log() { return log; }
     @Override public FakeScheduler scheduler() { return scheduler; }
@@ -67,6 +70,9 @@ public final class FakePlatform implements Platform {
     @Override public FakeUi ui() { return ui; }
     @Override public String serverVersion() { return "Fake 1.0 (API test)"; }
     @Override public double tps() { return tps; }
+    /** Console commands run through {@link #runConsoleCommand}, in order. */
+    public final List<String> consoleCommands = new ArrayList<>();
+    @Override public void runConsoleCommand(String command) { consoleCommands.add(command); }
     @Override public double mspt() { return 1000.0 / 20.0 / (tps / 20.0); }
 
     public FakeButlers butlers() {
@@ -108,9 +114,17 @@ public final class FakePlatform implements Platform {
         public Optional<String> resolve(String name) {
             if (name == null) return Optional.empty();
             String key = Ids.key(name.trim().toLowerCase(Locale.ROOT));
-            return key.matches("[a-z0-9_]+") ? Optional.of(Ids.of(key)) : Optional.empty();
+            if (!key.matches("[a-z0-9_]+")) return Optional.empty();
+            String id = Ids.of(key);
+            return knownItems.isEmpty() || knownItems.contains(id) ? Optional.of(id) : Optional.empty();
         }
     };
+
+    /**
+     * When non-empty, {@code items().resolve} knows only these ids, like a real
+     * registry. Empty (the default) accepts any well-formed name.
+     */
+    public final Set<String> knownItems = new java.util.HashSet<>();
 
     /** Things a plan might name that are items, never blocks. */
     private static final Set<String> ITEM_ONLY = Set.of("diamond", "stick", "bread", "brick", "coal",

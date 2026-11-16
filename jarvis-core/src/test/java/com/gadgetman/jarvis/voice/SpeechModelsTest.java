@@ -57,4 +57,78 @@ class SpeechModelsTest {
         assertTrue(how.contains("en_US-lessac-high.onnx.json"), how);
         assertTrue(how.contains(dir.resolve("models").toString()), how);
     }
+
+    /** A stand-in for huggingface.co that counts requests and serves 2 MB per file. */
+    private static com.sun.net.httpserver.HttpServer mirror(java.util.concurrent.atomic.AtomicInteger hits) throws java.io.IOException {
+        var server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", ex -> {
+            hits.incrementAndGet();
+            ex.getRequestBody().readAllBytes();
+            byte[] body = new byte[2 << 20];
+            ex.sendResponseHeaders(200, body.length);
+            try (var out = ex.getResponseBody()) { out.write(body); }
+        });
+        server.start();
+        return server;
+    }
+
+    @Test
+    @DisplayName("ensure never downloads: missing models stay missing and nothing is fetched (store rules)")
+    void ensureNeverFetches(@TempDir Path dir) throws Exception {
+        var hits = new java.util.concurrent.atomic.AtomicInteger();
+        var server = mirror(hits);
+        try {
+            SpeechModels m = new SpeechModels(dir.resolve("models"), "base.en", "en_GB-alan-medium",
+                    "http://127.0.0.1:" + server.getAddress().getPort(), QUIET);
+            boolean[] ran = {false};
+            m.ensure(() -> ran[0] = true);
+            Thread.sleep(200);
+            assertEquals(0, hits.get(), "no request without /jarvis voice download confirm");
+            assertFalse(ran[0]);
+            assertEquals(SpeechModels.State.MISSING, m.status().state());
+            assertTrue(m.status().describe().contains("/jarvis voice download"), m.status().describe());
+            assertFalse(java.nio.file.Files.exists(dir.resolve("models")), "not even the folder");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @DisplayName("download fetches the three files when asked, once, and another instance sees its progress")
+    void downloadWhenAsked(@TempDir Path dir) throws Exception {
+        var hits = new java.util.concurrent.atomic.AtomicInteger();
+        var server = mirror(hits);
+        try {
+            String src = "http://127.0.0.1:" + server.getAddress().getPort();
+            SpeechModels m = new SpeechModels(dir.resolve("models"), "base.en", "en_GB-alan-medium", src, QUIET);
+            SpeechModels other = new SpeechModels(dir.resolve("models"), "base.en", "en_GB-alan-medium", src, QUIET);
+            boolean[] ran = {false};
+            assertTrue(m.download(() -> ran[0] = true, why -> { }));
+            assertFalse(other.download(null, null), "one download per folder");
+            m.join();
+            assertEquals(3, hits.get());
+            assertTrue(ran[0]);
+            assertTrue(m.ready());
+            assertEquals(SpeechModels.State.READY, other.status().state());
+            assertFalse(m.download(null, null), "nothing left to fetch");
+            assertEquals(3, hits.get());
+            assertEquals("127.0.0.1", m.sourceHost());
+            assertEquals(3, m.plannedFiles().size());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @DisplayName("a failed download reports why, and a later download can try again")
+    void downloadFails(@TempDir Path dir) throws Exception {
+        SpeechModels m = new SpeechModels(dir.resolve("models"), "base.en", "en_GB-alan-medium", "http://127.0.0.1:1", QUIET);
+        String[] why = {null};
+        assertTrue(m.download(null, w -> why[0] = w));
+        m.join();
+        assertEquals(SpeechModels.State.FAILED, m.status().state());
+        assertTrue(why[0] != null && why[0].contains("cannot reach 127.0.0.1"), why[0]);
+        assertTrue(m.download(null, null), "a retry is allowed");
+        m.join();
+    }
 }

@@ -2,7 +2,11 @@ package com.gadgetman.jarvis.intent;
 
 import com.gadgetman.jarvis.JarvisCore;
 import com.gadgetman.jarvis.ai.AIConnector;
+import com.gadgetman.jarvis.ai.StreamAssembler;
+import com.gadgetman.jarvis.ai.WorldContext;
 import com.gadgetman.jarvis.commands.ActionExecutor;
+import com.gadgetman.jarvis.commands.ActionPermissions;
+import com.gadgetman.jarvis.core.platform.Butler;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
 import com.gadgetman.jarvis.core.platform.Scheduler;
@@ -15,8 +19,11 @@ import com.gadgetman.jarvis.schematics.SchematicLibrary;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -43,6 +50,16 @@ public class IntentPipeline {
     public interface Responder {
         void speak(Owner player, String jarvisLine);
         void feedback(Owner player, String line);
+
+        /**
+         * Whether this responder shows a reply sentence by sentence while the
+         * model is still writing (FB-05). Off by default, so voice keeps
+         * speaking the whole reply at once.
+         */
+        default boolean streams() { return false; }
+
+        /** One sentence of a reply that is still being written. */
+        default void speakPartial(Owner player, String sentence) { speak(player, sentence); }
     }
 
     /** The original behaviour: everything goes to the chat box. */
@@ -53,15 +70,232 @@ public class IntentPipeline {
         @Override public void feedback(Owner player, String line) {
             player.message(line);
         }
+        @Override public boolean streams() { return true; }
     };
 
-    /** Actions too risky to trust to a small local model's parsing. */
-    private static final Set<String> RESTRICTED_IN_REDUCED_MODE = Set.of(
+    /**
+     * Actions too risky to trust to a small local model's parsing. The fast
+     * path never produces these either.
+     */
+    // trigger_bundle (FB-08) is deliberately NOT here: a bundle's commands are
+    // written by the admin, the model only picks a name from the admin's list,
+    // and once-per-player/cooldown rules apply, so a small model misparsing a
+    // sentence can at worst hand out a reward the admin already approved.
+    static final Set<String> RESTRICTED_IN_REDUCED_MODE = Set.of(
             "console_command", "console_commands", "lp_group_add", "lp_group_remove", "set_gamerule");
+
+    /** Actions whose message reaches every player (or Discord), not just the one who spoke. */
+    static final Set<String> PUBLIC_ACTIONS = Set.of(
+            "server_say", "broadcast", "announce_all", "schedule_broadcast", "discord_broadcast");
+
+    /** Words that show the player asked for an announcement rather than an answer. */
+    private static final java.util.regex.Pattern ASKED_TO_ANNOUNCE = java.util.regex.Pattern.compile(
+            "\\b(announce\\w*|broadcast\\w*|everyone|everybody|all players|all the players"
+                    + "|the (whole )?server|server[- ]wide|discord|tell (them|all)|let (everyone|all)"
+                    + "|remind (everyone|all|people)|in (global|public) chat)\\b");
+
+    /** Words that show the player asked for the status briefing. */
+    private static final java.util.regex.Pattern ASKED_FOR_REPORT = java.util.regex.Pattern.compile(
+            "\\b(report|status|briefing|brief me|tps|lag\\w*|how('s| is) the (server|estate)"
+                    + "|server (health|performance))\\b");
+
+    /** Words that show the player asked to be moved, not just told where something is. */
+    private static final java.util.regex.Pattern ASKED_TO_MOVE = java.util.regex.Pattern.compile(
+            "\\b(teleport\\w*|tp|warp\\w*|take me|send me|bring me|put me|move me|get me (to|there|back)"
+                    + "|beam me|zap me|port me)\\b");
+
+    /** Actions that move the player. */
+    static final Set<String> MOVE_ACTIONS = Set.of("teleport", "warp");
+
+    /**
+     * Free things for the player, each with the words that show it was asked
+     * for (FB-14). qwen answered "what should I do next?" by handing over a
+     * diamond sword, or healing to full: on a survival server that is a cheat
+     * nobody requested.
+     */
+    static final java.util.Map<String, java.util.regex.Pattern> GIFT_ACTIONS = java.util.Map.of(
+            "give_item", java.util.regex.Pattern.compile(
+                    "\\b(give|gimme|hand|lend|spare|need|want|wanna|fetch|bring|get me|grab me"
+                            + "|(can|could|may) i (have|get|borrow)|i'?d like|i would like|got any|have any|do you have)\\b"),
+            "enchant", java.util.regex.Pattern.compile("\\benchant\\w*"),
+            "potion_effect", java.util.regex.Pattern.compile(
+                    "\\b(give|effects?|potions?|buff\\w*|night vision|speed|haste|strength|regen\\w*|resistance"
+                            + "|water breathing|invisib\\w*|jump boost|slow falling)\\b"),
+            "heal", java.util.regex.Pattern.compile(
+                    "\\b(heal\\w*|cure|hurt|injur\\w*|wound\\w*|dying|health|hp|hearts?|patch me up)\\b"),
+            "feed", java.util.regex.Pattern.compile(
+                    "\\b(feed|hungry|hunger|starv\\w*|food|eat|famished|peckish)\\b"));
+
+    /**
+     * Changes to the whole world, each with the words that show it was asked
+     * for (FB-15). Like FB-14's gifts: "what should I do next?" is not a
+     * request to make it day, stop the rain or spawn a cow.
+     */
+    static final java.util.Map<String, java.util.regex.Pattern> WORLD_ACTIONS = java.util.Map.of(
+            "set_time", java.util.regex.Pattern.compile(
+                    "\\b(time|day\\w*|night\\w*|noon|midnight|morning|sunrise|sunset|dawn|dusk|evening)\\b"),
+            "set_weather", java.util.regex.Pattern.compile(
+                    "\\b(weather|rain\\w*|storm\\w*|thunder\\w*|lightning|sunny|sunshine|clear (skies|sky|the sky)|skies)\\b"),
+            "set_gamemode", java.util.regex.Pattern.compile(
+                    "\\b(game ?mode|creative|survival|adventure|spectator|gm ?[0-3])\\b"),
+            "set_gamerule", java.util.regex.Pattern.compile("\\b(game ?rules?|rules?)\\b"),
+            "set_difficulty", java.util.regex.Pattern.compile("\\b(difficulty|peaceful|easy|normal|hard)\\b"),
+            "summon", java.util.regex.Pattern.compile("\\b(summon\\w*|spawn\\w*|conjure|create an?|make an?)\\b"),
+            "clear_mobs", java.util.regex.Pattern.compile(
+                    "\\b(clear|kill|remove|get rid|purge|wipe|despawn|butcher)\\b"),
+            "clear_drops", java.util.regex.Pattern.compile(
+                    "\\b(clear|remove|clean\\w*|purge|wipe|pick up)\\b"));
+
+    /**
+     * True when the model picked an action the player never asked for: a
+     * whole-server action without an announcement request, the status
+     * briefing without a request for one ("what should I do next?" is a
+     * question, not a report), or a teleport for a question ("where is the
+     * market?" is not "take me to the market"). Such a pick is answered as
+     * plain chat instead.
+     */
+    static boolean unaskedAction(String actionType, String message) {
+        String m = message == null ? "" : message.toLowerCase(Locale.ROOT);
+        if (PUBLIC_ACTIONS.contains(actionType)) return !ASKED_TO_ANNOUNCE.matcher(m).find();
+        if ("report".equals(actionType)) return !ASKED_FOR_REPORT.matcher(m).find();
+        if (MOVE_ACTIONS.contains(actionType)) return !ASKED_TO_MOVE.matcher(m).find();
+        java.util.regex.Pattern gift = GIFT_ACTIONS.get(actionType);
+        if (gift != null) return !gift.matcher(m).find();
+        java.util.regex.Pattern world = WORLD_ACTIONS.get(actionType);
+        if (world != null) return !world.matcher(m).find();
+        return false;
+    }
+
+    /**
+     * "summon" with no entity, or with Jarvis as the entity, calls the butler
+     * himself; with any other entity it spawns a mob (a world action).
+     */
+    static boolean jarvisSummon(String actionType, JSONObject parameters) {
+        return "summon".equals(actionType)
+                && (parameters == null || !parameters.has("entity")
+                    || "jarvis".equalsIgnoreCase(parameters.optString("entity")));
+    }
+
+    /** Words that ask for Jarvis himself: "come here", "summon", "where are you". */
+    private static final java.util.regex.Pattern ASKED_FOR_JARVIS = java.util.regex.Pattern.compile(
+            "\\b(come|here|summon\\w*|spawn\\w*|appear|show up|where are you)\\b");
+
+    /**
+     * True when the model reached for "summon Jarvis" without being asked:
+     * "tell me a joke about creepers" came back as summon with the joke as the
+     * reply (seen live), and the mob-summon guard swapped the joke for "I could
+     * summon something". Such a pick is answered as chat, in the model's words.
+     */
+    static boolean unaskedJarvisSummon(String actionType, JSONObject parameters, String message) {
+        if (!jarvisSummon(actionType, parameters)) return false;
+        String m = message == null ? "" : message.toLowerCase(Locale.ROOT);
+        return !ASKED_FOR_JARVIS.matcher(m).find();
+    }
+
+    /** True when a public action's {@code message} is missing or blank (FB-13). */
+    static boolean blankMessage(JSONObject parameters) {
+        return parameters == null || parameters.optString("message", "").isBlank();
+    }
+
+    /** "announce that X", "tell everyone X", "let everyone know X": X is the announcement. */
+    private static final java.util.regex.Pattern ANNOUNCE_WHAT = java.util.regex.Pattern.compile(
+            "(?i)\\b(?:announce|broadcast|(?:tell|remind|let) (?:everyone|everybody|all(?: the)?(?: players)?|the (?:whole )?server)"
+                    + "(?: know)?|say to (?:everyone|everybody|all))"
+                    + "(?: to (?:everyone|everybody|all(?: the)?(?: players)?|the (?:whole )?server))?"
+                    + "\\s*(?:that\\b|:)?\\s*(.*)$");
+
+    /**
+     * The announcement text in the player's own words, or "" (FB-13). qwen
+     * sometimes puts the text in its spoken reply and leaves {@code message}
+     * empty; the player's sentence is the safer source, and Confirm still
+     * shows it before anything is posted.
+     */
+    static String messageFromRequest(String request) {
+        if (request == null) return "";
+        java.util.regex.Matcher m = ANNOUNCE_WHAT.matcher(request.trim());
+        if (!m.find()) return "";
+        return m.group(1).trim();
+    }
+
+    /**
+     * What to say in place of an action that was not asked for: its message if
+     * it has one, the coordinates a teleport was aimed at, else the model's reply
+     * ("Arriving at the market" would be wrong once nobody moves).
+     */
+    static String privateReply(String actionType, JSONObject parameters, String aiResponse) {
+        String msg = parameters == null ? "" : parameters.optString("message", "").trim();
+        if (!msg.isEmpty()) return msg;
+        if (MOVE_ACTIONS.contains(actionType) && parameters != null) {
+            if (parameters.has("x") && parameters.has("z")) {
+                return "That's at x " + parameters.optInt("x") + (parameters.has("y") ? ", y " + parameters.optInt("y") : "")
+                        + ", z " + parameters.optInt("z") + ", sir. Say \"take me there\" if you'd like a lift.";
+            }
+            String warp = parameters.optString("warp", "").trim();
+            if (!warp.isEmpty()) return "That's the " + warp + " warp, sir. Ask me to take you if you'd like a lift.";
+            return "I'm not certain where that is, sir.";
+        }
+        // FB-14: the model's reply ("Here's a sword.") is wrong once nothing is
+        // handed over, so make the offer instead; the player can take it up.
+        if (GIFT_ACTIONS.containsKey(actionType)) return giftOffer(actionType, parameters);
+        // FB-15: likewise "Daylight it is." is wrong when the sun stays put.
+        if (WORLD_ACTIONS.containsKey(actionType)) return worldOffer(actionType, parameters);
+        return aiResponse;
+    }
+
+    /** "I'd suggest arming yourself, sir: say the word and a diamond sword is yours." */
+    static String giftOffer(String actionType, JSONObject parameters) {
+        return switch (actionType) {
+            case "give_item" -> {
+                String item = parameters == null ? "" : parameters.optString("item", "").trim();
+                item = item.replaceFirst("^minecraft:", "").replace('_', ' ');
+                if (item.isEmpty()) yield "Say the word if you need anything from the stores, sir.";
+                String a = "aeiou".indexOf(Character.toLowerCase(item.charAt(0))) >= 0 ? "an " : "a ";
+                yield "I'd suggest " + a + item + ", sir. Say \"give me " + a + item + "\" and it's yours.";
+            }
+            case "heal" -> "You're looking worse for wear, sir. Say \"heal me\" and I'll patch you up.";
+            case "feed" -> "You look peckish, sir. Say \"feed me\" and I'll see to it.";
+            case "enchant" -> "I could enchant that for you, sir. Just ask.";
+            default -> "A potion effect might help, sir. Just ask.";
+        };
+    }
+
+    /** "Shall I make it day, sir? Say "make it day" and it's done." */
+    static String worldOffer(String actionType, JSONObject parameters) {
+        JSONObject p = parameters == null ? new JSONObject() : parameters;
+        return switch (actionType) {
+            case "set_time" -> {
+                String v = p.optString("value", p.optString("time", "")).trim().toLowerCase(Locale.ROOT);
+                yield v.isEmpty() ? "I could change the time of day, sir. Just ask."
+                        : "Shall I make it " + v + ", sir? Say \"make it " + v + "\" and it's done.";
+            }
+            case "set_weather" -> {
+                String v = p.optString("type", p.optString("weather", "")).trim().toLowerCase(Locale.ROOT);
+                yield v.isEmpty() ? "I could change the weather, sir. Just ask."
+                        : "Shall I set the weather to " + v + ", sir? Say \"set the weather to " + v + "\".";
+            }
+            case "summon" -> {
+                String e = p.optString("entity", "").trim().replaceFirst("^minecraft:", "").replace('_', ' ');
+                if (e.isEmpty()) yield "I could summon something, sir. Just ask.";
+                String a = "aeiou".indexOf(Character.toLowerCase(e.charAt(0))) >= 0 ? "an " : "a ";
+                yield "I could summon " + a + e + ", sir. Say \"summon " + a + e + "\" if you'd like one.";
+            }
+            case "set_gamemode" -> "I could change your game mode, sir. Just ask.";
+            case "set_difficulty" -> "I could change the difficulty, sir. Just ask.";
+            case "set_gamerule" -> "I could change a game rule, sir. Just ask.";
+            case "clear_mobs" -> "I could clear the mobs nearby, sir. Just ask.";
+            default -> "I could tidy up the dropped items, sir. Just ask.";
+        };
+    }
 
     private final JarvisCore core;
     private final Platform platform;
     private final AIConnector ai;
+    /**
+     * Bad extra-phrases already warned about, so the log says it once. Server
+     * thread only. The warning appears on the first fast-path line after
+     * startup, and is not repeated after a reload while the server keeps running.
+     */
+    private final java.util.Set<String> warnedAliases = new java.util.HashSet<>();
 
     public IntentPipeline(JarvisCore core) {
         this.core = core;
@@ -91,9 +325,32 @@ public class IntentPipeline {
         // Build the world context on the SERVER thread first, then do the
         // slow AI call async.
         scheduler().sync(() -> {
+            // FB-07: a build preview is waiting; "yes" or "no" answers it.
+            if (answersBuildPreview(player, utterance)) return;
+            // Literal commands are answered locally, before any model is asked.
+            if (tryFastPath(player, utterance, source, sink)) return;
             final String worldContext = buildContext(player);
-            scheduler().async(() -> parseAndDispatch(player, utterance, worldContext, source, sink));
+            // The model can take seconds; show that he is on it (FB-02).
+            final ThinkingFeedback thinking = ThinkingFeedback.start(
+                    player, core.butlers().butler(player), platform.config(), scheduler());
+            // Read here, on the server thread: the stream asks from the AI's thread.
+            final boolean admin = player.hasPermission(ActionPermissions.ADMIN);
+            scheduler().async(() -> parseAndDispatch(player, utterance, worldContext, source, sink, thinking, admin));
         });
+    }
+
+    private static final java.util.regex.Pattern YES = java.util.regex.Pattern.compile(
+            "(?i)^\\s*(yes|y|yeah|yep|yup|sure|ok|okay|do it|go ahead|build it|confirm)[.! ]*$");
+    private static final java.util.regex.Pattern NO = java.util.regex.Pattern.compile(
+            "(?i)^\\s*(no|n|nope|nah|cancel|don'?t|stop|never mind|nevermind)[.! ]*$");
+
+    /** True when the player answered a waiting build preview (FB-07). */
+    private boolean answersBuildPreview(Owner player, String utterance) {
+        var building = core.building();
+        if (building == null || !building.hasPending(player) || utterance == null) return false;
+        if (YES.matcher(utterance).matches()) return building.confirmPending(player);
+        if (NO.matcher(utterance).matches()) return building.cancelPending(player);
+        return false;
     }
 
     /** Convenience for the chat path, which always answers in chat. */
@@ -101,13 +358,122 @@ public class IntentPipeline {
         submit(player, utterance, source, CHAT_RESPONDER);
     }
 
+    // ==================== FAST PATH ====================
+
+    /**
+     * Run a plain command ("follow me", "mine 10 iron") without the AI.
+     * Server thread. Returns false when the parser can't place the sentence,
+     * or the fast path is off, and the model should decide.
+     */
+    private boolean tryFastPath(Owner player, String utterance, Source source, Responder sink) {
+        var cfg = platform.config();
+        if (!cfg.getBoolean("intent.fast-path.enabled", true)) return false;
+
+        FastPathParser parser = new FastPathParser(extraPhrases());
+        for (String alias : parser.droppedAliases()) {
+            if (warnedAliases.add(alias)) {
+                platform.log().warn("[fast-path] Ignoring intent.fast-path.extra-phrases entry " + alias
+                        + ": aliases can only point at Jarvis's own actions ("
+                        + String.join(", ", new java.util.TreeSet<>(FastPathParser.ALIAS_TARGETS)) + ")");
+            }
+        }
+        Optional<Intent> hit = parser.parse(utterance);
+        if (hit.isEmpty()) return false;
+        Intent intent = hit.get();
+
+        // A request must name a real item: try the words as typed, then the
+        // parser's singular guess. Neither known -> let the model work it out.
+        if ("request_item".equals(intent.action())) {
+            Optional<String> id = resolveRequestedItem(intent.params());
+            if (id.isEmpty()) return false;
+            intent.params().put("item", id.get());
+            intent.params().remove("said");
+        }
+
+        if (cfg.getBoolean("intent.fast-path.log-hits", false)) {
+            platform.log().info("[fast-path] " + intent.action() + " " + intent.params()
+                    + " <- \"" + trim(utterance, 60) + "\"");
+        }
+        executeAction(player, intent.action(), executorParams(intent),
+                FastPathParser.acknowledge(intent), utterance, source, sink);
+        return true;
+    }
+
+    /** The registry id for a fast-path request: as typed first, then singular. */
+    Optional<String> resolveRequestedItem(JSONObject params) {
+        var items = platform.items();
+        if (params.has("said")) {
+            Optional<String> asSaid = items.resolve(params.getString("said"));
+            if (asSaid.isPresent()) return asSaid;
+        }
+        return params.has("item") ? items.resolve(params.getString("item")) : Optional.empty();
+    }
+
+    /** intent.fast-path.extra-phrases, phrase -> action. Re-read each time so a reload takes. */
+    private Map<String, String> extraPhrases() {
+        var section = platform.config().section("intent.fast-path.extra-phrases");
+        Map<String, String> out = new HashMap<>();
+        for (String phrase : section.keys()) {
+            String action = section.getString(phrase, null);
+            if (action != null) out.put(phrase, action);
+        }
+        return out;
+    }
+
+    /**
+     * The parser speaks {@code item}/{@code count}; the actions read their own
+     * names. mine filters by {@code ore} (no count: he mines what he finds),
+     * request_item wants {@code amount}, chop already reads {@code count}.
+     */
+    static JSONObject executorParams(Intent intent) {
+        JSONObject in = intent.params();
+        JSONObject out = new JSONObject(in.toString());
+        switch (intent.action()) {
+            case "mine" -> {
+                out.remove("item");
+                out.remove("count");
+                if (in.has("item")) out.put("ore", in.getString("item"));
+            }
+            case "request_item" -> {
+                out.remove("said");
+                out.remove("count");
+                if (in.has("count")) out.put("amount", in.getInt("count"));
+            }
+            default -> { }
+        }
+        return out;
+    }
+
     // ==================== PARSE ====================
 
     private void parseAndDispatch(Owner player, String message, String worldContext,
-                                  Source source, Responder sink) {
+                                  Source source, Responder sink, ThinkingFeedback thinking,
+                                  boolean admin) {
+        // FB-05: sentences of the reply reach the player while the model writes.
+        // Only replies the pipeline won't rewrite are streamed (see unaskedAction).
+        final java.util.concurrent.atomic.AtomicBoolean spoke = new java.util.concurrent.atomic.AtomicBoolean();
+        StreamAssembler.Sink stream = !sink.streams() ? null : new StreamAssembler.Sink() {
+            @Override public boolean accepts(String actionType) {
+                // "unknown" goes to the keyword fallback, which must still be able to answer.
+                return !actionType.isBlank() && !actionType.equals("unknown")
+                        && !unaskedAction(actionType, message)
+                        && !mayBeRefused(actionType, admin);
+            }
+            @Override public void sentence(String text) {
+                spoke.set(true);
+                scheduler().sync(() -> {
+                    thinking.stop();
+                    sink.speakPartial(player, text);
+                });
+            }
+            @Override public void abandoned() {
+                spoke.set(false); // the retry's reply is spoken whole
+            }
+        };
         try {
             String context  = worldContext + buildMemoryContext(player);
-            String response = ai.parseNaturalLanguage(message, player.name(), context);
+            String response = ai.parseNaturalLanguage(message, player.name(), context,
+                    serverFacts(), stream);
 
             JSONObject action     = new JSONObject(extractJson(response));
             String actionType     = action.optString("action", "unknown");
@@ -118,11 +484,66 @@ public class IntentPipeline {
                 throw new RuntimeException("No action in AI response");
             }
 
-            scheduler().sync(() -> executeAction(player, actionType, parameters, aiResponse, message, source, sink));
+            // A model that wants to "say" its answer reaches for server_say,
+            // which posts it to every player as [Server]. Only a player who
+            // asked for an announcement gets one; otherwise it is a reply.
+            // The model then puts its real answer in the action's message and
+            // filler ("A tactical observation, sir.") in response, so say the message.
+            // A summon of Jarvis himself is not the mob summon WORLD_ACTIONS guards:
+            // asked for, it runs; not asked for, the reply is chat, as written.
+            boolean butlerSummon = jarvisSummon(actionType, parameters);
+            boolean keptPrivate = butlerSummon ? unaskedJarvisSummon(actionType, parameters, message)
+                    : unaskedAction(actionType, message);
+            String chosen = keptPrivate ? "chat" : actionType;
+            String reply = keptPrivate && !butlerSummon ? privateReply(actionType, parameters, aiResponse) : aiResponse;
+
+            final boolean alreadySpoken = spoke.get();
+
+            // FB-13: an announcement with no message would post a blank line to
+            // everyone (qwen did this for "announce that ..."). Take the text from
+            // the player's words; if there is none there either, ask.
+            JSONObject params = parameters;
+            if (PUBLIC_ACTIONS.contains(chosen) && blankMessage(params)) {
+                String fromRequest = messageFromRequest(message);
+                if (!fromRequest.isEmpty()) {
+                    params = params == null ? new JSONObject() : new JSONObject(params.toString());
+                    params.put("message", fromRequest);
+                    platform.log().warn("Model picked " + chosen + " with no message; using the player's words.");
+                }
+            }
+            final JSONObject finalParams = params;
+            if (PUBLIC_ACTIONS.contains(chosen) && blankMessage(finalParams)) {
+                platform.log().warn("Model picked " + chosen + " with no message; asking the player.");
+                scheduler().sync(() -> {
+                    thinking.stop();
+                    sink.feedback(player, Colors.GRAY + "Jarvis: What would you like me to announce, sir?");
+                });
+                return;
+            }
+            // FB-13: a chat reply with no words used to say nothing at all.
+            if (("chat".equals(chosen) || "talk".equals(chosen)) && reply.isBlank() && !alreadySpoken) {
+                platform.log().warn("Model returned " + chosen + " with an empty response for \""
+                        + trim(message, 60) + "\".");
+                scheduler().sync(() -> {
+                    thinking.stop();
+                    sink.feedback(player, Colors.GRAY + "Jarvis: I lost my train of thought there, sir. Ask me again?");
+                });
+                return;
+            }
+
+            scheduler().sync(() -> {
+                thinking.stop();
+                executeAction(player, chosen, finalParams, reply, message, source, sink, alreadySpoken);
+            });
 
         } catch (Exception e) {
             platform.log().warn("Natural language parse failed: " + e.getMessage());
-            scheduler().sync(() -> executeFallbackAction(player, message, sink));
+            final boolean alreadySpoken = spoke.get();
+            scheduler().sync(() -> {
+                thinking.stop();
+                // He already answered out loud; only the action part was unreadable.
+                if (!alreadySpoken) executeFallbackAction(player, message, sink);
+            });
         }
     }
 
@@ -142,27 +563,13 @@ public class IntentPipeline {
     }
 
     /**
-     * Butler memory: fold the player's recent exchanges into the prompt so
-     * Jarvis remembers the conversation. Reduced (Ollama-only) mode keeps the
-     * context short for small local models.
+     * Butler memory (FB-04): the condensed summary, recent events and the
+     * last few exchanges, so Jarvis remembers the player across restarts.
+     * Reduced (Ollama-only) mode keeps it short for small local models.
      */
     private String buildMemoryContext(Owner player) {
-        if (core.database() == null) return "";
-        int turns = ai.isReducedMode() ? 2 : 5;
-        var recent = core.database().getRecentInteractions(player.id().toString(), turns);
-        if (recent.isEmpty()) return "";
-        StringBuilder sb = new StringBuilder("\nRecent conversation (oldest first):\n");
-        for (String[] row : recent) {
-            sb.append("  Player: ").append(trim(row[0], 100)).append("\n");
-            if (row[2] != null && !row[2].isEmpty()) {
-                sb.append("  Jarvis did: ").append(row[2]);
-            }
-            if (row[1] != null && !row[1].isEmpty()) {
-                sb.append(" — said: ").append(trim(row[1], 100));
-            }
-            sb.append("\n");
-        }
-        return sb.toString();
+        if (core.conversation() == null) return "";
+        return core.conversation().contextFor(player.id(), ai.isReducedMode());
     }
 
     private String trim(String text, int max) {
@@ -170,34 +577,106 @@ public class IntentPipeline {
         return text.length() <= max ? text : text.substring(0, max) + "...";
     }
 
-    /** Must run on the server thread. */
+    /**
+     * The player's situation for the prompt (FB-03): {@link WorldContext} at
+     * {@code ai.context.level}. Must run on the server thread.
+     */
     public String buildContext(Owner player) {
         World world = platform.world(player.world()).orElse(null);
-        String worldName = world == null ? player.world().id() : world.name();
-        String biome = world == null ? "unknown" : world.biome(player.pos().block());
-        return "Location: " + worldName
-                + ", Biome: " + biome
-                + ", Health: " + (int) player.health() + "/20"
-                + ", Gamemode: " + player.gameMode()
-                + ", Jarvis summoned: " + core.butlers().exists(player);
+        WorldContext.Settings settings = WorldContext.Settings.from(platform.config());
+        ButlerService npc = core.butlers();
+        Butler butler = npc == null ? null : npc.butler(player);
+        String task = npc == null ? null : npc.describeCurrentTask(player);
+        String text;
+        try {
+            text = WorldContext.capture(player, world, butler, task, settings,
+                    platform.players().online(), platform.items()::isEdible).render();
+        } catch (RuntimeException e) {
+            // Context is a nice-to-have; a world read that throws must not cost the reply.
+            platform.log().warn("World context failed for " + player.name() + ": " + e);
+            text = "";
+        }
+        if (platform.config().getBoolean("ai.log-usage", false)) {
+            // ~4 characters a token is close enough to judge the cost.
+            int facts = core.knowledge().render().length();
+            platform.log().info("AI context [level " + settings.level() + "] ~" + (text.length() + 3) / 4
+                    + " tokens (" + text.length() + " chars), server facts ~" + (facts + 3) / 4
+                    + " tokens (" + facts + " chars)");
+        }
+        return text.isEmpty() ? "none" : text;
+    }
+
+    /** The admin's server facts plus the reward bundles the model may name (FB-08). */
+    private String serverFacts() {
+        String facts = core.knowledge().render();
+        String bundles = core.bundles() == null ? "" : core.bundles().promptSection();
+        if (bundles.isEmpty()) return facts;
+        return facts == null || facts.isBlank() ? bundles : facts + "\n\n" + bundles;
     }
 
     // ==================== EXECUTE ====================
 
-    private void executeAction(Owner player, String actionType, JSONObject parameters,
+    /**
+     * An admin action the permission check (ActionPermissions) could refuse.
+     * Its reply isn't streamed: it waits for the check, so a refused player
+     * never hears "at once, sir" first. Full admins ({@code admin}, read on the
+     * server thread) stream as before; a player with only a per-action node
+     * gets the reply whole, a moment later.
+     */
+    boolean mayBeRefused(String actionType, boolean admin) {
+        if (admin || ActionPermissions.OPEN.contains(actionType)) return false;
+        ActionExecutor executor = core.actions();
+        return executor != null && executor.handles(actionType);
+    }
+
+    // Package-private for tests.
+    void executeAction(Owner player, String actionType, JSONObject parameters,
                                String aiResponse, String originalMessage,
                                Source source, Responder sink) {
+        executeAction(player, actionType, parameters, aiResponse, originalMessage, source, sink, false);
+    }
+
+    /** @param alreadySpoken the reply was streamed to the player already (FB-05); don't say it twice */
+    private void executeAction(Owner player, String actionType, JSONObject parameters,
+                               String aiResponse, String originalMessage,
+                               Source source, Responder sink, boolean alreadySpoken) {
+
+        ActionExecutor executor = core.actions();
+        ButlerService npc = core.butlers();
+
+        // "summon" with no entity (or with Jarvis as the entity) is Jarvis
+        // himself, not a mob: the adapter's executor would otherwise offer to
+        // spawn a zombie for "come here".
+        boolean npcSummon = jarvisSummon(actionType, parameters);
+        boolean adminAction = !npcSummon && executor != null && executor.handles(actionType);
+
+        // Server-administration actions run only on the player's own
+        // permissions (ActionPermissions). Checked before the model's reply is
+        // shown or remembered, so a refused order isn't answered "at once,
+        // sir" or recalled later as done. A streamed reply waits for this
+        // check too (mayBeRefused).
+        if (adminAction && !ActionPermissions.allowed(player, actionType)) {
+            sink.feedback(player, Colors.YELLOW + ActionPermissions.refusal(actionType));
+            return;
+        }
+
+        // A reward bundle (FB-08): the reply celebrates it, so say it only once the
+        // bundle has run. Otherwise a refusal followed "Well earned, sir." (seen live).
+        boolean bundle = "trigger_bundle".equals(actionType);
 
         // Always show Jarvis's witty response first
-        if (!aiResponse.isEmpty()) {
+        if (!aiResponse.isEmpty() && !alreadySpoken && !bundle) {
             sink.speak(player, aiResponse);
         }
 
         // Butler memory: remember this exchange (async — DB writes off-thread)
         if (core.database() != null) {
             String finalAction = actionType;
-            scheduler().async(() -> core.database().logChatInteraction(
-                    player.id().toString(), originalMessage, aiResponse, finalAction));
+            scheduler().async(() -> {
+                core.database().logChatInteraction(player.id().toString(), originalMessage, aiResponse, finalAction);
+                // FB-04: condense older turns once there are enough of them.
+                if (core.conversation() != null) core.conversation().summarizeIfNeeded(player.id());
+            });
         }
 
         // Reduced (Ollama-only) mode: decline high-risk actions parsed by a small local model
@@ -209,11 +688,22 @@ public class IntentPipeline {
             return;
         }
 
-        ActionExecutor executor = core.actions();
-        ButlerService npc = core.butlers();
+        if (bundle) {
+            if (core.bundles() == null) return;
+            String name = parameters == null ? "" : parameters.optString("name", "");
+            var result = core.bundles().trigger(player, name, com.gadgetman.jarvis.commands.BundleRegistry.By.AI);
+            // The reply celebrates, so it waited for the bundle to run. A streamed
+            // reply (ai.streaming) is out already; then the refusal just follows it.
+            if (result.ran() && !aiResponse.isEmpty()) {
+                if (!alreadySpoken) sink.speak(player, aiResponse);
+            } else {
+                sink.feedback(player, (result.ran() ? Colors.GREEN : Colors.YELLOW) + "Jarvis: " + result.message());
+            }
+            return;
+        }
 
         // Server-administration actions belong to the adapter's executor
-        if (executor != null && executor.handles(actionType)) {
+        if (adminAction) {
             if (executor.dangerousActions().contains(actionType)) {
                 queueForConfirmation(player, actionType, parameters, executor);
             } else {
@@ -225,7 +715,16 @@ public class IntentPipeline {
             return;
         }
 
-        // Core NPC / existing actions
+        // Core NPC / existing actions. When a reply was already spoken above, the
+        // action's own "order received" line (ButlerService.confirm) stays quiet,
+        // so one order gets one answer.
+        Runnable order = () -> dispatchNpc(player, actionType, parameters, aiResponse, sink, npc);
+        if (!aiResponse.isEmpty() && npc != null) npc.runAnswered(order);
+        else order.run();
+    }
+
+    private void dispatchNpc(Owner player, String actionType, JSONObject parameters,
+                             String aiResponse, Responder sink, ButlerService npc) {
         switch (actionType.toLowerCase(Locale.ROOT)) {
             case "summon"                  -> npc.summon(player);
             case "dismiss"                 -> npc.dismiss(player);
@@ -243,7 +742,11 @@ public class IntentPipeline {
             case "guard", "defend", "protect"-> npc.guard(player, "defensive");
             case "watch", "sentry"         -> npc.watch(player, null);
             case "stand_down"              -> npc.guard(player, "passive");
-            case "mine", "mining"          -> npc.mine(player);
+            case "mine", "mining" -> {
+                String ore = parameters == null ? "" : parameters.optString("ore", "");
+                if (ore.isEmpty()) npc.mine(player);
+                else npc.mine(player, new String[]{ore});
+            }
             case "stop"                    -> npc.stop(player);
             case "loot", "inventory"       -> npc.openInventory(player);
             case "build" -> {
@@ -274,6 +777,8 @@ public class IntentPipeline {
                     parameters != null ? parameters.optString("type", null) : null,
                     parameters != null ? parameters.optInt("spacing", -1) : -1);
             case "clearloot" -> npc.clearInventory(player);
+            case "undo" -> core.undo().undo(player, 1);
+            case "redo" -> core.undo().redo(player);
             case "chat", "talk" -> {
                 // AI response already delivered above — nothing else needed
             }
@@ -366,6 +871,14 @@ public class IntentPipeline {
         player.message(Colors.GRAY + "Expires in " + core.confirmations().getTimeoutSeconds() + "s.");
     }
 
+    /** "undo that", "put it back", "take that down": a request to undo the last build. */
+    public static boolean isUndo(String message) {
+        String m = message.toLowerCase(Locale.ROOT);
+        return m.contains("undo") || m.contains("put it back") || m.contains("put that back")
+                || m.contains("put everything back") || m.contains("take it down")
+                || m.contains("take that down");
+    }
+
     /** Keyword fallback for when the AI is unreachable or returns nonsense. */
     public void executeFallbackAction(Owner player, String message) {
         executeFallbackAction(player, message, CHAT_RESPONDER);
@@ -381,7 +894,10 @@ public class IntentPipeline {
      */
     public void executeFallbackAction(Owner player, String message, Responder sink) {
         ButlerService npc = core.butlers();
-        if (message.contains("summon") || message.contains("come"))     npc.summon(player);
+        // Before "back" and "come": "put it back" is an undo, not a recall.
+        if (isUndo(message)) core.undo().undo(player, 1);
+        else if (message.contains("redo")) core.undo().redo(player);
+        else if (message.contains("summon") || message.contains("come"))     npc.summon(player);
         else if (message.contains("dismiss") || message.contains("away")) npc.dismiss(player);
         else if (message.contains("mine") || message.contains("dig"))   npc.mine(player);
         else if (message.contains("attack") || message.contains("fight")) npc.guard(player, "aggressive");

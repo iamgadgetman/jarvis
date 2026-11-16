@@ -6,7 +6,7 @@
 
 | Command | Description | Permission |
 |---|---|---|
-| `/jarvis summon` | Summon your Jarvis NPC | `jarvis.use` |
+| `/jarvis summon` | Summon your Jarvis NPC. Optional: any job brings him if he is not out (`butler.auto-summon`) | `jarvis.use` |
 | `/jarvis dismiss` | Dismiss him; he keeps issued gear, hands back the rest | `jarvis.use` |
 | `/jarvis return` | Recall him to your side | `jarvis.use` |
 | `/jarvis follow` | Follow you and carry loot | `jarvis.use` |
@@ -49,7 +49,9 @@
 | `/jarvis debug` | Provider, model, memory and subsystem status | `jarvis.admin` |
 | `/jarvis export-dataset` | Dump intent and build pairs as JSONL | `jarvis.admin` |
 | `/jarvis build <description>` | Build it — pastes a matching schematic, or has the AI design one | `jarvis.use` |
-| `/jarvis build undo` | Revert the last build | `jarvis.use` |
+| `/jarvis undo [n]` | Undo the last thing he built or pasted, or the last n (alias: `/jarvis build undo`) | `jarvis.use` |
+| `/jarvis undo list` | What he can undo, newest first, with labels and ages | `jarvis.use` |
+| `/jarvis redo` | Put back what the last undo took down (one level) | `jarvis.use` |
 | `/jarvis build cancel` | Stop the build in progress | `jarvis.use` |
 | `/jarvis build wall\|floor\|pillar\|cube [size]` | Simple shapes, no AI | `jarvis.use` |
 | `/jarvis paste <name>` | Paste a schematic by name, no AI | `jarvis.use` |
@@ -64,9 +66,24 @@
 | `/jarvis quiet` | Mute (or unmute) his idle remarks, for you | `jarvis.use` |
 | `/jarvis voice` | Where voice stands: voice chat, the gate, what he last heard, the speech server | `jarvis.use` |
 | `/jarvis voice enable\|disable\|engine <e>\|endpoint <url>\|gate <g>\|speak on\|off\|test` | Set up voice from the console; the bell menu's Admin > Voice setup does the same | `jarvis.admin` |
+| `/jarvis voice download [confirm]` | List the speech model files (about 210 MB from huggingface.co) and where they go; with `confirm`, fetch them. Nothing is downloaded otherwise | `jarvis.admin` |
 | `/jarvis voice bench [threads]`, `/jarvis voice threads <n>` | Time the embedded recogniser at several thread counts and name the fastest; keep a count (0 = automatic) | `jarvis.admin` |
 | `/jarvis ai [status]` | Which AI providers are on, and their models | `jarvis.use` |
 | `/jarvis ai enable\|disable\|key\|endpoint\|model\|models\|test ...` | Set up a provider from the console | `jarvis.admin` |
+| `/jarvis bundle [list]` | The reward bundles in `config.yml` | `jarvis.admin` |
+| `/jarvis bundle run <name> [player]` | Run a bundle for yourself or a player (its rules still apply) | `jarvis.admin` |
+| `/jarvis setup` | Check which AI providers can answer; if none, the free ways to get one | `jarvis.admin` |
+| `/jarvis cloud activate [name]` | Turn on Jarvis Cloud: a link in chat, one click, no key to copy | `jarvis.admin` (or single-player) |
+| `/jarvis cloud status` | Credits used and left this month, and about how many chats or builds that is | anyone |
+| `/jarvis cloud upgrade` | A 30-minute link to plans, billing and this server's GadgetCraft account | `jarvis.admin` (public plans page for others) |
+| `/jarvis cloud attach <code>` | Add another server to this server's account, so they share one plan | `jarvis.admin` |
+| `/jarvis setup pull [model]` | Print the `ollama pull` command to run on the Ollama host | `jarvis.admin` |
+| `/jarvis setup ollama`, `/jarvis setup gemini` | How to set up a free local model or a free Gemini key (the admin join buttons run these) | `jarvis.admin` |
+| `/jarvis tutorial` | Start the tutorial, or carry on from the step you were on | `jarvis.use` |
+| `/jarvis tutorial start\|skip\|later\|stop` | Start over, pass a step, don't ask again, or end it for now | `jarvis.use` |
+| `/jarvis tutorial reset <player>` | Forget their welcome: the next join is a first join (console too) | `jarvis.tutorial.reset` |
+| `/jarvis memory` | What Jarvis remembers of you: his notes, recent events, your last lines | `jarvis.use` |
+| `/jarvis memory forget` | Wipe that memory (Confirm/Cancel first) | `jarvis.use` |
 | `/jarvis <anything>` | Natural language — Jarvis figures it out | `jarvis.use` |
 
 On Fabric and NeoForge there are no permission nodes: `jarvis.admin` means

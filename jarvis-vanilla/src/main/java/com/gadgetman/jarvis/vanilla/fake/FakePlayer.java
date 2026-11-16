@@ -20,6 +20,7 @@ import net.minecraft.world.food.FoodData;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -58,6 +59,22 @@ public class FakePlayer extends ServerPlayer {
 
     private FakePlayer(MinecraftServer server, ServerLevel level, GameProfile profile, ClientInformation cli) {
         super(server, level, profile, cli);
+    }
+
+    /**
+     * The players that are people: {@code players} without any fake ones.
+     * The butler joins through the real player list, so anything vanilla
+     * counts from it (who must sleep, {@code /list}, the server-list count)
+     * would count him too. The mixins that stop that filter through here.
+     * Returns the same list when there is nothing to take out.
+     */
+    public static List<ServerPlayer> withoutFakes(List<ServerPlayer> players) {
+        for (ServerPlayer p : players) {
+            if (p instanceof FakePlayer) {
+                return players.stream().filter(q -> !(q instanceof FakePlayer)).toList();
+            }
+        }
+        return players;
     }
 
     public ActionPack actionPack() {
