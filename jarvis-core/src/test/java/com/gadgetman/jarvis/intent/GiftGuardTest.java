@@ -68,6 +68,7 @@ class GiftGuardTest {
     void askedStillGives() throws IOException {
         f = withModel(SWORD_REPLY);
         FakeOwner p = f.player("alice");
+        p.permissions.add("jarvis.admin");   // the ask guard, not permissions, is under test
         f.core.intents().submit(p, "give me a diamond sword", IntentPipeline.Source.CONSOLE);
         assertTrue(f.actions.executed.contains("give_item"), f.actions.executed.toString());
     }
@@ -77,6 +78,7 @@ class GiftGuardTest {
     void heal() throws IOException {
         f = withModel("{\"action\":\"heal\",\"parameters\":{},\"response\":\"Tending to your injuries first.\"}");
         FakeOwner p = f.player("alice");
+        p.permissions.add("jarvis.admin");   // the ask guard, not permissions, is under test
         f.core.intents().submit(p, "what should I do next?", IntentPipeline.Source.CONSOLE);
         assertFalse(f.actions.executed.contains("heal"), f.actions.executed.toString());
         assertTrue(p.messages.stream().anyMatch(m -> m.contains("heal me")), p.messages.toString());

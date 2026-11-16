@@ -2,6 +2,18 @@
 
 ## v0.18.0 (unreleased)
 
+### Security
+
+- **AI actions need the player's permission** (also shipped as 0.17.1). Before,
+  any player could have Jarvis run console commands, give items, change game
+  rules, time or weather, or announce to everyone just by asking in chat: the
+  model picked the action and a player can always confirm their own request.
+  Now an action the AI picks runs only if the player has `jarvis.admin` or
+  `jarvis.admin.actions.<action>` (for example `jarvis.admin.actions.heal`);
+  `request_item` stays open, and summoning Jarvis himself is unchanged.
+  `/jarvis confirm` checks again. On Fabric and NeoForge, which have no
+  permission nodes, both mean op.
+
 ### Added
 
 - **Jarvis Cloud activation: AI without your own API key.** `/jarvis cloud

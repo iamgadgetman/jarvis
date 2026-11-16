@@ -5,6 +5,7 @@ import com.gadgetman.jarvis.ai.AIConnector;
 import com.gadgetman.jarvis.ai.StreamAssembler;
 import com.gadgetman.jarvis.ai.WorldContext;
 import com.gadgetman.jarvis.commands.ActionExecutor;
+import com.gadgetman.jarvis.commands.ActionPermissions;
 import com.gadgetman.jarvis.core.platform.Butler;
 import com.gadgetman.jarvis.core.platform.Owner;
 import com.gadgetman.jarvis.core.platform.Platform;
@@ -581,7 +582,8 @@ public class IntentPipeline {
 
     // ==================== EXECUTE ====================
 
-    private void executeAction(Owner player, String actionType, JSONObject parameters,
+    // Package-private for tests.
+    void executeAction(Owner player, String actionType, JSONObject parameters,
                                String aiResponse, String originalMessage,
                                Source source, Responder sink) {
         executeAction(player, actionType, parameters, aiResponse, originalMessage, source, sink, false);
@@ -591,6 +593,27 @@ public class IntentPipeline {
     private void executeAction(Owner player, String actionType, JSONObject parameters,
                                String aiResponse, String originalMessage,
                                Source source, Responder sink, boolean alreadySpoken) {
+
+        ActionExecutor executor = core.actions();
+        ButlerService npc = core.butlers();
+
+        // "summon" with no entity (or with Jarvis as the entity) is Jarvis
+        // himself, not a mob: the adapter's executor would otherwise offer to
+        // spawn a zombie for "come here".
+        boolean npcSummon = "summon".equals(actionType)
+                && (parameters == null || !parameters.has("entity")
+                    || "jarvis".equalsIgnoreCase(parameters.optString("entity")));
+        boolean adminAction = !npcSummon && executor != null && executor.handles(actionType);
+
+        // Server-administration actions run only on the player's own
+        // permissions (ActionPermissions). Checked before the model's reply is
+        // shown or remembered, so a refused order isn't answered "at once,
+        // sir" or recalled later as done. (A streamed reply is out already;
+        // then the refusal just follows it.)
+        if (adminAction && !ActionPermissions.allowed(player, actionType)) {
+            sink.feedback(player, Colors.YELLOW + ActionPermissions.refusal(actionType));
+            return;
+        }
 
         // A reward bundle (FB-08): the reply celebrates it, so say it only once the
         // bundle has run. Otherwise a refusal followed "Well earned, sir." (seen live).
@@ -634,16 +657,8 @@ public class IntentPipeline {
             return;
         }
 
-        ActionExecutor executor = core.actions();
-        ButlerService npc = core.butlers();
-
-        // "summon" with no entity is Jarvis himself, not a mob: the adapter's
-        // executor would otherwise offer to spawn a zombie for "come here".
-        boolean npcSummon = "summon".equals(actionType)
-                && (parameters == null || !parameters.has("entity"));
-
         // Server-administration actions belong to the adapter's executor
-        if (!npcSummon && executor != null && executor.handles(actionType)) {
+        if (adminAction) {
             if (executor.dangerousActions().contains(actionType)) {
                 queueForConfirmation(player, actionType, parameters, executor);
             } else {

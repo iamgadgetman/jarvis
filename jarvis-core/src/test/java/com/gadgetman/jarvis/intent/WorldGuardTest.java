@@ -67,6 +67,7 @@ class WorldGuardTest {
     void askedStillRuns() throws IOException {
         f = withModel(DAY_REPLY);
         FakeOwner p = f.player("alice");
+        p.permissions.add("jarvis.admin");   // the ask guard, not permissions, is under test
         f.core.intents().submit(p, "make it day please", IntentPipeline.Source.CONSOLE);
         assertTrue(f.actions.executed.contains("set_time"), f.actions.executed.toString());
     }
@@ -76,6 +77,7 @@ class WorldGuardTest {
     void summon() throws IOException {
         f = withModel("{\"action\":\"summon\",\"parameters\":{\"entity\":\"minecraft:cow\"},\"response\":\"A cow, sir.\"}");
         FakeOwner p = f.player("alice");
+        p.permissions.add("jarvis.admin");   // the ask guard, not permissions, is under test
         f.core.intents().submit(p, "I'm bored", IntentPipeline.Source.CONSOLE);
         assertFalse(f.actions.executed.contains("summon"), f.actions.executed.toString());
         assertTrue(p.messages.stream().anyMatch(m -> m.contains("summon a cow")), p.messages.toString());

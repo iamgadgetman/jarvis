@@ -107,6 +107,7 @@ class EmptyReplyTest {
         f = withModel("{\"action\":\"broadcast\",\"parameters\":{\"message\":\"\"},"
                 + "\"response\":\"Broadcasting the message, sir. The market opens at noon.\"}");
         FakeOwner p = f.player("alice");
+        p.permissions.add("jarvis.admin");   // the ask guard, not permissions, is under test
         f.core.intents().submit(p, "announce that the market opens at noon", IntentPipeline.Source.CONSOLE);
         assertTrue(f.actions.executed.contains("broadcast"), f.actions.executed.toString());
         assertEquals("the market opens at noon",
@@ -119,6 +120,7 @@ class EmptyReplyTest {
         f = withModel("{\"action\":\"broadcast\",\"parameters\":{\"message\":\"Market opens at noon\"},"
                 + "\"response\":\"Announcing it now, sir.\"}");
         FakeOwner p = f.player("alice");
+        p.permissions.add("jarvis.admin");   // the ask guard, not permissions, is under test
         f.core.intents().submit(p, "announce that the market opens at noon", IntentPipeline.Source.CONSOLE);
         assertTrue(f.actions.executed.contains("broadcast"), f.actions.executed.toString());
     }

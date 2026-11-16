@@ -68,6 +68,7 @@ class AskGuardTest {
     void takeMeStillTeleports() throws IOException {
         f = withModel(TELEPORT_REPLY);
         FakeOwner p = f.player("alice");
+        p.permissions.add("jarvis.admin");   // the ask guard, not permissions, is under test
         f.core.intents().submit(p, "take me to the market", IntentPipeline.Source.CONSOLE);
         assertTrue(f.actions.executed.contains("teleport"), f.actions.executed.toString());
     }
